@@ -21,6 +21,14 @@ description: "把清晰、完整的内容内核转译为面向大众、具备传
 
 传播不是夸张。不得为了标题、情绪、故事或节奏改变事实、观点强度和适用边界。
 
+## 维护版本与依赖
+
+每次触发时读取 [dependencies.md](references/dependencies.md)，按其中的 24 小时规则执行非阻塞自身更新检查。
+
+更新检查失败或发现新版本时，继续使用当前版本完成内容任务；只在交付时报告，不让检查中断写作。
+
+只有当前任务实际需要 `$lightning`、`$writing-style`、视觉 Skill 或 Wechatsync 时才检查对应依赖。缺失时先说明并等待一次安装确认。
+
 ## 守住内容内核
 
 写作前建立内部“内容内核与来源账本”，至少记录：
@@ -49,7 +57,11 @@ description: "把清晰、完整的内容内核转译为面向大众、具备传
 - 冲突、未知和采用状态已经显式标记；
 - 目标是公开传播，而不是继续整理内部材料。
 
-输入仍是零散材料、多轮冲突讨论或低歧义要求未收敛时，先使用 `$lightning` 整理内容内核。只把整理结果交给本 Skill，不让 `$lightning` 代写公开文章。
+输入仍是零散材料、多轮冲突讨论或低歧义要求未收敛时，先使用 `$lightning` 整理内容内核。
+
+`$lightning` 不可用时，按 [dependencies.md](references/dependencies.md) 请求一次安装确认。用户拒绝、本轮不能加载或安装失败时，人工建立来源账本；事实仍不清楚时停止转译。
+
+只把整理结果交给本 Skill，不让 `$lightning` 代写公开文章。
 
 内容短、材料少或天然不适合某种形态时，不拒绝转换。说明：
 
@@ -154,7 +166,7 @@ description: "把清晰、完整的内容内核转译为面向大众、具备传
 1. 写作前：提供内容内核、主题、读者、目的、风险、平台形态、用户指定风格和用户空间，取得本次风格说明。
 2. 成稿后：只检查语言层风格、跨平台一致性、身份冒充和场景失调。
 
-如果 `$writing-style` 不可用，使用以下通用默认风格，并在交付中说明降级：
+如果 `$writing-style` 不可用，先按 [dependencies.md](references/dependencies.md) 请求一次安装确认。用户拒绝、本轮不能加载或安装失败时，使用以下通用默认风格，并在交付中说明降级：
 
 - 语言朴素、具体、清楚；
 - 逻辑完整，信息密度高；
@@ -269,7 +281,9 @@ description: "把清晰、完整的内容内核转译为面向大众、具备传
 
 默认只生成发布包，不连接账号、不上传、不保存草稿、不公开发布。
 
-用户明确要求投递，并明确目标平台、账号和草稿边界后，读取 [publishing-wechatsync.md](references/publishing-wechatsync.md)。优先使用当前环境中已经可用的官方 Wechatsync Skill、MCP 或 CLI；不要复制发布实现，也不要擅自安装、登录、配置 Token 或建立远程桥接。
+用户明确要求投递，并明确目标平台、账号和草稿边界后，读取 [publishing-wechatsync.md](references/publishing-wechatsync.md)。优先使用当前环境中已经可用的官方 Wechatsync Skill、MCP 或 CLI；不要复制发布实现。
+
+官方 Wechatsync Skill 缺失时，按 [dependencies.md](references/dependencies.md) 单独请求安装确认。安装不代表已经授权安装 CLI 或扩展、配置 Token、登录账号、上传素材、保存草稿或公开发布。
 
 只把四重验收通过的平台成稿交给 Wechatsync。默认保存草稿，逐平台报告结果。任何接口不可用时保留完整发布包，降级为人工发布。
 

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "skill": "broadcast",
+  "version": "1.0.0",
+  "source": "https://github.com/bryce-code-world/skills",
+  "ref": "main",
+  "path": "broadcast"
+}

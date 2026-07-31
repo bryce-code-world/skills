@@ -35,6 +35,12 @@ For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
 
+The three skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
+
+Each skill checks for its own updates at most once every 24 hours. The check does not block the current task, and an update still requires confirmation.
+
+Every skill release must also bump the semantic version in its `references/release.json`.
+
 ## Lightning
 
 Use it for:

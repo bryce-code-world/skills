@@ -4,6 +4,8 @@
 
 不要把可选编排变成固定流水线。
 
+准备调用外部 Skill 前，先确认它出现在当前 Agent 的可用 Skill 列表中。缺失时按 [dependencies.md](dependencies.md) 提示一次并等待安装确认；不要仅凭本地目录存在就声称可用。
+
 ## 图示
 
 目标环境支持 Mermaid，且只需在文档内展示时，直接生成 Mermaid。

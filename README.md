@@ -35,6 +35,12 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装广播时，将链接或目录名替换为 `broadcast`。
 
+三个 Skill 独立安装。只有当前任务实际需要某个缺失 Skill 时，才展示来源并请求一次安装确认；安装成功后不再询问。
+
+每个 Skill 被触发时至多每 24 小时检查一次自身更新。检查不阻塞当前任务，发现新版本后仍需用户确认才会更新。
+
+发布 Skill 更新时，必须同步提升对应 `references/release.json` 的语义版本。
+
 ## 闪电
 
 适用于：
