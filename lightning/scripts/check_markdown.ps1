@@ -1,4 +1,8 @@
-#requires -version 5.1
+﻿#requires -version 5.1
+<#
+.SYNOPSIS
+Native Windows mechanical guard for Markdown documents.
+#>
 
 [CmdletBinding()]
 param(
@@ -10,13 +14,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$script:Commands = @('check', 'compare', 'self-test')
 
 function Fail([string]$Message) {
     throw [System.InvalidOperationException]::new($Message)
 }
 
 function Write-Json($Value, [bool]$ToError = $false) {
-    $json = $Value | ConvertTo-Json -Depth 8 -Compress
+    $json = $Value | ConvertTo-Json -Depth 10 -Compress
     if ($ToError) {
         [Console]::Error.WriteLine($json)
     }
@@ -25,26 +31,33 @@ function Write-Json($Value, [bool]$ToError = $false) {
     }
 }
 
-function Parse-PathOption([string[]]$Items) {
-    $path = $null
+function Parse-Options([string[]]$Items) {
+    $values = @{}
     for ($index = 0; $index -lt $Items.Count; $index++) {
         $item = $Items[$index]
         if ([string]::IsNullOrWhiteSpace($item)) {
             continue
         }
-        if ($item -ne '--path') {
+        if ($item -notin @('--path', '--source', '--output')) {
             Fail "Unknown argument: $item"
         }
         if ($index + 1 -ge $Items.Count) {
-            Fail 'Missing value for --path.'
+            Fail "Missing value for $item."
         }
         $index++
-        $path = $Items[$index]
+        $values[$item] = $Items[$index]
     }
-    if (-not $path) {
-        Fail 'Missing required argument: --path'
+    return $values
+}
+
+function Get-Option($Options, [string]$Name, [bool]$Required = $false) {
+    if ($Options.ContainsKey($Name)) {
+        return [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$Options[$Name]))
     }
-    return [IO.Path]::GetFullPath($path)
+    if ($Required) {
+        Fail "Missing required argument: $Name"
+    }
+    return $null
 }
 
 function Get-MarkdownFiles([string]$Path) {
@@ -55,9 +68,7 @@ function Get-MarkdownFiles([string]$Path) {
         return @([IO.Path]::GetFullPath($Path))
     }
     if ([IO.Directory]::Exists($Path)) {
-        $files = @(Get-ChildItem -LiteralPath $Path -Filter '*.md' -File -Recurse |
-            Sort-Object FullName |
-            ForEach-Object { $_.FullName })
+        $files = @(Get-ChildItem -LiteralPath $Path -Filter '*.md' -File -Recurse | Sort-Object FullName | ForEach-Object { $_.FullName })
         if ($files.Count -eq 0) {
             Fail "No Markdown files found: $Path"
         }
@@ -66,57 +77,72 @@ function Get-MarkdownFiles([string]$Path) {
     Fail "Path does not exist: $Path"
 }
 
-function Is-RelativeLocalTarget([string]$Target) {
-    if (-not $Target -or $Target.StartsWith('#') -or $Target.StartsWith('/') -or $Target.StartsWith('\')) {
-        return $false
-    }
-    if ($Target.StartsWith('//') -or $Target -match '^[A-Za-z][A-Za-z0-9+.-]*:') {
-        return $false
-    }
-    return $true
-}
-
-function Normalize-LinkTarget([string]$Target) {
-    $value = $Target.Trim()
-    if ($value.StartsWith('<') -and $value.EndsWith('>')) {
-        $value = $value.Substring(1, $value.Length - 2)
-    }
-    $value = ($value -split '[?#]', 2)[0]
-    return [Uri]::UnescapeDataString($value)
-}
-
-function New-Finding([string]$File, [int]$Line, [string]$Rule, [string]$Message, [string]$Target = $null) {
+function New-Issue(
+    [string]$File,
+    [string]$Type,
+    [int]$Line,
+    [string]$Message,
+    [string]$Target = $null
+) {
     return @{
         file = $File
+        type = $Type
         line = $Line
-        rule = $Rule
-        target = $Target
         message = $Message
+        target = $Target
     }
+}
+
+function Resolve-LinkTarget([string]$File, [string]$RawTarget) {
+    $target = $RawTarget.Trim()
+    if ($target.StartsWith('<') -and $target.EndsWith('>')) {
+        $target = $target.Substring(1, $target.Length - 2)
+    }
+    if (-not $target -or $target.StartsWith('#') -or $target.StartsWith('//')) {
+        return $null
+    }
+    if ($target -notmatch '^[A-Za-z]:[\\/]' -and $target -match '^[A-Za-z][A-Za-z0-9+.-]*:') {
+        return $null
+    }
+    $target = $target.Split('#')[0].Split('?')[0]
+    if (-not $target) {
+        return $null
+    }
+    $target = [Uri]::UnescapeDataString($target)
+    if ([IO.Path]::IsPathRooted($target)) {
+        return [IO.Path]::GetFullPath($target)
+    }
+    return [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($File)) $target))
 }
 
 function Test-MarkdownFile([string]$File) {
     try {
-        $content = [IO.File]::ReadAllText($File, [Text.Encoding]::UTF8)
+        $content = [IO.File]::ReadAllText($File)
     }
     catch {
-        return @(New-Finding $File 0 'read-error' $_.Exception.Message)
+        Fail "Cannot read ${File}: $($_.Exception.Message)"
+    }
+    $issues = @()
+    if ($content.Length -eq 0) {
+        $issues += New-Issue $File 'empty-file' 1 'Markdown file is empty.'
+        return $issues
     }
 
-    $findings = @()
+    $lines = $content -split "`r?`n"
     $fenceCharacter = $null
     $fenceLength = 0
     $fenceLine = 0
-    $lines = $content -split "`r?`n"
+    $todoDefinitions = @{}
+    $linkPattern = [regex]'!?\[[^\]]*\]\((?<target><[^>]+>|[^)\s]+)'
 
     for ($index = 0; $index -lt $lines.Count; $index++) {
         $lineNumber = $index + 1
         $line = $lines[$index]
-        $fenceMatch = [regex]::Match($line, '^[ ]{0,3}(`{3,}|~{3,})')
+        $fenceMatch = [regex]::Match($line, '^\s*(?<marker>`{3,}|~{3,})')
         if ($fenceMatch.Success) {
-            $marker = $fenceMatch.Groups[1].Value
+            $marker = $fenceMatch.Groups['marker'].Value
             $character = $marker.Substring(0, 1)
-            if (-not $fenceCharacter) {
+            if ($null -eq $fenceCharacter) {
                 $fenceCharacter = $character
                 $fenceLength = $marker.Length
                 $fenceLine = $lineNumber
@@ -128,84 +154,194 @@ function Test-MarkdownFile([string]$File) {
             }
             continue
         }
-        if ($fenceCharacter) {
+        if ($null -ne $fenceCharacter) {
             continue
         }
 
-        $targets = @()
-        foreach ($match in [regex]::Matches($line, '!?\[[^\]]*\]\((?<target><[^>]+>|[^)\s]+)(?:\s+["''][^"'']*["''])?\)')) {
-            $targets += $match.Groups['target'].Value
-        }
-        $definition = [regex]::Match($line, '^[ ]{0,3}\[[^\]]+\]:\s*(?<target><[^>]+>|\S+)')
-        if ($definition.Success) {
-            $targets += $definition.Groups['target'].Value
+        $todoMatch = [regex]::Match(
+            $line,
+            '^\s*(?:#{1,6}\s+|[-*+]\s+)?TODO-(?<id>\d{2,})(?:\s*[:：]|\s|$)'
+        )
+        if ($todoMatch.Success) {
+            $todoId = 'TODO-' + $todoMatch.Groups['id'].Value
+            if ($todoDefinitions.ContainsKey($todoId)) {
+                $issues += New-Issue $File 'duplicate-todo' $lineNumber "$todoId is already defined at line $($todoDefinitions[$todoId])." $todoId
+            }
+            else {
+                $todoDefinitions[$todoId] = $lineNumber
+            }
         }
 
-        foreach ($rawTarget in $targets) {
-            $target = Normalize-LinkTarget $rawTarget
-            if (-not (Is-RelativeLocalTarget $target)) {
+        $linkTargets = @($linkPattern.Matches($line) | ForEach-Object { $_.Groups['target'].Value })
+        $definition = [regex]::Match($line, '^\s{0,3}\[[^\]]+\]:\s*(?<target><[^>]+>|\S+)')
+        if ($definition.Success) {
+            $linkTargets += $definition.Groups['target'].Value
+        }
+        foreach ($rawTarget in $linkTargets) {
+            try {
+                $resolvedTarget = Resolve-LinkTarget $File $rawTarget
+            }
+            catch {
+                $issues += New-Issue $File 'invalid-link' $lineNumber $_.Exception.Message $rawTarget
                 continue
             }
-            $resolved = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetDirectoryName($File)) $target))
-            if (-not [IO.File]::Exists($resolved) -and -not [IO.Directory]::Exists($resolved)) {
-                $findings += New-Finding $File $lineNumber 'missing-local-target' "Local target does not exist: $target" $target
+            if ($resolvedTarget -and -not ([IO.File]::Exists($resolvedTarget) -or [IO.Directory]::Exists($resolvedTarget))) {
+                $issues += New-Issue $File 'missing-link' $lineNumber "Local link target does not exist: $rawTarget" $rawTarget
             }
         }
     }
 
-    if ($fenceCharacter) {
-        $findings += New-Finding $File $fenceLine 'unclosed-fence' 'Code fence is not closed.'
+    if ($null -ne $fenceCharacter) {
+        $issues += New-Issue $File 'unclosed-fence' $fenceLine "Code fence opened at line $fenceLine is not closed."
     }
-    return $findings
+    return $issues
 }
 
 function Test-MarkdownPath([string]$Path) {
     $files = @(Get-MarkdownFiles $Path)
-    $findings = @()
+    $issues = @()
     foreach ($file in $files) {
-        $findings += @(Test-MarkdownFile $file)
+        $issues += @(Test-MarkdownFile $file)
     }
     return @{
-        ok = ($findings.Count -eq 0)
+        ok = ($issues.Count -eq 0)
         command = 'check'
         path = $Path
         files_checked = $files.Count
-        findings = $findings
+        issues = $issues
     }
 }
 
+function Add-Literal($Map, [string]$Kind, [string]$Value) {
+    $normalized = $Value.Trim()
+    if (-not $normalized) {
+        return
+    }
+    $key = $Kind + [char]31 + $normalized
+    if (-not $Map.ContainsKey($key)) {
+        $Map[$key] = @{ kind = $Kind; value = $normalized }
+    }
+}
+
+function Get-Literals([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) {
+        Fail "File does not exist: $Path"
+    }
+    try {
+        $content = [IO.File]::ReadAllText($Path)
+    }
+    catch {
+        Fail "Cannot read ${Path}: $($_.Exception.Message)"
+    }
+    $literals = @{}
+
+    foreach ($match in [regex]::Matches($content, '\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}\b')) {
+        Add-Literal $literals 'uuid' $match.Value.ToLowerInvariant()
+    }
+    foreach ($match in [regex]::Matches($content, '(?<!`)`([^`\r\n]+)`(?!`)')) {
+        Add-Literal $literals 'code' $match.Groups[1].Value
+    }
+    $numberPattern = '\d+(?:\.\d+)?(?:\s*[~～—-]\s*\d+(?:\.\d+)?)?(?:\s*(?:%|％|ms|s|min|h|KB|MB|GB|次|个|天|周|月|年))?'
+    foreach ($match in [regex]::Matches($content, $numberPattern)) {
+        Add-Literal $literals 'number' (($match.Value -replace '\s+', ' ').Trim())
+    }
+    $linkPattern = [regex]'!?\[[^\]]*\]\((?<target><[^>]+>|[^)\s]+)'
+    foreach ($match in $linkPattern.Matches($content)) {
+        $target = $match.Groups['target'].Value.Trim('<', '>')
+        if ($target -and -not $target.StartsWith('#') -and $target -notmatch '^[A-Za-z][A-Za-z0-9+.-]*:') {
+            Add-Literal $literals 'link' $target
+        }
+    }
+    $definitionPattern = [regex]'(?m)^\s{0,3}\[[^\]]+\]:\s*(?<target><[^>]+>|\S+)'
+    foreach ($match in $definitionPattern.Matches($content)) {
+        $target = $match.Groups['target'].Value.Trim('<', '>')
+        if ($target -and -not $target.StartsWith('#') -and $target -notmatch '^[A-Za-z][A-Za-z0-9+.-]*:') {
+            Add-Literal $literals 'link' $target
+        }
+    }
+    return $literals
+}
+
+function Compare-Literals([string]$Source, [string]$Output) {
+    $mechanical = Test-MarkdownPath $Output
+    $sourceLiterals = Get-Literals $Source
+    $outputLiterals = Get-Literals $Output
+    $sourceOnly = @(
+        $sourceLiterals.Keys |
+            Where-Object { -not $outputLiterals.ContainsKey($_) } |
+            ForEach-Object { $sourceLiterals[$_] } |
+            Sort-Object kind, value
+    )
+    $outputOnly = @(
+        $outputLiterals.Keys |
+            Where-Object { -not $sourceLiterals.ContainsKey($_) } |
+            ForEach-Object { $outputLiterals[$_] } |
+            Sort-Object kind, value
+    )
+    return @{
+        ok = $mechanical.ok
+        command = 'compare'
+        source = $Source
+        output = $Output
+        review_required = ($sourceOnly.Count -gt 0 -or $outputOnly.Count -gt 0)
+        source_only = $sourceOnly
+        output_only = $outputOnly
+        mechanical_issues = $mechanical.issues
+    }
+}
+
+function Write-TestFile([string]$Path, [string]$Content) {
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path)) | Out-Null
+    [IO.File]::WriteAllText($Path, $Content.Replace("`r`n", "`n"), $script:Utf8NoBom)
+}
+
 function Invoke-SelfTest {
-    $unicodeName = ([char]0x4E2D).ToString() + ([char]0x6587).ToString()
-    $base = Join-Path ([IO.Path]::GetTempPath()) ('lightning-markdown-' + $unicodeName + ' test-' + [Guid]::NewGuid().ToString('N'))
+    $base = Join-Path ([IO.Path]::GetTempPath()) ('lightning-护栏 测试-' + [Guid]::NewGuid().ToString('N'))
     $checks = @()
     try {
         [IO.Directory]::CreateDirectory($base) | Out-Null
-        $fence = ([char]96).ToString() + ([char]96).ToString() + ([char]96).ToString()
-        $target = Join-Path $base ($unicodeName + ' file.md')
-        [IO.File]::WriteAllText($target, "# Target`n", [Text.UTF8Encoding]::new($false))
-
+        Write-TestFile (Join-Path $base 'target file.md') "# Target`n"
         $valid = Join-Path $base 'valid.md'
-        [IO.File]::WriteAllText($valid, "# Valid`n`n[local](<$unicodeName file.md>)`n`n${fence}text`nok`n$fence`n", [Text.UTF8Encoding]::new($false))
-        $result = Test-MarkdownPath $valid
-        $checks += @{ name = 'valid document'; passed = $result.ok }
-
-        $result = Test-MarkdownPath $base
-        $checks += @{ name = 'directory unicode and spaces'; passed = ($result.ok -and $result.files_checked -eq 2) }
+        Write-TestFile $valid (@(
+            '# Valid',
+            '',
+            '[目标](<target file.md>) [网页](https://example.com) [锚点](#part)',
+            '[引用][doc]',
+            '[doc]: <target file.md>',
+            '',
+            'TODO-01：确认范围。',
+            '',
+            '```text',
+            'ok',
+            '```'
+        ) -join "`n")
+        $validResult = Test-MarkdownPath $valid
+        $checks += @{ name = 'valid file'; passed = $validResult.ok }
 
         $broken = Join-Path $base 'broken.md'
-        [IO.File]::WriteAllText($broken, "# Broken`n`n[missing](./missing.md)`n", [Text.UTF8Encoding]::new($false))
-        $result = Test-MarkdownPath $broken
-        $checks += @{ name = 'missing target'; passed = (-not $result.ok -and $result.findings[0].rule -eq 'missing-local-target') }
+        Write-TestFile $broken "[missing](missing.md)`n"
+        $brokenResult = Test-MarkdownPath $broken
+        $checks += @{ name = 'missing local link'; passed = (-not $brokenResult.ok -and $brokenResult.issues[0].type -eq 'missing-link') }
 
-        $unclosed = Join-Path $base 'unclosed.md'
-        [IO.File]::WriteAllText($unclosed, "# Unclosed`n`n${fence}text`ncontent`n", [Text.UTF8Encoding]::new($false))
-        $result = Test-MarkdownPath $unclosed
-        $checks += @{ name = 'unclosed fence'; passed = (-not $result.ok -and $result.findings[0].rule -eq 'unclosed-fence') }
+        $fence = Join-Path $base 'fence.md'
+        Write-TestFile $fence (@('```text', 'unclosed') -join "`n")
+        $fenceResult = Test-MarkdownPath $fence
+        $checks += @{ name = 'unclosed fence'; passed = (-not $fenceResult.ok -and $fenceResult.issues[0].type -eq 'unclosed-fence') }
 
-        $remote = Join-Path $base 'remote.md'
-        [IO.File]::WriteAllText($remote, "# Remote`n`n[web](https://example.com) [anchor](#part)`n", [Text.UTF8Encoding]::new($false))
-        $result = Test-MarkdownPath $remote
-        $checks += @{ name = 'remote and fragment ignored'; passed = $result.ok }
+        $todo = Join-Path $base 'todo.md'
+        Write-TestFile $todo "TODO-02：first`n`n## TODO-02：second`n"
+        $todoResult = Test-MarkdownPath $todo
+        $checks += @{ name = 'duplicate todo'; passed = (-not $todoResult.ok -and $todoResult.issues[0].type -eq 'duplicate-todo') }
+
+        $source = Join-Path $base 'source.md'
+        $output = Join-Path $base 'output.md'
+        Write-TestFile $source '版本 `v1`，范围 10～20 个，ID 123e4567-e89b-12d3-a456-426614174000。'
+        Write-TestFile $output '版本 `v2`，范围 10 个。'
+        $compare = Compare-Literals $source $output
+        $checks += @{ name = 'literal comparison'; passed = ($compare.ok -and $compare.review_required -and $compare.source_only.Count -gt 0 -and $compare.output_only.Count -gt 0) }
+
+        $directoryResult = Test-MarkdownPath $base
+        $checks += @{ name = 'unicode directory recursion'; passed = ($directoryResult.files_checked -eq 7) }
 
         $failed = @($checks | Where-Object { -not $_.passed })
         if ($failed.Count -gt 0) {
@@ -228,22 +364,27 @@ function Invoke-SelfTest {
 }
 
 try {
+    if (-not $Command -or $Command -notin $script:Commands) {
+        Fail ('Command must be one of: ' + ($script:Commands -join ', ') + '.')
+    }
+    $options = Parse-Options @($RemainingArgs)
     switch ($Command) {
         'check' {
-            $path = Parse-PathOption @($RemainingArgs)
-            $result = Test-MarkdownPath $path
+            $result = Test-MarkdownPath (Get-Option $options '--path' $true)
+            Write-Json $result
+            if ($result.ok) { exit 0 } else { exit 1 }
+        }
+        'compare' {
+            $result = Compare-Literals (Get-Option $options '--source' $true) (Get-Option $options '--output' $true)
             Write-Json $result
             if ($result.ok) { exit 0 } else { exit 1 }
         }
         'self-test' {
-            if (@($RemainingArgs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -gt 0) {
+            if ($options.Count -gt 0) {
                 Fail 'self-test does not accept arguments.'
             }
             Write-Json (Invoke-SelfTest)
             exit 0
-        }
-        default {
-            Fail 'Command must be check or self-test.'
         }
     }
 }

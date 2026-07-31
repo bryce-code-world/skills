@@ -1,6 +1,12 @@
 #!/bin/sh
+# Native POSIX mechanical guard for Markdown documents.
 
-SCRIPT_PATH=$0
+case "$0" in
+    /*) SCRIPT_PATH=$0 ;;
+    *) SCRIPT_PATH=$PWD/$0 ;;
+esac
+
+SEP=$(printf '\034')
 
 json_escape() {
     printf '%s' "$1" | awk '
@@ -23,15 +29,32 @@ fail() {
     exit 2
 }
 
+require_value() {
+    [ "$#" -ge 2 ] || fail "Missing value for $1."
+}
+
 COMMAND=${1-}
 [ "$#" -gt 0 ] && shift
+
 PATH_ARG=
+SOURCE=
+OUTPUT=
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --path)
-            [ "$#" -ge 2 ] || fail 'Missing value for --path.'
+            require_value "$@"
             PATH_ARG=$2
+            shift 2
+            ;;
+        --source)
+            require_value "$@"
+            SOURCE=$2
+            shift 2
+            ;;
+        --output)
+            require_value "$@"
+            OUTPUT=$2
             shift 2
             ;;
         *)
@@ -41,180 +64,375 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$COMMAND" in
-    check|self-test) ;;
-    *) fail 'Command must be check or self-test.' ;;
+    check|compare|self-test) ;;
+    *) fail 'Command must be one of: check, compare, self-test.' ;;
 esac
 
 absolute_path() {
-    case "$1" in
-        /*) printf '%s\n' "$1" ;;
-        *) printf '%s/%s\n' "$PWD" "$1" ;;
+    absolute_raw=$1
+    case "$absolute_raw" in
+        '~') absolute_raw=${HOME-} ;;
+        '~/'*) absolute_raw=${HOME-}/${absolute_raw#~/} ;;
+    esac
+    case "$absolute_raw" in
+        /*) printf '%s\n' "$absolute_raw" ;;
+        *) printf '%s/%s\n' "$PWD" "$absolute_raw" ;;
     esac
 }
 
-append_finding() {
-    finding_file=$(json_escape "$1")
-    finding_line=$2
-    finding_rule=$(json_escape "$3")
-    finding_target=$(json_escape "$4")
-    finding_message=$(json_escape "$5")
-    [ "$FINDING_COUNT" -eq 0 ] || FINDINGS_JSON=$FINDINGS_JSON,
-    FINDINGS_JSON=$FINDINGS_JSON'{"file":"'$finding_file'","line":'$finding_line',"rule":"'$finding_rule'","target":"'$finding_target'","message":"'$finding_message'"}'
-    FINDING_COUNT=$((FINDING_COUNT + 1))
+append_issue() {
+    issue_file=$1
+    issue_path=$2
+    issue_type=$3
+    issue_line=$4
+    issue_target=$5
+    issue_message=$6
+    printf '%s%s%s%s%s%s%s%s%s\n' \
+        "$issue_path" "$SEP" "$issue_type" "$SEP" "$issue_line" "$SEP" \
+        "$issue_target" "$SEP" "$issue_message" >> "$issue_file"
 }
 
-is_relative_local_target() {
-    case "$1" in
-        ''|\#*|/*|\\*|[A-Za-z]:*|[A-Za-z][A-Za-z0-9+.-]*:*) return 1 ;;
-        *) return 0 ;;
-    esac
+scan_structure() {
+    scan_file=$1
+    scan_safe=$2
+    scan_issues=$3
+    awk -v file="$scan_file" -v safe="$scan_safe" -v issues="$scan_issues" '
+        function emit(type, line, target, message, separator) {
+            separator = sprintf("%c", 28)
+            print file separator type separator line separator target separator message >> issues
+        }
+        function marker_length(text, character, count) {
+            character = substr(text, 1, 1)
+            count = 0
+            while (substr(text, count + 1, 1) == character) count++
+            return count
+        }
+        {
+            raw = $0
+            sub(/\r$/, "", raw)
+            trimmed = raw
+            sub(/^[ \t]*/, "", trimmed)
+            is_marker = (substr(trimmed, 1, 3) == "```" || substr(trimmed, 1, 3) == "~~~")
+            if (is_marker) {
+                character = substr(trimmed, 1, 1)
+                length_now = marker_length(trimmed)
+                if (fence_character == "") {
+                    fence_character = character
+                    fence_length = length_now
+                    fence_line = NR
+                } else if (character == fence_character && length_now >= fence_length) {
+                    fence_character = ""
+                    fence_length = 0
+                    fence_line = 0
+                }
+                print "" >> safe
+                next
+            }
+            if (fence_character != "") {
+                print "" >> safe
+                next
+            }
+            print raw >> safe
+
+            todo = raw
+            sub(/^[ \t]*/, "", todo)
+            sub(/^#+[ \t]+/, "", todo)
+            sub(/^[-*+][ \t]+/, "", todo)
+            if (match(todo, /^TODO-[0-9][0-9]+/)) {
+                identifier = substr(todo, RSTART, RLENGTH)
+                remainder = substr(todo, RLENGTH + 1)
+                if (remainder == "" || remainder ~ /^[ \t]/ || remainder ~ /^[:：]/) {
+                    if (todo_line[identifier] > 0) {
+                        emit("duplicate-todo", NR, identifier, identifier " is already defined at line " todo_line[identifier] ".")
+                    } else {
+                        todo_line[identifier] = NR
+                    }
+                }
+            }
+        }
+        END {
+            if (fence_character != "") {
+                emit("unclosed-fence", fence_line, "", "Code fence opened at line " fence_line " is not closed.")
+            }
+        }
+    ' "$scan_file" || fail "Cannot inspect Markdown structure: $scan_file"
 }
 
-check_file() {
-    check_file_path=$1
-    check_events=$(mktemp "${TMPDIR:-/tmp}/lightning-events.XXXXXX") ||
-        fail 'Cannot create temporary event file.'
+check_links() {
+    link_file=$1
+    link_safe=$2
+    link_issues=$3
+    link_matches=$(mktemp "$WORK_DIR/links.XXXXXX") || fail 'Cannot create link scan file.'
+    grep -n -Eo '!?\[[^]]*\]\((<[^>]+>|[^)[:space:]]+)' "$link_safe" > "$link_matches" 2>/dev/null || :
     awk '
-        function emit_link(line_number, target) {
+        /^[[:space:]]{0,3}\[[^]]+\]:[[:space:]]*/ {
+            target = $0
+            sub(/^[[:space:]]{0,3}\[[^]]+\]:[[:space:]]*/, "", target)
+            if (target ~ /^</) {
+                sub(/>.*/, ">", target)
+            } else {
+                sub(/[[:space:]].*$/, "", target)
+            }
+            print NR ":[reference](" target
+        }
+    ' "$link_safe" >> "$link_matches"
+    while IFS= read -r link_record; do
+        [ -n "$link_record" ] || continue
+        link_line=${link_record%%:*}
+        link_match=${link_record#*:}
+        link_target=${link_match#*(}
+        case "$link_target" in
+            '<'*) link_target=${link_target#<}; link_target=${link_target%>} ;;
+        esac
+        case "$link_target" in
+            ''|'#'*|'//'*) continue ;;
+            [A-Za-z][A-Za-z0-9+.-]*:*) continue ;;
+        esac
+        link_clean=${link_target%%#*}
+        link_clean=${link_clean%%\?*}
+        [ -n "$link_clean" ] || continue
+        link_clean=$(printf '%s' "$link_clean" | sed 's/%20/ /g')
+        case "$link_clean" in
+            /*) link_resolved=$link_clean ;;
+            *) link_resolved=$(dirname "$link_file")/$link_clean ;;
+        esac
+        if [ ! -e "$link_resolved" ]; then
+            append_issue "$link_issues" "$link_file" missing-link "$link_line" "$link_target" "Local link target does not exist: $link_target"
+        fi
+    done < "$link_matches"
+}
+
+prepare_check() {
+    check_path=$1
+    CHECK_ISSUES=$(mktemp "$WORK_DIR/issues.XXXXXX") || fail 'Cannot create issue file.'
+    CHECK_FILES=$(mktemp "$WORK_DIR/files.XXXXXX") || fail 'Cannot create file list.'
+    CHECK_COUNT=0
+
+    if [ -f "$check_path" ]; then
+        case "$check_path" in
+            *.md) printf '%s\n' "$check_path" > "$CHECK_FILES" ;;
+            *) fail "Expected a Markdown file: $check_path" ;;
+        esac
+    elif [ -d "$check_path" ]; then
+        find "$check_path" -type f -name '*.md' -print | sort > "$CHECK_FILES" ||
+            fail "Cannot enumerate Markdown files: $check_path"
+        [ -s "$CHECK_FILES" ] || fail "No Markdown files found: $check_path"
+    else
+        fail "Path does not exist: $check_path"
+    fi
+
+    while IFS= read -r check_file; do
+        [ -n "$check_file" ] || continue
+        CHECK_COUNT=$((CHECK_COUNT + 1))
+        if [ ! -s "$check_file" ]; then
+            append_issue "$CHECK_ISSUES" "$check_file" empty-file 1 '' 'Markdown file is empty.'
+            continue
+        fi
+        check_safe=$(mktemp "$WORK_DIR/safe.XXXXXX") || fail 'Cannot create Markdown scan file.'
+        scan_structure "$check_file" "$check_safe" "$CHECK_ISSUES"
+        check_links "$check_file" "$check_safe" "$CHECK_ISSUES"
+    done < "$CHECK_FILES"
+}
+
+issues_json() {
+    issues_source=$1
+    issues_result=
+    issues_count=0
+    while IFS="$SEP" read -r issue_path issue_type issue_line issue_target issue_message; do
+        [ -n "$issue_path" ] || continue
+        [ "$issues_count" -eq 0 ] || issues_result=$issues_result,
+        path_json=$(json_escape "$issue_path")
+        type_json=$(json_escape "$issue_type")
+        target_json=$(json_escape "$issue_target")
+        message_json=$(json_escape "$issue_message")
+        issues_result=$issues_result'{"file":"'$path_json'","type":"'$type_json'","line":'$issue_line',"message":"'$message_json'","target":"'$target_json'"}'
+        issues_count=$((issues_count + 1))
+    done < "$issues_source"
+    ISSUES_JSON=$issues_result
+    ISSUE_COUNT=$issues_count
+}
+
+run_check() {
+    run_path=$1
+    prepare_check "$run_path"
+    issues_json "$CHECK_ISSUES"
+    path_json=$(json_escape "$run_path")
+    if [ "$ISSUE_COUNT" -eq 0 ]; then check_ok=true; check_code=0; else check_ok=false; check_code=1; fi
+    printf '{"ok":%s,"command":"check","path":"%s","files_checked":%s,"issues":[%s]}\n' \
+        "$check_ok" "$path_json" "$CHECK_COUNT" "$ISSUES_JSON"
+    return "$check_code"
+}
+
+append_literal() {
+    literal_file=$1
+    literal_kind=$2
+    literal_value=$3
+    [ -n "$literal_value" ] || return
+    printf '%s%s%s\n' "$literal_kind" "$SEP" "$literal_value" >> "$literal_file"
+}
+
+extract_literals() {
+    literal_source=$1
+    literal_target=$2
+    [ -f "$literal_source" ] || fail "File does not exist: $literal_source"
+    literal_raw=$(mktemp "$WORK_DIR/literals.XXXXXX") || fail 'Cannot create literal file.'
+
+    grep -Eo '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}' "$literal_source" 2>/dev/null |
+        tr '[:upper:]' '[:lower:]' |
+        while IFS= read -r value; do append_literal "$literal_raw" uuid "$value"; done
+
+    grep -Eo '`[^`]+`' "$literal_source" 2>/dev/null |
+        while IFS= read -r value; do
+            value=${value#\`}
+            value=${value%\`}
+            append_literal "$literal_raw" code "$value"
+        done
+
+    grep -Eo '[0-9]+([.][0-9]+)?([[:space:]]*[~～—-][[:space:]]*[0-9]+([.][0-9]+)?)?([[:space:]]*(%|％|ms|s|min|h|KB|MB|GB|次|个|天|周|月|年))?' "$literal_source" 2>/dev/null |
+        while IFS= read -r value; do append_literal "$literal_raw" number "$value"; done
+
+    grep -Eo '!?\[[^]]*\]\((<[^>]+>|[^)[:space:]]+)' "$literal_source" 2>/dev/null |
+        while IFS= read -r value; do
+            value=${value#*(}
+            case "$value" in '<'*) value=${value#<}; value=${value%>} ;; esac
+            case "$value" in
+                ''|'#'*|'//'*) continue ;;
+                [A-Za-z][A-Za-z0-9+.-]*:*) continue ;;
+            esac
+            append_literal "$literal_raw" link "$value"
+        done
+
+    awk '
+        /^[[:space:]]{0,3}\[[^]]+\]:[[:space:]]*/ {
+            target = $0
+            sub(/^[[:space:]]{0,3}\[[^]]+\]:[[:space:]]*/, "", target)
             if (target ~ /^</) {
                 sub(/^</, "", target)
                 sub(/>.*/, "", target)
             } else {
                 sub(/[[:space:]].*$/, "", target)
             }
-            print "LINK\t" line_number "\t" target
+            print target
         }
-        {
-            sub(/\r$/, "")
-            if (match($0, /^[ ]{0,3}(```+|~~~+)/)) {
-                marker = substr($0, RSTART, RLENGTH)
-                sub(/^[ ]*/, "", marker)
-                character = substr(marker, 1, 1)
-                if (!in_fence) {
-                    in_fence = 1
-                    fence_character = character
-                    fence_length = length(marker)
-                    fence_line = NR
-                } else if (character == fence_character && length(marker) >= fence_length) {
-                    in_fence = 0
-                }
-                next
-            }
-            if (in_fence) next
+    ' "$literal_source" |
+        while IFS= read -r value; do
+            case "$value" in
+                ''|'#'*|'//'*) continue ;;
+                [A-Za-z][A-Za-z0-9+.-]*:*) continue ;;
+            esac
+            append_literal "$literal_raw" link "$value"
+        done
 
-            rest = $0
-            while (match(rest, /!?\[[^]]*\]\([^)]*\)/)) {
-                token = substr(rest, RSTART, RLENGTH)
-                sub(/^[^(]*\(/, "", token)
-                sub(/\)$/, "", token)
-                emit_link(NR, token)
-                rest = substr(rest, RSTART + RLENGTH)
-            }
-            if ($0 ~ /^[ ]{0,3}\[[^]]+\]:[[:space:]]*/) {
-                token = $0
-                sub(/^[ ]{0,3}\[[^]]+\]:[[:space:]]*/, "", token)
-                emit_link(NR, token)
-            }
-        }
-        END {
-            if (in_fence) print "FENCE\t" fence_line "\t"
-        }
-    ' "$check_file_path" > "$check_events" ||
-        fail "Cannot inspect Markdown file: $check_file_path"
-
-    while IFS='	' read -r event_rule event_line event_target; do
-        case "$event_rule" in
-            FENCE)
-                append_finding "$check_file_path" "$event_line" 'unclosed-fence' '' 'Code fence is not closed.'
-                ;;
-            LINK)
-                clean_target=$(printf '%s' "$event_target" | sed 's/[?#].*$//; s/%20/ /g')
-                if is_relative_local_target "$clean_target"; then
-                    target_path=$(dirname "$check_file_path")/$clean_target
-                    if [ ! -f "$target_path" ] && [ ! -d "$target_path" ]; then
-                        append_finding "$check_file_path" "$event_line" 'missing-local-target' "$clean_target" "Local target does not exist: $clean_target"
-                    fi
-                fi
-                ;;
-        esac
-    done < "$check_events"
-    rm -f "$check_events"
+    sort -u "$literal_raw" > "$literal_target"
 }
 
-check_path() {
-    [ -n "$PATH_ARG" ] || fail 'Missing required argument: --path'
-    CHECK_PATH=$(absolute_path "$PATH_ARG")
-    check_files=$(mktemp "${TMPDIR:-/tmp}/lightning-files.XXXXXX") ||
-        fail 'Cannot create temporary file list.'
-    if [ -f "$CHECK_PATH" ]; then
-        case "$CHECK_PATH" in
-            *.md) printf '%s\n' "$CHECK_PATH" > "$check_files" ;;
-            *) fail "Expected a Markdown file: $CHECK_PATH" ;;
-        esac
-    elif [ -d "$CHECK_PATH" ]; then
-        find "$CHECK_PATH" -type f -name '*.md' -print | LC_ALL=C sort > "$check_files"
-    else
-        fail "Path does not exist: $CHECK_PATH"
-    fi
-    [ -s "$check_files" ] || fail "No Markdown files found: $CHECK_PATH"
+tokens_json() {
+    token_source=$1
+    token_result=
+    token_count=0
+    while IFS="$SEP" read -r token_kind token_value; do
+        [ -n "$token_kind" ] || continue
+        [ "$token_count" -eq 0 ] || token_result=$token_result,
+        kind_json=$(json_escape "$token_kind")
+        value_json=$(json_escape "$token_value")
+        token_result=$token_result'{"kind":"'$kind_json'","value":"'$value_json'"}'
+        token_count=$((token_count + 1))
+    done < "$token_source"
+    TOKENS_JSON=$token_result
+    TOKEN_COUNT=$token_count
+}
 
-    FINDINGS_JSON=
-    FINDING_COUNT=0
-    FILE_COUNT=0
-    while IFS= read -r markdown_file; do
-        [ -n "$markdown_file" ] || continue
-        FILE_COUNT=$((FILE_COUNT + 1))
-        check_file "$markdown_file"
-    done < "$check_files"
-    rm -f "$check_files"
+run_compare() {
+    compare_source=$1
+    compare_output=$2
+    [ -f "$compare_source" ] || fail "File does not exist: $compare_source"
+    [ -f "$compare_output" ] || fail "File does not exist: $compare_output"
 
-    if [ "$FINDING_COUNT" -eq 0 ]; then ok=true; result_code=0; else ok=false; result_code=1; fi
-    path_json=$(json_escape "$CHECK_PATH")
-    printf '{"ok":%s,"command":"check","path":"%s","files_checked":%s,"findings":[%s]}\n' \
-        "$ok" "$path_json" "$FILE_COUNT" "$FINDINGS_JSON"
-    return "$result_code"
+    prepare_check "$compare_output"
+    issues_json "$CHECK_ISSUES"
+    if [ "$ISSUE_COUNT" -eq 0 ]; then compare_ok=true; compare_code=0; else compare_ok=false; compare_code=1; fi
+
+    source_tokens=$(mktemp "$WORK_DIR/source-tokens.XXXXXX") || fail 'Cannot create source token file.'
+    output_tokens=$(mktemp "$WORK_DIR/output-tokens.XXXXXX") || fail 'Cannot create output token file.'
+    source_only=$(mktemp "$WORK_DIR/source-only.XXXXXX") || fail 'Cannot create comparison file.'
+    output_only=$(mktemp "$WORK_DIR/output-only.XXXXXX") || fail 'Cannot create comparison file.'
+    extract_literals "$compare_source" "$source_tokens"
+    extract_literals "$compare_output" "$output_tokens"
+    comm -23 "$source_tokens" "$output_tokens" > "$source_only"
+    comm -13 "$source_tokens" "$output_tokens" > "$output_only"
+
+    tokens_json "$source_only"
+    source_only_json=$TOKENS_JSON
+    source_only_count=$TOKEN_COUNT
+    tokens_json "$output_only"
+    output_only_json=$TOKENS_JSON
+    output_only_count=$TOKEN_COUNT
+    if [ "$source_only_count" -gt 0 ] || [ "$output_only_count" -gt 0 ]; then review_required=true; else review_required=false; fi
+
+    source_json=$(json_escape "$compare_source")
+    output_json=$(json_escape "$compare_output")
+    printf '{"ok":%s,"command":"compare","source":"%s","output":"%s","review_required":%s,"source_only":[%s],"output_only":[%s],"mechanical_issues":[%s]}\n' \
+        "$compare_ok" "$source_json" "$output_json" "$review_required" \
+        "$source_only_json" "$output_only_json" "$ISSUES_JSON"
+    return "$compare_code"
 }
 
 self_test() {
-    [ -z "$PATH_ARG" ] || fail 'self-test does not accept arguments.'
-    self_base=$(mktemp -d "${TMPDIR:-/tmp}/lightning-markdown-中文.XXXXXX") ||
+    [ -z "$PATH_ARG$SOURCE$OUTPUT" ] || fail 'self-test does not accept arguments.'
+    self_base=$(mktemp -d "${TMPDIR:-/tmp}/lightning-guard.XXXXXX") ||
         fail 'Cannot create self-test directory.'
     cleanup_self_test() {
         rm -rf "$self_base"
     }
     trap cleanup_self_test 0 HUP INT TERM
 
-    self_target=$self_base/'中文 file.md'
-    printf '# Target\n' > "$self_target"
-    self_valid=$self_base/valid.md
-    printf '# Valid\n\n[local](<中文 file.md>)\n\n```text\nok\n```\n' > "$self_valid"
-    sh "$SCRIPT_PATH" check --path "$self_valid" >/dev/null ||
-        fail 'Self-test failed: valid document.'
-    sh "$SCRIPT_PATH" check --path "$self_base" >/dev/null ||
-        fail 'Self-test failed: directory unicode and spaces.'
+    self_root=$self_base/护栏测试/文档
+    mkdir -p "$self_root" || fail 'Cannot prepare self-test directory.'
+    printf '# Target\n' > "$self_root/target file.md"
+    {
+        printf '# Valid\n\n'
+        printf '[目标](<target file.md>) [网页](https://example.com) [锚点](#part)\n'
+        printf '[引用][doc]\n'
+        printf '[doc]: <target file.md>\n\n'
+        printf 'TODO-01：确认范围。\n\n'
+        printf '%s\n' '```text' 'ok' '```'
+    } > "$self_root/valid.md"
+    sh "$SCRIPT_PATH" check --path "$self_root/valid.md" >/dev/null ||
+        fail 'Self-test failed: valid file.'
 
-    self_broken=$self_base/broken.md
-    printf '# Broken\n\n[missing](./missing.md)\n' > "$self_broken"
+    printf '[missing](missing.md)\n' > "$self_root/broken.md"
     broken_code=0
-    broken_output=$(sh "$SCRIPT_PATH" check --path "$self_broken") || broken_code=$?
-    [ "$broken_code" -eq 1 ] && printf '%s' "$broken_output" | grep -q 'missing-local-target' ||
-        fail 'Self-test failed: missing target.'
+    broken_json=$(sh "$SCRIPT_PATH" check --path "$self_root/broken.md") || broken_code=$?
+    [ "$broken_code" -eq 1 ] && printf '%s' "$broken_json" | grep -q '"type":"missing-link"' ||
+        fail 'Self-test failed: missing local link.'
 
-    self_unclosed=$self_base/unclosed.md
-    printf '# Unclosed\n\n```text\ncontent\n' > "$self_unclosed"
-    unclosed_code=0
-    unclosed_output=$(sh "$SCRIPT_PATH" check --path "$self_unclosed") || unclosed_code=$?
-    [ "$unclosed_code" -eq 1 ] && printf '%s' "$unclosed_output" | grep -q 'unclosed-fence' ||
+    printf '%s\n' '```text' 'unclosed' > "$self_root/fence.md"
+    fence_code=0
+    fence_json=$(sh "$SCRIPT_PATH" check --path "$self_root/fence.md") || fence_code=$?
+    [ "$fence_code" -eq 1 ] && printf '%s' "$fence_json" | grep -q '"type":"unclosed-fence"' ||
         fail 'Self-test failed: unclosed fence.'
 
-    self_remote=$self_base/remote.md
-    printf '# Remote\n\n[web](https://example.com) [anchor](#part)\n' > "$self_remote"
-    sh "$SCRIPT_PATH" check --path "$self_remote" >/dev/null ||
-        fail 'Self-test failed: remote and fragment ignored.'
+    printf 'TODO-02：first\n\n## TODO-02：second\n' > "$self_root/todo.md"
+    todo_code=0
+    todo_json=$(sh "$SCRIPT_PATH" check --path "$self_root/todo.md") || todo_code=$?
+    [ "$todo_code" -eq 1 ] && printf '%s' "$todo_json" | grep -q '"type":"duplicate-todo"' ||
+        fail 'Self-test failed: duplicate todo.'
+
+    printf '版本 `v1`，范围 10～20 个，ID 123e4567-e89b-12d3-a456-426614174000。\n' > "$self_root/source.md"
+    printf '版本 `v2`，范围 10 个。\n' > "$self_root/output.md"
+    compare_json=$(sh "$SCRIPT_PATH" compare --source "$self_root/source.md" --output "$self_root/output.md") ||
+        fail 'Self-test failed: literal comparison.'
+    printf '%s' "$compare_json" | grep -q '"review_required":true' ||
+        fail 'Self-test failed: literal comparison.'
+
+    recursive_code=0
+    recursive_json=$(sh "$SCRIPT_PATH" check --path "$self_root") || recursive_code=$?
+    [ "$recursive_code" -eq 1 ] && printf '%s' "$recursive_json" | grep -q '"files_checked":7' ||
+        fail 'Self-test failed: unicode directory recursion.'
 
     runtime=$(uname -s 2>/dev/null || printf unknown)
     runtime_json=$(json_escape "$runtime")
-    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":5,"checks":[{"name":"valid document","passed":true},{"name":"directory unicode and spaces","passed":true},{"name":"missing target","passed":true},{"name":"unclosed fence","passed":true},{"name":"remote and fragment ignored","passed":true}]}\n' "$runtime_json"
+    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":6,"checks":[{"name":"valid file","passed":true},{"name":"missing local link","passed":true},{"name":"unclosed fence","passed":true},{"name":"duplicate todo","passed":true},{"name":"literal comparison","passed":true},{"name":"unicode directory recursion","passed":true}]}\n' "$runtime_json"
 }
 
 if [ "$COMMAND" = self-test ]; then
@@ -222,5 +440,23 @@ if [ "$COMMAND" = self-test ]; then
     exit 0
 fi
 
-check_path
-exit $?
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lightning-guard-run.XXXXXX") ||
+    fail 'Cannot create working directory.'
+cleanup_work() {
+    rm -rf "$WORK_DIR"
+}
+trap cleanup_work 0 HUP INT TERM
+
+case "$COMMAND" in
+    check)
+        [ -n "$PATH_ARG" ] || fail 'Missing required argument: --path'
+        run_check "$(absolute_path "$PATH_ARG")"
+        exit $?
+        ;;
+    compare)
+        [ -n "$SOURCE" ] || fail 'Missing required argument: --source'
+        [ -n "$OUTPUT" ] || fail 'Missing required argument: --output'
+        run_compare "$(absolute_path "$SOURCE")" "$(absolute_path "$OUTPUT")"
+        exit $?
+        ;;
+esac

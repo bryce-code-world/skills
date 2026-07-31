@@ -280,9 +280,9 @@ TODO-01：确认失败重试次数。
 
 外部 Skill 不能决定是否需要图示，也不能覆盖本 Skill 的质量优先级。
 
-## 检查 Markdown 结构完整性
+## 检查 Markdown 机械完整性
 
-创建或修改本地 Markdown 文件后，使用当前系统的原生检查器：
+创建或修改本地 Markdown 文件后，先读取 [markdown-check-contract.md](references/markdown-check-contract.md)，再使用当前系统的原生检查器：
 
 - Windows：[check_markdown.ps1](scripts/check_markdown.ps1)
 - Linux、macOS：[check_markdown.sh](scripts/check_markdown.sh)
@@ -297,11 +297,17 @@ Linux / macOS:
 sh scripts/check_markdown.sh check --path <file-or-directory>
 ```
 
-检查器递归检查 Markdown 文件中的未闭合代码围栏和不存在的相对本地链接。外部链接、文内锚点、绝对路径和代码围栏内的示例不检查。
+`check` 递归检查未闭合代码围栏、不存在的本地链接和重复定义的 `TODO-NN`。
 
-退出码为：`0` 通过，`1` 发现结构问题，`2` 参数或文件操作失败。
+原始材料包含 UUID、数字、代码标识、路径或精确枚举时，再运行：
 
-检查器只负责机械完整性，不能替代来源账本、事实核对、未知管理、去重和理解成本判断。原生检查器不可用时，使用 Agent 文件工具完成同样的只读检查，不因此跳过语义验收。
+```text
+compare --source <source-file> --output <markdown-file>
+```
+
+逐项复核 `source_only` 和 `output_only`，但不要把字面量差异直接判为事实错误。
+
+检查器只负责机械完整性，不能替代来源账本、事实核对、未知管理、去重和理解成本判断。原生检查器不可用时，使用 Agent 文件工具完成同样的只读检查；没有对应工具时说明未执行，不得声称已经通过。
 
 ## 验收
 
