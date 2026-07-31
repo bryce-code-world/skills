@@ -280,6 +280,29 @@ TODO-01：确认失败重试次数。
 
 外部 Skill 不能决定是否需要图示，也不能覆盖本 Skill 的质量优先级。
 
+## 检查 Markdown 结构完整性
+
+创建或修改本地 Markdown 文件后，使用当前系统的原生检查器：
+
+- Windows：[check_markdown.ps1](scripts/check_markdown.ps1)
+- Linux、macOS：[check_markdown.sh](scripts/check_markdown.sh)
+
+基本调用：
+
+```text
+Windows:
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_markdown.ps1 check --path <file-or-directory>
+
+Linux / macOS:
+sh scripts/check_markdown.sh check --path <file-or-directory>
+```
+
+检查器递归检查 Markdown 文件中的未闭合代码围栏和不存在的相对本地链接。外部链接、文内锚点、绝对路径和代码围栏内的示例不检查。
+
+退出码为：`0` 通过，`1` 发现结构问题，`2` 参数或文件操作失败。
+
+检查器只负责机械完整性，不能替代来源账本、事实核对、未知管理、去重和理解成本判断。原生检查器不可用时，使用 Agent 文件工具完成同样的只读检查，不因此跳过语义验收。
+
 ## 验收
 
 每次交付前检查：

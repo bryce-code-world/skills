@@ -17,6 +17,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | Skill | Purpose |
 |---|---|
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
+| [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 
 ## Installation
 
@@ -28,6 +29,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 ```
 
 You can also copy the `lightning` directory into your local skills directory.
+
+For Writing Style, replace the link or directory name with `writing-style`.
 
 ## Lightning
 
@@ -48,6 +51,23 @@ Example:
 
 ```text
 Use $lightning to restructure this internal document.
+```
+
+## Writing Style
+
+Use it for:
+
+- Extracting your own or another author's high-level style from conversations or writing samples.
+- Managing multiple named personal profiles and one default profile.
+- Selecting a main style and scene-appropriate tone.
+- Applying style and checking consistency across platforms.
+
+It does not silently learn or change profiles, impersonate reference authors, invent experiences, or alter facts for style.
+
+Example:
+
+```text
+Use $writing-style to extract my personal style from these articles. Show the candidate profile and wait for confirmation before saving it.
 ```
 
 ## License
