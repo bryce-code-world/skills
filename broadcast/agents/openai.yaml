@@ -1,0 +1,4 @@
+interface:
+  display_name: "广播"
+  short_description: "把清晰内容转为适合公众号、知乎和小红书公开传播的大众图文"
+  default_prompt: "使用 $broadcast 把这份清晰内容转为适合目标平台、准确且有传播力的大众图文。"

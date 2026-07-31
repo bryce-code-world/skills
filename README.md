@@ -18,6 +18,7 @@
 |---|---|
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容转为适合公众号、知乎和小红书的大众图文，并可交接给 Wechatsync 保存草稿。 |
 
 ## 安装
 
@@ -31,6 +32,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 也可以把 `lightning` 目录复制到本地 Skill 目录。
 
 安装声纹时，将链接或目录名替换为 `writing-style`。
+
+安装广播时，将链接或目录名替换为 `broadcast`。
 
 ## 闪电
 
@@ -68,6 +71,23 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 ```text
 使用 $writing-style 从这些文章提炼我的个人风格，先展示候选档案，确认后再保存。
+```
+
+## 广播
+
+适用于：
+
+- 从同一内容内核生成公众号标准文章或小绿书。
+- 生成知乎回答或文章。
+- 生成小红书短文图卡或长文图卡。
+- 在获得明确授权后，把验收通过的发布包交给官方 Wechatsync 保存草稿。
+
+广播保护事实、观点、条件和不确定性，默认不连接账号、不投递草稿，也不公开发布。
+
+使用示例：
+
+```text
+使用 $broadcast 把这份内容转成公众号标准文章和小红书长文图卡。
 ```
 
 ## License

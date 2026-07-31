@@ -18,6 +18,7 @@ This repository follows the standard `SKILL.md` directory structure.
 |---|---|
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
+| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into public posts for WeChat, Zhihu, and Xiaohongshu, with optional draft handoff to Wechatsync. |
 
 ## Installation
 
@@ -31,6 +32,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 You can also copy the `lightning` directory into your local skills directory.
 
 For Writing Style, replace the link or directory name with `writing-style`.
+
+For Broadcast, replace the link or directory name with `broadcast`.
 
 ## Lightning
 
@@ -68,6 +71,23 @@ Example:
 
 ```text
 Use $writing-style to extract my personal style from these articles. Show the candidate profile and wait for confirmation before saving it.
+```
+
+## Broadcast
+
+Use it for:
+
+- Creating standard WeChat articles or card-based WeChat posts from one content kernel.
+- Creating Zhihu answers or standalone articles.
+- Creating short or long Xiaohongshu card posts.
+- Handing an accepted publishing package to the official Wechatsync adapter after explicit authorization.
+
+It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
+
+Example:
+
+```text
+Use $broadcast to turn this content into a standard WeChat article and a long Xiaohongshu card post.
 ```
 
 ## License
