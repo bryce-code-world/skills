@@ -42,7 +42,7 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "broadcast": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "last_check_attempt": "2026-07-31T00:00:00Z",
       "last_check_result": "current"
     }
@@ -73,9 +73,7 @@ SKILL_DEPENDENCY_HOME 已设置：
 |---|---|---|---|
 | `lightning` | 输入仍然零散、冲突或缺少清晰内容内核 | `https://github.com/bryce-code-world/skills/tree/main/lightning` | 人工建立来源账本；事实仍不清楚时停止转译 |
 | `writing-style` | 需要选择、提炼、应用或验收个人与参照风格 | `https://github.com/bryce-code-world/skills/tree/main/writing-style` | 使用“广播”通用默认风格 |
-| `baoyu-article-illustrator` | 用户要求文章插图 | `https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-article-illustrator` | 交付插图规格 |
-| `baoyu-xhs-images` | 用户要求渲染小红书图卡 | `https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-xhs-images` | 交付逐卡内容与视觉规格 |
-| `baoyu-format-markdown` | 用户要求额外 Markdown 排版 | `https://github.com/JimLiu/baoyu-skills/tree/main/skills/baoyu-format-markdown` | 交付未额外美化的完整成稿 |
+| `imagegen` 或等价视觉能力 | 基础长文需要共享正文插图，或目标平台需要封面 | 当前 Agent 暴露的可用视觉 Skill | 交付准确视觉规格，并标记图文产物未完成 |
 | `wechatsync` | 用户已经明确要求投递，且发布包通过验收 | `https://github.com/wechatsync/Wechatsync/tree/v2/skills/wechatsync` | 交付人工发布包 |
 
 Wechatsync Skill 安装后，仍需用户分别完成 CLI、浏览器扩展、Token、平台登录和本次投递授权。
