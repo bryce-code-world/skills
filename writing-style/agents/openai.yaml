@@ -1,0 +1,4 @@
+interface:
+  display_name: "声纹"
+  short_description: "提炼、管理、选择并应用稳定可识别的个人图文表达风格"
+  default_prompt: "使用 $writing-style 从这些材料提炼风格，先展示候选档案，得到确认后再保存。"
