@@ -18,7 +18,7 @@
 |---|---|
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容转为适合公众号、知乎和小红书的大众图文，并可交接给 Wechatsync 保存草稿。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容写成图文完整的大众基础长文，再适配为公众号标准文章或知乎独立文章。 |
 
 ## 安装
 
@@ -83,17 +83,19 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 适用于：
 
-- 从同一内容内核生成公众号标准文章或小绿书。
-- 生成知乎回答或文章。
-- 生成小红书短文图卡或长文图卡。
+- 从同一内容内核生成平台中立的大众基础长文；
+- 生成公众号标准文章或知乎独立文章；
+- 按场景生成共享正文信息图和平台封面；
 - 在获得明确授权后，把验收通过的发布包交给官方 Wechatsync 保存草稿。
 
 广播保护事实、观点、条件和不确定性，默认不连接账号、不投递草稿，也不公开发布。
 
+视觉任务按需依赖 Anthropic 的 `frontend-design` 与 `canvas-design`：前者负责精确结构和文字型信息图，后者负责概念视觉与平台封面。需要写实或复杂位图素材时再调用 `imagegen`。
+
 使用示例：
 
 ```text
-使用 $broadcast 把这份内容转成公众号标准文章和小红书长文图卡。
+使用 $broadcast 把这份内容写成完整的大众基础长文，并生成公众号标准文章和知乎文章。
 ```
 
 ## License

@@ -18,7 +18,7 @@ This repository follows the standard `SKILL.md` directory structure.
 |---|---|
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into public posts for WeChat, Zhihu, and Xiaohongshu, with optional draft handoff to Wechatsync. |
+| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat or Zhihu. |
 
 ## Installation
 
@@ -83,17 +83,19 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
-- Creating standard WeChat articles or card-based WeChat posts from one content kernel.
-- Creating Zhihu answers or standalone articles.
-- Creating short or long Xiaohongshu card posts.
+- Creating a platform-neutral longform base article from one content kernel.
+- Creating standard WeChat articles or standalone Zhihu articles.
+- Generating shared body infographics and platform covers according to the visual task.
 - Handing an accepted publishing package to the official Wechatsync adapter after explicit authorization.
 
 It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
 
+Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-design`: the former handles precise structured and text-led infographics, while the latter handles conceptual visuals and platform covers. Use `imagegen` only when the chosen direction needs realistic or complex bitmap assets.
+
 Example:
 
 ```text
-Use $broadcast to turn this content into a standard WeChat article and a long Xiaohongshu card post.
+Use $broadcast to turn this content into a complete longform base article, a standard WeChat article, and a standalone Zhihu article.
 ```
 
 ## License

@@ -1,4 +1,4 @@
 interface:
   display_name: "广播"
-  short_description: "把清晰内容写成大众基础长文，并适配公众号和知乎文章"
-  default_prompt: "使用 $broadcast 将这份清晰内容写成完整的大众基础长文，并生成带格式的公众号或知乎文章。"
+  short_description: "生成含专业视觉的大众基础长文，并适配公众号和知乎"
+  default_prompt: "使用 $broadcast 将这份清晰内容写成图文完整的大众基础长文，按场景生成正文信息图和平台封面，并输出带格式的公众号或知乎文章。"

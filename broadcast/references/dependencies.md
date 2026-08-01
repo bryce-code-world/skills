@@ -42,7 +42,7 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "broadcast": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "last_check_attempt": "2026-07-31T00:00:00Z",
       "last_check_result": "current"
     }
@@ -73,7 +73,9 @@ SKILL_DEPENDENCY_HOME 已设置：
 |---|---|---|---|
 | `lightning` | 输入仍然零散、冲突或缺少清晰内容内核 | `https://github.com/bryce-code-world/skills/tree/main/lightning` | 人工建立来源账本；事实仍不清楚时停止转译 |
 | `writing-style` | 需要选择、提炼、应用或验收个人与参照风格 | `https://github.com/bryce-code-world/skills/tree/main/writing-style` | 使用“广播”通用默认风格 |
-| `imagegen` 或等价视觉能力 | 基础长文需要共享正文插图，或目标平台需要封面 | 当前 Agent 暴露的可用视觉 Skill | 交付准确视觉规格，并标记图文产物未完成 |
+| `frontend-design` | 图片需要精确表达对比、流程、因果、层级、连续谱、框架、数据或中文文字 | `https://github.com/anthropics/skills/tree/main/skills/frontend-design` | 交付准确视觉规格，不用艺术图替代结构图，并标记对应图文产物未完成 |
+| `canvas-design` | 图片需要平台封面、概念视觉、编辑插画、视觉隐喻或鲜明艺术方向 | `https://github.com/anthropics/skills/tree/main/skills/canvas-design` | 任务允许时降级为 `frontend-design` 文字型封面或 `imagegen` 概念位图，并明确记录降级 |
+| `imagegen` 或等价位图能力 | 已确定的视觉方向需要照片、写实场景、复杂插画或纹理素材 | 当前 Agent 暴露的可用视觉 Skill | 继续生成代码视觉；只有依赖位图素材的产物标记为未完成 |
 | `wechatsync` | 用户已经明确要求投递，且发布包通过验收 | `https://github.com/wechatsync/Wechatsync/tree/v2/skills/wechatsync` | 交付人工发布包 |
 
 Wechatsync Skill 安装后，仍需用户分别完成 CLI、浏览器扩展、Token、平台登录和本次投递授权。
