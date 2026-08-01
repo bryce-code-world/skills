@@ -44,7 +44,7 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "writing-style": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "last_check_attempt": "2026-07-31T00:00:00Z",
       "last_check_result": "current"
     }
