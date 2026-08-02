@@ -16,6 +16,7 @@ This repository follows the standard `SKILL.md` directory structure.
 
 | Skill | Purpose |
 |---|---|
+| [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat or Zhihu. |
@@ -31,15 +32,34 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 You can also copy the `lightning` directory into your local skills directory.
 
+For Hello, replace the link or directory name with `hello`.
+
 For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
 
-The three skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
+The four skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
 
 Each skill checks for its own updates at most once every 24 hours. The check does not block the current task, and an update still requires confirmation.
 
 Every skill release must also bump the semantic version in its `references/release.json`.
+
+## Hello
+
+Use it for:
+
+- Building a personal context baseline through phased interviews.
+- Staging durable personal experiences and real-life changes discovered in ordinary conversations.
+- Reviewing candidates and updating a traceable personal context profile.
+- Generating the minimum necessary background for a new AI or a specific task.
+
+Candidates go only to a pending area by default. They cannot enter the authoritative profile without item-by-item review and confirmation.
+
+Example:
+
+```text
+Use $hello to build my personal context profile through an ongoing interview.
+```
 
 ## Lightning
 
