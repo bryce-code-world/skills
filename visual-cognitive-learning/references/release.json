@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill": "visual-cognitive-learning",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "source": "https://github.com/bryce-code-world/skills",
   "ref": "main",
   "path": "visual-cognitive-learning"
