@@ -1,4 +1,4 @@
 interface:
   display_name: "可视化认知学习"
-  short_description: "把复杂关系和演化过程转成可交互的离线单文件 HTML"
-  default_prompt: "使用 $visual-cognitive-learning 把这个主题的关键关系或演化过程转成可交互、可离线打开的单文件 HTML 学习模型。"
+  short_description: "把复杂关系转成先引导理解、再展示全貌的离线 HTML"
+  default_prompt: "使用 $visual-cognitive-learning 把这个主题转成强引导学习、完成后可查看全局关系的离线单文件 HTML。"
