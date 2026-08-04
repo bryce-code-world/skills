@@ -18,6 +18,7 @@ This repository follows the standard `SKILL.md` directory structure.
 |---|---|
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
+| [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat or Zhihu. |
 
@@ -34,11 +35,13 @@ You can also copy the `lightning` directory into your local skills directory.
 
 For Hello, replace the link or directory name with `hello`.
 
+For Visual Cognitive Learning, replace the link or directory name with `visual-cognitive-learning`.
+
 For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
 
-The four skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
+The five skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
 
 Each skill checks for its own updates at most once every 24 hours. The check does not block the current task, and an update still requires confirmation.
 
@@ -80,6 +83,23 @@ Example:
 
 ```text
 Use $lightning to restructure this internal document.
+```
+
+## Visual Cognitive Learning
+
+Use it for:
+
+- Turning SOPs, business processes, state machines, and solution formation into guided learning models.
+- Showing how a complex subject evolved from a simple starting point into its current form.
+- Making formula parameters, causal propagation, physical mechanisms, and layered relationships observable and operable.
+- Guiding readers from one local question at a time to a final view of the whole relationship.
+
+The input should already be a clear source document. The output is one HTML file that opens offline. Interaction is added only when it improves understanding, and the skill does not invent facts or mechanisms missing from the source.
+
+Example:
+
+```text
+Use $visual-cognitive-learning to turn this software development SOP into an offline single-file HTML that teaches the flow step by step and reveals the whole process at the end.
 ```
 
 ## Writing Style

@@ -18,6 +18,7 @@
 |---|---|
 | [你好（hello）](./hello/SKILL.md) | 通过持续访谈和会话暂存，建立并维护用户掌控的个人全景档案。 |
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
+| [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
 | [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容写成图文完整的大众基础长文，再适配为公众号标准文章或知乎独立文章。 |
 
@@ -34,11 +35,13 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装你好时，将链接或目录名替换为 `hello`。
 
+安装可视化认知学习时，将链接或目录名替换为 `visual-cognitive-learning`。
+
 安装声纹时，将链接或目录名替换为 `writing-style`。
 
 安装广播时，将链接或目录名替换为 `broadcast`。
 
-四个 Skill 独立安装。只有当前任务实际需要某个缺失 Skill 时，才展示来源并请求一次安装确认；安装成功后不再询问。
+五个 Skill 独立安装。只有当前任务实际需要某个缺失 Skill 时，才展示来源并请求一次安装确认；安装成功后不再询问。
 
 每个 Skill 被触发时至多每 24 小时检查一次自身更新。检查不阻塞当前任务，发现新版本后仍需用户确认才会更新。
 
@@ -80,6 +83,23 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 ```text
 使用 $lightning 整理这份内部文档。
+```
+
+## 可视化认知学习
+
+适用于：
+
+- 把 SOP、业务流程、状态机和方案形成过程转成可逐步理解的学习模型。
+- 展示复杂事物从简单起点演化到当前形态的过程。
+- 让公式参数、因果传播、物理机制和层级关系变得可观察、可操控。
+- 从局部问题开始引导理解，完成后再查看全局关系。
+
+输入应是已经梳理清楚的主题文档。输出是可直接离线打开的单文件 HTML；交互只在有助于理解关系时使用，不补造来源没有说明的事实或机制。
+
+使用示例：
+
+```text
+使用 $visual-cognitive-learning 把这份软件开发 SOP 转成可逐步理解、完成后能查看全局流程的离线单文件 HTML。
 ```
 
 ## 声纹
