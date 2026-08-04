@@ -18,6 +18,7 @@ This repository follows the standard `SKILL.md` directory structure.
 |---|---|
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
+| [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat or Zhihu. |
@@ -35,13 +36,17 @@ You can also copy the `lightning` directory into your local skills directory.
 
 For Hello, replace the link or directory name with `hello`.
 
+For Architecture, replace the link or directory name with `architecture`.
+
 For Visual Cognitive Learning, replace the link or directory name with `visual-cognitive-learning`.
 
 For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
 
-The five skills install independently. A skill asks once before installing a missing dependency, and only when the current task actually needs it.
+The six skills install independently. Except for Architecture, a skill asks once before installing a missing dependency, and only when the current task actually needs it.
+
+Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
 Each skill checks for its own updates at most once every 24 hours. The check does not block the current task, and an update still requires confirmation.
 
@@ -83,6 +88,25 @@ Example:
 
 ```text
 Use $lightning to restructure this internal document.
+```
+
+## Architecture
+
+Use it for:
+
+- Enterprise product blueprints, platform capability maps, and business-to-technology architecture diagrams.
+- Layered systems, microservices, AI platforms, and data platforms.
+- Dense blueprints with cross-cutting sidebars, external dependencies, data planes, or infrastructure layers.
+- Interactive architecture models only when progressive exploration, evolution, or path focus improves understanding.
+
+The input should contain confirmed components, groups, relationships, and boundaries. Architecture first builds an internal diagram brief, then routes to the appropriate static layout, visual learning, or frontend design capability while enforcing offline icons, stable canvases, precise connectors, and browser validation.
+
+The output is one HTML file that opens directly through `file://`. Reference images guide visual direction only and never become architecture facts.
+
+Example:
+
+```text
+Use $architecture to turn this enterprise AI platform design into a trustworthy, clear, offline single-file HTML architecture diagram.
 ```
 
 ## Visual Cognitive Learning
