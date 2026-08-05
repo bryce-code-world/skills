@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat or Zhihu. |
+| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat, Zhihu, CSDN, or Juejin. |
 
 ## Installation
 
@@ -148,7 +148,9 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 Use it for:
 
 - Creating a platform-neutral longform base article from one content kernel.
-- Creating standard WeChat articles or standalone Zhihu articles.
+- Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
+- Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
+- Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
 - Generating shared body infographics and platform covers according to the visual task.
 - Handing an accepted publishing package to the official Wechatsync adapter after explicit authorization.
 
@@ -159,7 +161,7 @@ Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-d
 Example:
 
 ```text
-Use $broadcast to turn this content into a complete longform base article, a standard WeChat article, and a standalone Zhihu article.
+Use $broadcast to turn this technical content into a complete longform base article and separate WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## License

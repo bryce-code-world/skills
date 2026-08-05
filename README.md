@@ -21,7 +21,7 @@
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容写成图文完整的大众基础长文，再适配为公众号标准文章或知乎独立文章。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容写成图文完整的大众基础长文，再适配为公众号、知乎、CSDN 或掘金文章。 |
 
 ## 安装
 
@@ -148,7 +148,9 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 适用于：
 
 - 从同一内容内核生成平台中立的大众基础长文；
-- 生成公众号标准文章或知乎独立文章；
+- 生成公众号标准文章、知乎独立文章、CSDN 技术文章或掘金技术文章；
+- 对 CSDN 和掘金执行开发者内容准入门禁，不把无关内容强行同步到技术社区；
+- 在 CSDN 和掘金稿中保留必要、已脱敏且带环境和结果说明的代码块；
 - 按场景生成共享正文信息图和平台封面；
 - 在获得明确授权后，把验收通过的发布包交给官方 Wechatsync 保存草稿。
 
@@ -159,7 +161,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 使用示例：
 
 ```text
-使用 $broadcast 把这份内容写成完整的大众基础长文，并生成公众号标准文章和知乎文章。
+使用 $broadcast 把这份技术内容写成完整的大众基础长文，并分别生成公众号、知乎、CSDN 和掘金文章。
 ```
 
 ## License
