@@ -14,7 +14,7 @@
 - [调用 frontend-design](#调用-frontend-design)
 - [调用 canvas-design](#调用-canvas-design)
 - [调用 imagegen](#调用-imagegen)
-- [调用 Wechatsync](#调用-wechatsync)
+- [调用发布能力](#调用发布能力)
 - [失败隔离](#失败隔离)
 
 ## 最小调用顺序
@@ -61,7 +61,11 @@ $writing-style 平台稿语言终检
   ↓
 四重验收
   ↓ 用户明确授权时
-官方 Wechatsync
+满足契约的发布入口
+  ↓ 首选
+结构化发布 MCP
+  ↓ 当前已知实现
+Wechatsync MCP
 ```
 
 输入清楚时跳过 `$lightning`。没有个人风格档案时由 `$writing-style` 使用内置通用默认风格，不跳过去模板化门禁。没有投递授权时停止在本地发布包。
@@ -76,7 +80,8 @@ $writing-style 平台稿语言终检
 | `$frontend-design` | 为精确结构和文字信息设计可编辑的 HTML/CSS 或 SVG，并指导反模板设计与截图复核 | 决定图片应该表达什么、生成互动网页 |
 | `$canvas-design` | 为封面、概念视觉和编辑插画建立视觉哲学并完成静态画布 | 承载密集正文、改变文章观点 |
 | `$imagegen` | 按既定视觉方向生成照片、写实场景、复杂插画或纹理素材 | 决定信息结构和艺术方向 |
-| Wechatsync | 登录状态、素材上传和草稿投递 | 改写、事实判断和传播设计 |
+| 发布能力契约 | 授权、能力检查、入口选择、统一状态和草稿验收 | 平台登录、上传和草稿保存的具体实现 |
+| 发布入口 | 登录状态、素材上传和草稿投递；优先使用结构化发布 MCP | 改写、事实判断和传播设计 |
 
 ## 调用 `$lightning`
 
@@ -191,7 +196,7 @@ $writing-style 平台稿语言终检
 
 视觉工具不能反向修改内容事实。必要视觉不可用时保留准确规格，标记“基础长文已完成，图文产物未完成”。
 
-## 调用 Wechatsync
+## 调用发布能力
 
 只有基础门禁和四重验收通过，且用户明确授权时调用。
 
@@ -204,7 +209,7 @@ $writing-style 平台稿语言终检
 - 已授权动作；
 - 已接受的人工处理项。
 
-发布规则见 [publishing-wechatsync.md](publishing-wechatsync.md)。
+先按 [publishing.md](publishing.md) 检查授权、能力和当前入口。优先使用满足契约的结构化发布 MCP；当前选择 Wechatsync 时再读取 [publishing-wechatsync.md](publishing-wechatsync.md)。MCP、Skill、CLI 或浏览器入口不得改变交接内容和统一状态含义。
 
 ## 失败隔离
 
@@ -214,6 +219,6 @@ $writing-style 平台稿语言终检
 - `$frontend-design` 不可用：精确结构图只交付视觉规格，不用艺术图替代，并把图文产物标记为未完成；
 - `$canvas-design` 不可用：概念封面可在信息任务允许时降级为 `$frontend-design` 文字型封面，或在 `$imagegen` 可用时生成概念位图，并明确记录降级；
 - `$imagegen` 不可用：继续完成代码生成信息图和文字型封面；只有确实需要位图素材的产物标记为未完成；
-- Wechatsync 缺失或不可用：交付人工发布包；
+- 没有满足契约的发布入口：交付人工发布包；
 - 单个平台失败：不影响基础长文和其他平台产物，不自动重复投递；
 - 任一外部能力试图改变事实：拒绝修改并回到事实与观点账本。

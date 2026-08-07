@@ -42,7 +42,7 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "broadcast": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "2.5.1",
+      "version": "2.6.0",
       "last_check_attempt": "2026-07-31T00:00:00Z",
       "last_check_result": "current"
     }
@@ -69,13 +69,14 @@ SKILL_DEPENDENCY_HOME 已设置：
 
 ## 条件依赖
 
-| Skill | 触发条件 | 可信来源 | 降级 |
+| 能力或入口 | 触发条件 | 可信来源 | 降级 |
 |---|---|---|---|
 | `lightning` | 输入仍然零散、冲突或缺少清晰内容内核 | `https://github.com/bryce-code-world/skills/tree/main/lightning` | 人工建立来源账本；事实仍不清楚时停止转译 |
 | `writing-style` | 每次公开长文的风格说明、去模板化编辑和平台稿语言终检 | `https://github.com/bryce-code-world/skills/tree/main/writing-style` | 使用“广播”通用默认风格并执行同等人工门禁，明确记录降级 |
 | `frontend-design` | 图片需要精确表达对比、流程、因果、层级、连续谱、框架、数据或中文文字 | `https://github.com/anthropics/skills/tree/main/skills/frontend-design` | 交付准确视觉规格，不用艺术图替代结构图，并标记对应图文产物未完成 |
 | `canvas-design` | 图片需要平台封面、概念视觉、编辑插画、视觉隐喻或鲜明艺术方向 | `https://github.com/anthropics/skills/tree/main/skills/canvas-design` | 任务允许时降级为 `frontend-design` 文字型封面或 `imagegen` 概念位图，并明确记录降级 |
 | `imagegen` 或等价位图能力 | 已确定的视觉方向需要照片、写实场景、复杂插画或纹理素材 | 当前 Agent 暴露的可用视觉 Skill | 继续生成代码视觉；只有依赖位图素材的产物标记为未完成 |
-| `wechatsync` | 用户已经明确要求投递，且发布包通过验收 | `https://github.com/wechatsync/Wechatsync/tree/v2/skills/wechatsync` | 交付人工发布包 |
+| 满足 [publishing.md](publishing.md) 的结构化发布 MCP | 用户已经明确要求投递，且发布包通过验收 | 当前 Agent 已连接、供应者来源可核验且经过能力检查的发布 MCP；当前已知首选实现为官方 Wechatsync MCP | 检查下一个兼容入口 |
+| `wechatsync` | 没有可用发布 MCP，但用户已经明确要求投递且发布包通过验收 | `https://github.com/wechatsync/Wechatsync/tree/v2/skills/wechatsync` | 交付人工发布包 |
 
-Wechatsync Skill 安装后，仍需用户分别完成 CLI、浏览器扩展、Token、平台登录和本次投递授权。
+发布 MCP 或 Wechatsync Skill 可调用，不代表其依赖组件、Token 和平台登录已经可用。安装、连接、凭据、登录和本次投递仍需分别满足授权边界。

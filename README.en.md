@@ -152,7 +152,7 @@ Use it for:
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
 - Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
 - Generating shared body infographics and platform covers according to the visual task.
-- Handing an accepted publishing package to the official Wechatsync adapter after explicit authorization.
+- Handing an accepted publishing package to a currently available contract-compliant publisher after explicit authorization, preferring a structured publishing MCP.
 
 It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
 
