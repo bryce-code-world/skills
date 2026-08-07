@@ -8,6 +8,7 @@
 
 - [供应者边界](#供应者边界)
 - [选择官方入口](#选择官方入口)
+- [自动安装 MCP](#自动安装-mcp)
 - [发布前预检](#发布前预检)
 - [使用 CLI](#使用-cli)
 - [使用 MCP](#使用-mcp)
@@ -35,16 +36,29 @@ Wechatsync 当前只作为可选发布实现，不是 `broadcast` 的内容依�
 使用当前环境已经可用、最直接的官方入口：
 
 1. 已连接的 Wechatsync MCP；
-2. 已安装的官方 Wechatsync Skill；
-3. 已安装且依赖组件已经连接的 Wechatsync CLI；
+2. MCP 未安装时，自动触发下述官方 MCP 安装和重新发现；
+3. MCP 安装失败或重载后仍不可用时，在已安装的官方 Wechatsync Skill 与依赖组件已连接的 Wechatsync CLI 中选择当前最直接、满足契约的入口；
 4. 用户可操作的 Wechatsync 浏览器扩展；
 5. 无可用入口时，交付人工发布包。
 
 不要仅凭文件存在就声称入口可用。必须实际检查命令、工具连接和平台登录状态。
 
-用户已经明确要求投递，但所选入口缺失时，按 [dependencies.md](dependencies.md) 展示准确来源并单独请求安装或配置确认。
+发布 MCP 缺失时直接进入下述自动安装流程。Skill、CLI、浏览器扩展或其他组件缺失时，按 [dependencies.md](dependencies.md) 处理各自安装或配置边界；MCP 自动安装授权不覆盖这些组件。
 
-该确认只允许对应的安装或配置动作。浏览器扩展、Token、平台登录和本次投递继续分别确认。
+## 自动安装 MCP
+
+用户已经明确要求投递且当前没有可用发布 MCP 时，按 [publishing.md](publishing.md) 自动触发官方 Wechatsync MCP 安装，不再单独请求一次 MCP 安装确认。
+
+按当前官方文档，Wechatsync MCP 不是可以凭空假设存在的通用 `npx` 包。优先调用宿主提供的官方 MCP 插件、安装或连接能力；没有这种入口时，才执行以下受控流程：
+
+1. 从 [Wechatsync 官方仓库](https://github.com/wechatsync/Wechatsync) 取得明确版本或提交，核对许可、README、Node.js 与 pnpm 等运行要求；
+2. 按官方流程构建项目，确认 `packages/mcp-server/dist/index.js` 实际生成；
+3. 在当前 MCP 客户端中注册由 `node` 启动的上述绝对路径，保留客户端现有其他 Server 配置；
+4. 不把真实 `MCP_TOKEN` 写入 Skill、发布包、安装记录或示例；需要 Token 时触发用户通过宿主安全入口配置；
+5. 重新发现工具，并至少确认 `list_platforms`、`check_auth` 和 `sync_article` 的当前 schema；
+6. 当前会话不能热加载时标记“已安装待重载”，不继续投递，也不把安装文件存在写成 MCP 已连接。
+
+不得编造 `@wechatsync/mcp`、`wechatsync-mcp` 或其他官方文档没有声明的包名。不得为了完成自动安装覆盖整个 MCP 客户端配置、安装浏览器扩展、生成 Token 或代替用户登录平台。
 
 ## 发布前预检
 
@@ -60,7 +74,7 @@ Wechatsync 当前只作为可选发布实现，不是 `broadcast` 的内容依�
 
 ## 使用 CLI
 
-只有 CLI 已安装、扩展已连接、Token 已由用户配置且用户授权时才运行。
+只有 CLI 命令真实可用、扩展已连接、Token 已由用户配置、目标平台已登录且用户授权时才运行。仅命令存在不算 CLI 可用。
 
 先检查：
 
@@ -118,4 +132,4 @@ Wechatsync 返回成功不能替代 [publishing.md](publishing.md) 的真实草�
 
 ## 降级
 
-MCP 不可用时按顺序检查官方 Skill 和 CLI。所有 Wechatsync 入口都不可用或不满足通用契约时，交付人工发布包，不用通用浏览器自动化复刻批量发布流程。
+MCP 缺失时先执行自动安装和重新发现。原生安装与官方受控安装都不可执行、安装失败或重载后仍不可用时，在官方 Skill 和 CLI 中选择当前已知满足契约且最直接的入口。所有 Wechatsync 入口都不可用或不满足通用契约时，交付人工发布包，不用通用浏览器自动化复刻批量发布流程。

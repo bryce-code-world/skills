@@ -64,8 +64,12 @@ $writing-style 平台稿语言终检
 满足契约的发布入口
   ↓ 首选
 结构化发布 MCP
+  ↓ 未连接时
+自动安装可信首选 MCP → 重新发现工具
   ↓ 当前已知实现
 Wechatsync MCP
+  ↓ 安装失败后
+Wechatsync Skill / CLI → 人工发布包
 ```
 
 输入清楚时跳过 `$lightning`。没有个人风格档案时由 `$writing-style` 使用内置通用默认风格，不跳过去模板化门禁。没有投递授权时停止在本地发布包。
@@ -209,7 +213,9 @@ Wechatsync MCP
 - 已授权动作；
 - 已接受的人工处理项。
 
-先按 [publishing.md](publishing.md) 检查授权、能力和当前入口。优先使用满足契约的结构化发布 MCP；当前选择 Wechatsync 时再读取 [publishing-wechatsync.md](publishing-wechatsync.md)。MCP、Skill、CLI 或浏览器入口不得改变交接内容和统一状态含义。
+先按 [publishing.md](publishing.md) 检查授权、能力和当前入口。优先使用满足契约的结构化发布 MCP；没有已连接的发布 MCP 时，自动触发可信首选 MCP 的安装、重新发现和能力检查。当前选择 Wechatsync 时再读取 [publishing-wechatsync.md](publishing-wechatsync.md)。原生安装与供应者官方受控安装都不可执行、安装失败或重载后仍不可用时，才在 Wechatsync Skill/CLI 中选择当前最直接且满足契约的入口。MCP、Skill、CLI 或浏览器入口不得改变交接内容和统一状态含义。
+
+明确投递请求同时授权本次可信发布 MCP 安装，不重复询问。宿主要求展示安装授权界面时主动触发并等待；当前会话需要重载时以“已安装待重载”停止，不把安装完成写成已经连接。该授权不覆盖扩展、Token、账号登录和公开发布。
 
 ## 失败隔离
 
@@ -219,6 +225,7 @@ Wechatsync MCP
 - `$frontend-design` 不可用：精确结构图只交付视觉规格，不用艺术图替代，并把图文产物标记为未完成；
 - `$canvas-design` 不可用：概念封面可在信息任务允许时降级为 `$frontend-design` 文字型封面，或在 `$imagegen` 可用时生成概念位图，并明确记录降级；
 - `$imagegen` 不可用：继续完成代码生成信息图和文字型封面；只有确实需要位图素材的产物标记为未完成；
-- 没有满足契约的发布入口：交付人工发布包；
+- 发布 MCP 缺失：自动触发可信首选 MCP 安装并重新发现工具；
+- 原生安装与供应者官方受控安装都不可执行、安装失败或重载后仍不可用：在 Wechatsync Skill/CLI 中选择当前最直接且满足契约的入口，仍无入口时交付人工发布包；
 - 单个平台失败：不影响基础长文和其他平台产物，不自动重复投递；
 - 任一外部能力试图改变事实：拒绝修改并回到事实与观点账本。
