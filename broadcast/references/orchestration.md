@@ -218,7 +218,7 @@ publisher_wechat / publisher_zhihu / publisher_csdn / publisher_juejin
 
 先按 [publishing.md](publishing.md) 检查授权、能力和当前入口，再读取 [publishing-playwright.md](publishing-playwright.md)。只调用目标平台的 `publisher_*` 实例；实例缺失时自动安装官方 Playwright MCP、注册独立 Profile 并重新发现工具。安装、启动、登录或当前页面适配失败时交付人工发布包，不自动切回扩展、Token、CLI 或 WebSocket 桥接。入口变化不得改变交接内容和统一状态含义。
 
-明确投递请求同时授权本次官方 Playwright MCP 安装、四实例注册和仓库外 Profile 目录创建，不重复询问。宿主要求展示安装授权界面时主动触发并等待；当前会话需要重载时以“已安装待重载”停止，不把配置完成写成已经连接。该授权不覆盖读取日常浏览器 Profile、首次账号登录和公开发布。
+明确投递请求同时授权本次官方 Playwright MCP 安装、四实例注册，以及在用户指定或项目已经声明的登录缓存根目录中创建 Profile，不重复询问。两处都没有给出根目录时，注册前只询问一次。目录位于 Git 工作区时先加入精确忽略规则。宿主要求展示安装授权界面时主动触发并等待；当前会话需要重载时以“已安装待重载”停止，不把配置完成写成已经连接。该授权不覆盖读取日常浏览器 Profile、首次账号登录和公开发布。
 
 ## 失败隔离
 

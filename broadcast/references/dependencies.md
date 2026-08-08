@@ -11,7 +11,7 @@
 5. 安装后执行 Skill 结构校验。当前会话仍未发现时，本轮降级并说明下一轮可用。
 6. 用户拒绝或安装失败时执行表中的降级方案。
 
-上述 Skill 依赖的安装确认、账号连接、素材上传、保存草稿和公开发布是相互独立的授权。发布 MCP 是唯一例外：用户明确要求投递时，该请求同时授权本次官方 Playwright MCP 的安装、四个平台实例注册和仓库外 Profile 目录创建；首次登录和公开发布仍不随之授权。
+上述 Skill 依赖的安装确认、账号连接、素材上传、保存草稿和公开发布是相互独立的授权。发布 MCP 是唯一例外：用户明确要求投递时，该请求同时授权本次官方 Playwright MCP 的安装、四个平台实例注册，以及在用户指定或项目已经声明的登录缓存根目录中创建 Profile；首次登录和公开发布仍不随之授权。
 
 系统 `$skill-installer` 不可用时，只报告准确安装地址和降级方案，不临时发明安装命令。
 
@@ -21,7 +21,7 @@
 
 1. 优先调用宿主原生 MCP 安装、插件或连接能力。
 2. 宿主没有原生能力时，按当前客户端真实配置格式注册 `publisher_wechat`、`publisher_zhihu`、`publisher_csdn` 和 `publisher_juejin`。
-3. 安装前核对 Microsoft 官方来源、Apache-2.0 许可、固定包版本、Node.js 运行时、客户端配置位置和仓库外 Profile 根目录。
+3. 安装前核对 Microsoft 官方来源、Apache-2.0 许可、固定包版本、Node.js 运行时、客户端配置位置、Profile 根目录来源和 Git 忽略状态。
 4. 只新增缺失节点，不覆盖其他 Server 配置；不写入 Cookie、Token、验证码或平台凭据。
 5. 安装后重新发现工具并逐实例检查 schema；需要重载时标记“已安装待重载”，本轮不继续投递。
 6. 安装、注册或启动失败时交付人工发布包，不自动切换到扩展、Token、CLI 或 WebSocket 桥接。
@@ -53,7 +53,7 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "broadcast": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "2.9.0",
+      "version": "2.10.0",
       "last_check_attempt": "2026-08-08T00:00:00Z",
       "last_check_result": "current"
     }

@@ -6,7 +6,7 @@
 
 没有明确投递要求时，停止在本地发布包：不连接账号、不打开平台后台、不上传素材、不保存草稿、不公开发布。
 
-用户明确要求投递，同时授权为本次任务自动安装和注册来源可核验的官方 Playwright MCP。该授权只覆盖 MCP Server、客户端注册、平台专属 Profile 目录和工具重新发现；不覆盖读取日常浏览器 Profile、代替用户完成首次登录或公开发布。
+用户明确要求投递，同时授权为本次任务自动安装和注册来源可核验的官方 Playwright MCP。该授权只覆盖 MCP Server、客户端注册、在用户指定或项目已经声明的登录缓存根目录中创建平台专属 Profile，以及工具重新发现；不覆盖读取日常浏览器 Profile、代替用户完成首次登录或公开发布。
 
 ## 支持范围
 
@@ -37,7 +37,7 @@
 1. 只调用目标平台的专属 Playwright MCP 实例：`publisher_wechat`、`publisher_zhihu`、`publisher_csdn` 或 `publisher_juejin`。
 2. 实例缺失时，按 [publishing-playwright.md](publishing-playwright.md) 自动安装官方包并注册四个独立实例，不重复请求安装确认。
 3. 安装后重新发现工具并检查来源、固定版本、真实 schema、启动状态与 Profile 路径。需要宿主重载时停止在“已安装待重载”。
-4. 官方 Playwright MCP 无法安装、连接或可靠操作当前页面时，交付人工发布包；不自动切换到浏览器扩展、Wechatsync Token、CLI 或 WebSocket 桥接。
+4. 官方 Playwright MCP 无法安装、连接或可靠操作当前页面时，交付人工发布包；不自动切换到其他浏览器扩展、Token、CLI 或 WebSocket 桥接。
 
 ## 单平台投递流程
 
@@ -78,7 +78,7 @@ MCP 调用成功、页面点击成功和编辑器出现内容都不等于“已�
 
 ## 安全与并发
 
-- Profile 目录必须位于仓库外，不得进入 Git、发布包或日志。
+- Profile 根目录必须由用户指定或由项目明确声明，并专用于发布登录态；位于 Git 工作区时必须在首次启动浏览器前加入精确忽略规则。Profile 内容不得进入 Git、发布包或日志。
 - 不读取或复用用户日常 Chrome、Edge Profile，不复制 Cookie，不要求账号密码。
 - 四个平台各用一个独立 Profile；同一 Profile 同时只允许一个 MCP 浏览器实例。
 - 发现同平台 Profile 被占用时等待或停止，不结束未知会话、不删除锁文件、不创建第二份重复草稿。
@@ -98,5 +98,3 @@ MCP 调用成功、页面点击成功和编辑器出现内容都不等于“已�
 | 草稿已保存但格式不合格 | 保留草稿，修正源稿或渲染方式后覆盖同一草稿，不创建重复草稿 |
 | 某个平台失败 | 保留该平台准确状态，继续处理不依赖它的其他平台 |
 | 所有入口不可用 | 交付完整人工发布包 |
-
-旧 Wechatsync 链路只保留在 [publishing-wechatsync.md](publishing-wechatsync.md) 作为历史与迁移说明，不属于默认路由。

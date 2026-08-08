@@ -5,7 +5,7 @@
 ## 为什么采用四个实例
 
 - 微信公众号网页后台不需要个人用户申请 AppID、AppSecret 或配置 IP 白名单；
-- 不依赖 Wechatsync 浏览器扩展、Token、WebSocket 端口和当前 Chrome 标签页；
+- 不依赖浏览器扩展、Token、WebSocket 端口和当前 Chrome 标签页；
 - 首次登录后，Cookie、IndexedDB 和站点权限随专属 Profile 跨会话保留；
 - 平台之间互不共享账号状态，一个平台失效不会污染其他平台；
 - MCP 暴露当前页面结构，Agent 可以在页面变化后重新定位字段，不依赖长期硬编码选择器。
@@ -26,18 +26,23 @@
 
 ## Profile 布局
 
-安装时在仓库外选择本机绝对路径，建议布局：
+Profile 根目录按以下优先级确定：
+
+1. 用户在本次请求中指定的目录；
+2. 当前项目已经声明的渠道登录缓存目录；
+3. 两者都不存在时，在注册 MCP 前只询问一次用户。
+
+根目录使用本机绝对路径，布局固定为：
 
 ~~~text
-<local-app-data>/broadcast-publisher/
-└── profiles/
-    ├── wechat/
-    ├── zhihu/
-    ├── csdn/
-    └── juejin/
+<user-selected-cache-root>/
+├── wechat/
+├── zhihu/
+├── csdn/
+└── juejin/
 ~~~
 
-不要把目录建在 `E:\agent`、文章发布包或任何 Git 仓库内，也不要指向用户日常 Chrome 或 Edge 的 User Data 目录。
+目录必须专用于渠道登录缓存，不能指向用户日常 Chrome 或 Edge 的 User Data。根目录位于 Git 工作区时，必须在首次启动浏览器前加入只匹配该目录的忽略规则；Profile 内容不能进入 Git、文章发布包或日志。当前工作区已经声明的根目录是 `E:\agent\自媒体文章\渠道登录缓存`。
 
 一个持久化 Profile 同时只能被一个浏览器实例使用。四个平台可以使用不同 Profile 并行打开，但同一平台不得由多个会话并发操作。
 
@@ -48,19 +53,19 @@
 ~~~toml
 [mcp_servers.publisher_wechat]
 command = "npx"
-args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<absolute-profile-root>/wechat"]
+args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<user-selected-cache-root>/wechat"]
 
 [mcp_servers.publisher_zhihu]
 command = "npx"
-args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<absolute-profile-root>/zhihu"]
+args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<user-selected-cache-root>/zhihu"]
 
 [mcp_servers.publisher_csdn]
 command = "npx"
-args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<absolute-profile-root>/csdn"]
+args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<user-selected-cache-root>/csdn"]
 
 [mcp_servers.publisher_juejin]
 command = "npx"
-args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<absolute-profile-root>/juejin"]
+args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir", "<user-selected-cache-root>/juejin"]
 ~~~
 
 默认使用有头模式，不添加 `--headless`、`--isolated`、`--storage-state`、`--extension` 或 `--cdp-endpoint`。如果当前机器没有 Chrome，先检查官方参数支持的已安装浏览器，再明确修改 `--browser`；不要猜测可执行文件路径。
@@ -71,7 +76,7 @@ args = ["-y", "@playwright/mcp@0.0.79", "--browser", "chrome", "--user-data-dir"
 
 1. 检查 Node.js 版本和 `npx` 是否可用。
 2. 优先调用宿主原生 MCP 安装或连接能力；没有原生入口时，再修改当前客户端的 MCP 配置。
-3. 核对上游、固定包版本、许可、配置文件路径和 Profile 根目录。
+3. 核对上游、固定包版本、许可、配置文件路径，并按本文件优先级解析 Profile 根目录；若目录位于 Git 工作区，先验证精确忽略规则已经生效。
 4. 只新增缺失的 `publisher_*` 节点，不覆盖或重排其他 MCP 配置。
 5. 让 `npx -y` 从官方 npm 包取得固定版本；不执行第三方安装脚本。
 6. 重新发现工具，并对每个实例分别检查启动结果与真实 schema。

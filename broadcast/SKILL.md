@@ -317,7 +317,7 @@ assets/juejin/
 
 用户明确给出目标平台、账号、草稿边界并授权投递后，读取 [publishing.md](references/publishing.md) 和 [publishing-playwright.md](references/publishing-playwright.md)。只把验收通过的公众号、知乎、CSDN 或掘金文章交给对应的 `publisher_wechat`、`publisher_zhihu`、`publisher_csdn` 或 `publisher_juejin` 实例。四个平台必须使用独立且持久化的浏览器 Profile，不读取或复用用户日常浏览器 Profile。
 
-明确投递请求同时授权自动安装和注册来源可核验的官方 Playwright MCP，不再单独请求一次安装确认。优先调用宿主原生 MCP 安装能力；没有时按实现 reference 注册四个平台实例。安装后必须重新发现工具并核对真实 schema；当前会话需要重载时准确报告“已安装待重载”。该授权只增加仓库外的专属 Profile 目录，不覆盖首次平台登录或公开发布。
+明确投递请求同时授权自动安装和注册来源可核验的官方 Playwright MCP，不再单独请求一次安装确认。优先调用宿主原生 MCP 安装能力；没有时按实现 reference 注册四个平台实例。安装后必须重新发现工具并核对真实 schema；当前会话需要重载时准确报告“已安装待重载”。Profile 根目录优先使用用户本次指定的位置，其次使用项目已经声明的位置；两者都没有时只询问一次。该目录必须专用于发布登录态并禁止进入 Git、发布包和日志。该授权不覆盖首次平台登录或公开发布。
 
 MCP 只提供浏览器操作能力，不自动代表平台草稿已经保存。每次投递必须读取当前页面结构，同一平台只保存一次，结果未知时先查草稿箱；不得根据工具名称猜测 schema，不得把“已生成发布包”“已填写”“已保存草稿”“草稿内容已确认”“草稿排版已通过”和“已公开发布”混为一谈。安装、启动、Profile、登录或页面适配失败时保留完整本地产物，降级为人工发布，不自动切回扩展、Token、CLI 或 WebSocket 桥接。
 
