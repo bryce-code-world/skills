@@ -11,20 +11,20 @@
 5. 安装后执行 Skill 结构校验。当前会话仍未发现时，本轮降级并说明下一轮可用。
 6. 用户拒绝或安装失败时执行表中的降级方案。
 
-上述 Skill 依赖的安装确认、账号连接、凭据配置、素材上传、保存草稿和公开发布是相互独立的授权。发布 MCP 是唯一例外：用户明确要求投递时，该请求同时授权本次可信首选 MCP 的安装；账号、凭据、登录、素材上传和公开发布仍不随之授权。
+上述 Skill 依赖的安装确认、账号连接、素材上传、保存草稿和公开发布是相互独立的授权。发布 MCP 是唯一例外：用户明确要求投递时，该请求同时授权本次官方 Playwright MCP 的安装、四个平台实例注册和仓库外 Profile 目录创建；首次登录和公开发布仍不随之授权。
 
 系统 `$skill-installer` 不可用时，只报告准确安装地址和降级方案，不临时发明安装命令。
 
-## 发布 MCP 自动安装
+## Playwright MCP 自动安装
 
-发布 MCP 不使用 `$skill-installer`。用户明确要求投递、发布包已经通过验收且当前没有满足契约的发布 MCP 时，按 [publishing.md](publishing.md) 自动触发可信首选 MCP 安装，不再请求第二次安装确认。
+发布 MCP 不使用 `$skill-installer`。用户明确要求投递、发布包已经通过验收且目标平台的 `publisher_*` 实例未连接时，按 [publishing-playwright.md](publishing-playwright.md) 自动安装并注册官方 `@playwright/mcp`，不再请求第二次安装确认。
 
 1. 优先调用宿主原生 MCP 安装、插件或连接能力。
-2. 宿主没有原生能力时，读取供应者 reference，按当前官方来源执行取得、构建和客户端注册。
-3. 安装前核对供应者、来源、许可、版本或提交、运行时、写入位置和凭据要求。
-4. 不编造包名、命令和配置键，不覆盖客户端其他 Server 配置，不写入真实 Token。
-5. 安装后重新发现工具并检查 schema；需要重载时标记“已安装待重载”，本轮不继续投递。
-6. 原生安装与供应者官方受控安装都不可执行，或安装失败后，才在兼容 Skill/CLI 中选择当前最直接且满足契约的入口；所有入口不可用时交付人工发布包。
+2. 宿主没有原生能力时，按当前客户端真实配置格式注册 `publisher_wechat`、`publisher_zhihu`、`publisher_csdn` 和 `publisher_juejin`。
+3. 安装前核对 Microsoft 官方来源、Apache-2.0 许可、固定包版本、Node.js 运行时、客户端配置位置和仓库外 Profile 根目录。
+4. 只新增缺失节点，不覆盖其他 Server 配置；不写入 Cookie、Token、验证码或平台凭据。
+5. 安装后重新发现工具并逐实例检查 schema；需要重载时标记“已安装待重载”，本轮不继续投递。
+6. 安装、注册或启动失败时交付人工发布包，不自动切换到扩展、Token、CLI 或 WebSocket 桥接。
 
 ## 自身更新
 
@@ -53,8 +53,8 @@ SKILL_DEPENDENCY_HOME 已设置：
   "skills": {
     "broadcast": {
       "source": "https://github.com/bryce-code-world/skills",
-      "version": "2.7.0",
-      "last_check_attempt": "2026-07-31T00:00:00Z",
+      "version": "2.8.0",
+      "last_check_attempt": "2026-08-08T00:00:00Z",
       "last_check_result": "current"
     }
   }
@@ -87,7 +87,6 @@ SKILL_DEPENDENCY_HOME 已设置：
 | `frontend-design` | 图片需要精确表达对比、流程、因果、层级、连续谱、框架、数据或中文文字 | `https://github.com/anthropics/skills/tree/main/skills/frontend-design` | 交付准确视觉规格，不用艺术图替代结构图，并标记对应图文产物未完成 |
 | `canvas-design` | 图片需要平台封面、概念视觉、编辑插画、视觉隐喻或鲜明艺术方向 | `https://github.com/anthropics/skills/tree/main/skills/canvas-design` | 任务允许时降级为 `frontend-design` 文字型封面或 `imagegen` 概念位图，并明确记录降级 |
 | `imagegen` 或等价位图能力 | 已确定的视觉方向需要照片、写实场景、复杂插画或纹理素材 | 当前 Agent 暴露的可用视觉 Skill | 继续生成代码视觉；只有依赖位图素材的产物标记为未完成 |
-| 满足 [publishing.md](publishing.md) 的结构化发布 MCP | 用户已经明确要求投递，且发布包通过验收 | 当前 Agent 已连接或可按可信官方来源自动安装的发布 MCP；当前首选实现为官方 Wechatsync MCP | 自动安装失败后检查下一个兼容入口 |
-| `wechatsync` | 没有可用发布 MCP，但用户已经明确要求投递且发布包通过验收 | `https://github.com/wechatsync/Wechatsync/tree/v2/skills/wechatsync` | 交付人工发布包 |
+| [publishing-playwright.md](publishing-playwright.md) 定义的官方 Playwright MCP | 用户已经明确要求投递，且发布包通过验收 | `@playwright/mcp@0.0.79`；按平台注册四个独立持久化实例 | 交付人工发布包 |
 
-发布 MCP 或 Wechatsync Skill 可调用，不代表其依赖组件、Token 和平台登录已经可用。安装、连接、凭据、登录和本次投递仍需分别满足授权边界。
+Playwright MCP 可调用，不代表专属 Profile 已登录、账号已核对或本次投递已通过预检。安装、连接、首次登录、草稿保存和公开发布仍需分别满足授权边界。
