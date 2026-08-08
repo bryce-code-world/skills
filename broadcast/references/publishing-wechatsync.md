@@ -10,7 +10,7 @@
 - 不自动安装 Wechatsync 扩展，不索取或配置扩展 Token；
 - 不启动 Wechatsync CLI、HTTP/WebSocket 桥接或复用当前 Chrome Profile；
 - Wechatsync 已安装、Token 已存在或扩展已连接，也不代表它会被自动选中；
-- 既有四平台草稿投递结果只作为历史证据，不代表 Playwright 新链路已经通过回归。
+- 既有 Wechatsync 四平台投递结果只作为历史证据；Playwright 四平台可见草稿保存已单独完成回归，但内容深度和排版仍需按文章独立验收。
 
 只有用户明确点名要求使用 Wechatsync，并接受它的扩展、Token 和桥接边界时，才按当时官方文档重新核对来源、版本、schema、登录状态和草稿证据。Broadcast 不再维护其安装命令、端口、Token 配置或重连步骤。
 

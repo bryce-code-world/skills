@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Turn a clear content kernel into a complete visual longform base article, then adapt it for WeChat, Zhihu, CSDN, or Juejin. |
+| [Broadcast](./broadcast/SKILL.md) | Build a knowledge-unit ledger and complete public master, then adapt deep, platform-native articles for four channels. |
 
 ## Installation
 
@@ -147,12 +147,14 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
-- Creating a platform-neutral longform base article from one content kernel.
+- Creating a knowledge-unit ledger and complete platform-neutral public master from one content kernel.
 - Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
 - Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
+- Keeping WeChat personal and directory-free by default, strengthening reasoning on Zhihu, technical closure on CSDN, and engineering trade-offs on Juejin.
+- Applying a restrained editorial visual system while distinguishing saved drafts, confirmed content, and accepted layout.
 - Generating shared body infographics and platform covers according to the visual task.
-- Handing an accepted publishing package to a contract-compliant publisher after explicit authorization, preferring a structured publishing MCP and automatically triggering trusted MCP installation and rediscovery when it is missing.
+- Saving and checking accepted drafts through four independent Playwright MCP profiles after explicit authorization, automatically installing and rediscovering the official MCP when missing.
 
 It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
 
@@ -161,7 +163,7 @@ Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-d
 Example:
 
 ```text
-Use $broadcast to turn this technical content into a complete longform base article and separate WeChat, Zhihu, CSDN, and Juejin articles.
+Use $broadcast to build a knowledge-unit ledger and complete public master, then create deep, platform-native WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## License

@@ -27,7 +27,7 @@ source: "01-大众基础长文.md"
 - 正文必须从导语、场景、问题或判断开始；
 - 正文小标题从 `##` 开始。
 
-`01-大众基础长文.md` 是独立阅读的母版，仍保留一个正文 H1。把基础长文重构为平台稿时，将选定标题写入 front matter，并删除正文 H1。
+`01-大众基础长文.md` 是独立阅读的完整对外母稿，仍保留一个正文 H1。把母稿重构为平台稿时，将选定标题写入 front matter，并删除正文 H1。
 
 不要依赖发布工具自动删除重复标题。不同入口对 front matter 和首个 H1 的处理并不一致，标题与正文必须在本地发布包中已经分离。
 
@@ -45,4 +45,4 @@ sh scripts/check_platform_title.sh <file-or-directory>
 
 检查器只处理 front matter 中 `platform` 为 `wechat`、`zhihu`、`csdn` 或 `juejin` 的 Markdown 文件。缺少标题、正文为空、正文含 H1 或首段重复标题时返回失败。
 
-检查器通过只能证明标题结构正确，不能替代事实、传播、风格、平台排版和真实草稿验收。
+检查器通过只能证明标题结构正确，不能替代事实、深度、传播、风格、平台格式和真实草稿验收。格式与渲染继续读取 [platform-format-contract.md](platform-format-contract.md)。
