@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Build a knowledge-unit ledger and complete public master, then adapt deep, platform-native articles for four channels. |
+| [Broadcast](./broadcast/SKILL.md) | Turn a complete internal source into titles, covers, and four platform-native articles through a communication-effects model. |
 
 ## Installation
 
@@ -147,13 +147,15 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
-- Creating a knowledge-unit ledger and complete platform-neutral public master from one content kernel.
+- Deriving the audience's prior understanding, key gap, and primary comprehension, judgment, or action outcome from one complete internal source.
+- Designing the title, cover, and opening before drafting, then calibrating them against the finished article through entry, fulfillment, and effect gates.
 - Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
+- Having every platform read the same internal source and concise broadcast brief directly, never another platform draft.
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
 - Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
 - Keeping WeChat personal and directory-free by default, strengthening reasoning on Zhihu, technical closure on CSDN, and engineering trade-offs on Juejin.
 - Applying a restrained editorial visual system while distinguishing saved drafts, confirmed content, and accepted layout.
-- Generating shared body infographics and platform covers according to the visual task.
+- Generating a title-aligned entry cover for each platform and shared body infographics only when they improve understanding.
 - Saving and checking accepted drafts through four independent Playwright MCP profiles after explicit authorization, automatically installing and rediscovering the official MCP when missing.
 
 It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
@@ -163,7 +165,7 @@ Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-d
 Example:
 
 ```text
-Use $broadcast to build a knowledge-unit ledger and complete public master, then create deep, platform-native WeChat, Zhihu, CSDN, and Juejin articles.
+Use $broadcast to derive the audience gap and target effect from this complete internal source, then design the title, cover, opening, and platform-native WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## License

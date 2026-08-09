@@ -9,6 +9,7 @@
 platform: wechat
 title: "平台文章标题"
 summary: "可选摘要"
+cover: "assets/<platform>/cover.png"
 source: "<权威内部底稿路径>"
 ---
 
@@ -21,6 +22,7 @@ source: "<权威内部底稿路径>"
 
 - 文件第一行是 `---`；
 - front matter 包含非空 `platform` 和 `title`；
+- `cover` 指向当前平台最终封面；封面尚未生成时不得把发布包标记为视觉验收通过；
 - `source` 指向权威内部底稿，不指向 `00-广播任务总结.md` 或另一个平台稿；
 - front matter 在正文前闭合；
 - 正文第一个非空内容是导语，不重复标题；
@@ -55,3 +57,5 @@ sh scripts/check_platform_title.sh <文件或目录>
 ```
 
 任一平台稿缺少 front matter 标题、正文出现 H1、首段重复标题或正文为空时，检查失败，不进入发布。
+
+标题检查器不验证 `cover` 文件、封面语义和入口承诺。继续按 [platform-format-contract.md](platform-format-contract.md) 和 [communication-effects.md](communication-effects.md) 完成封面路径、渲染和三段传播门禁。
