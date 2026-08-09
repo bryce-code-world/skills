@@ -21,7 +21,7 @@
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 按可解码的传播效果链和真实标题样本校准，把完整内部底稿转写为标题、封面与四平台长文章。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 按传播效果链校准标题、封面与正文分工，把完整内部底稿转写为四平台长图文。 |
 
 ## 安装
 
@@ -157,7 +157,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 - 在 CSDN 和掘金稿中保留必要、已脱敏且带环境和结果说明的代码块；
 - 公众号默认无目录并保留真实作者关系，知乎强化推理，CSDN 强化技术闭环，掘金强化工程取舍；
 - 使用克制编辑感的统一视觉骨架，并区分草稿保存、内容确认和排版通过；
-- 为每个平台生成与标题协同的入口封面，并按需生成共享正文信息图；
+- 为每个平台生成与标题互补的入口封面：标题负责进入理由，封面优先补充情绪、场景、对象证据或账号风格；
 - 在获得明确授权后，通过四个平台独立的 Playwright MCP 和持久化登录态保存并检查草稿；MCP 缺失时自动安装官方实现并重新发现。
 
 广播保护事实、观点、条件和不确定性，默认不连接账号、不投递草稿，也不公开发布。
@@ -167,7 +167,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 使用示例：
 
 ```text
-使用 $broadcast 从这篇完整技术底稿推导认知缺口和目标效果，先用真实同类样本校准标题机制，再设计标题、封面、开头与正文，并生成公众号、知乎、CSDN 和掘金传播包。
+使用 $broadcast 从这篇完整技术底稿推导认知缺口和目标效果，先用真实同类样本校准标题与封面的分工，再设计标题、非语言封面、开头与正文，并生成公众号、知乎、CSDN 和掘金传播包。
 ```
 
 ## License
