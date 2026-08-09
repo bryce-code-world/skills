@@ -140,7 +140,7 @@ source: "<权威内部底稿路径>"
 
 - 复用直接来自底稿、且至少两个平台都需要的共享正文插图；
 - 遵守 [platform-format-contract.md](platform-format-contract.md) 的克制编辑感：深灰正文、少量暖色编号或细线、充足留白，不使用蓝底标题块；
-- 按 [orchestration.md](orchestration.md) 的视觉路由生成公众号封面和必要的裁切版本：概念型、编辑型封面优先 `$canvas-design`，精确框架或文字型封面优先 `$frontend-design`；
+- 按 [orchestration.md](orchestration.md) 的视觉路由生成公众号封面和必要裁切版本：概念型、编辑型封面优先 `$canvas-design`，既定方向需要照片、复杂插画或纹理位图时使用 `$imagegen`；
 - 调整插图位置和留白，不改变图片语义；
 - 保证图片文字在手机宽度下可读；
 - 保留封面的设计说明或可编辑源文件，以及最终 PNG；

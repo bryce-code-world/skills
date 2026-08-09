@@ -1,0 +1,4 @@
+interface:
+  display_name: "分发"
+  short_description: "将验收通过的平台稿安全送入目标渠道并准确核验草稿或发布结果"
+  default_prompt: "使用 $distribution 核对平台、账号、稿件和授权，把验收通过的发布包保存为草稿或公开发布，并准确核验最终状态。"

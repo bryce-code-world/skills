@@ -117,7 +117,7 @@ source: "<权威内部底稿路径>"
 ## 视觉处理
 
 - 复用直接来自底稿、且至少两个平台都需要的共享正文插图；
-- 按 [orchestration.md](orchestration.md) 的视觉路由生成知乎封面和必要的裁切版本：概念型、编辑型封面优先 `$canvas-design`，精确框架或文字型封面优先 `$frontend-design`；
+- 按 [orchestration.md](orchestration.md) 的视觉路由生成知乎封面和必要裁切版本：概念型、编辑型封面优先 `$canvas-design`，既定方向需要照片、复杂插画或纹理位图时使用 `$imagegen`；
 - 根据论证顺序调整插图位置，不改变图片语义；
 - 保证图片文字在常见阅读宽度下清楚；
 - 保留封面的设计说明或可编辑源文件，以及最终 PNG；

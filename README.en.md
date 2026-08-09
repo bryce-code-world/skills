@@ -22,6 +22,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Engineer headlines, covers, openings, bodies, and endings separately, then turn a complete internal source into four platform-native articles. |
+| [Distribution](./distribution/SKILL.md) | Deliver accepted platform articles as drafts or public posts and verify the real account and final state. |
 
 ## Installation
 
@@ -44,11 +45,13 @@ For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
 
-The six skills install independently. Except for Architecture, a skill asks once before installing a missing dependency, and only when the current task actually needs it.
+For Distribution, replace the link or directory name with `distribution`.
+
+The seven skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
-Each skill checks for its own updates at most once every 24 hours. The check does not block the current task, and an update still requires confirmation.
+Broadcast, Writing Style, and Distribution do not perform 24-hour update checks at runtime.
 
 Every skill release must also bump the semantic version in its `references/release.json`.
 
@@ -155,18 +158,36 @@ Use it for:
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
 - Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
 - Keeping WeChat personal and directory-free by default, strengthening reasoning on Zhihu, technical closure on CSDN, and engineering trade-offs on Juejin.
-- Applying a restrained editorial visual system while distinguishing saved drafts, confirmed content, and accepted layout.
+- Applying a restrained editorial visual system and handing real-draft layout criteria to Distribution for verification.
 - Generating a title-aligned entry cover for each platform and shared body infographics only when they improve understanding.
-- Saving and checking accepted drafts through four independent Playwright MCP profiles after explicit authorization, automatically installing and rediscovering the official MCP when missing.
+- Handing accepted release packages to `$distribution` when delivery is explicitly requested, without managing accounts, browsers, or publication state inside Broadcast.
 
 It preserves facts, viewpoints, conditions, and uncertainty. By default, it does not connect accounts, save drafts, or publish anything.
 
-Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-design`: the former handles precise structured and text-led infographics, while the latter handles conceptual visuals and platform covers. Use `imagegen` only when the chosen direction needs realistic or complex bitmap assets.
+Use `canvas-design` when conceptual visuals or platform covers need it, and `imagegen` only when an established direction requires realistic or complex bitmap assets. Prefer native editable graphics for precise infographics instead of introducing another skill.
 
 Example:
 
 ```text
 Use $broadcast to derive the audience gap and target effect from this complete internal source, calibrate the headline, cover, opening, body, and ending as separate communication jobs, then create platform-native WeChat, Zhihu, CSDN, and Juejin articles.
+```
+
+## Distribution
+
+Use it for:
+
+- Checking the target platform, account, accepted article, assets, and current authorization.
+- Prefilling or saving accepted WeChat, Zhihu, CSDN, and Juejin articles as drafts.
+- Publishing only after explicit authorization and verifying the result from the draft list or public page.
+- Distinguishing filled, draft-saved, draft-verified, published, and publish-verified states.
+- Loading only the selected channel module while keeping authorization and state handling shared.
+
+Distribution does not rewrite content or automatically install browser tools, MCP servers, plugins, or runtimes. When browser control is unavailable, it preserves the local release package for manual delivery.
+
+Example:
+
+```text
+Use $distribution to save this accepted WeChat release package to the specified account's draft box, reopen it to verify the title, body, cover, and mobile layout, and do not publish it.
 ```
 
 ## License
