@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Calibrate how headlines, covers, and body copy divide the communication work, then turn a complete internal source into four platform-native articles. |
+| [Broadcast](./broadcast/SKILL.md) | Engineer headlines, covers, openings, bodies, and endings separately, then turn a complete internal source into four platform-native articles. |
 
 ## Installation
 
@@ -149,7 +149,7 @@ Use it for:
 
 - Separating terms the audience can recognize from concepts they already understand and concepts that still need explanation.
 - Using simple shared language for general audiences, establishing meaning before introducing necessary technical terms.
-- Designing the title, cover, and opening before drafting, then calibrating them against the finished article through entry, fulfillment, and effect gates.
+- Engineering the title, cover, opening, body, and ending separately, then validating them through entry, first-screen, progression, last-screen, and effect gates.
 - Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
 - Having every platform read the same internal source and concise broadcast brief directly, never another platform draft.
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
@@ -166,7 +166,7 @@ Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-d
 Example:
 
 ```text
-Use $broadcast to derive the audience gap and target effect from this complete internal source, calibrate how the headline and cover divide the communication work, then design a clear title, a complementary nonverbal cover, the opening, and platform-native WeChat, Zhihu, CSDN, and Juejin articles.
+Use $broadcast to derive the audience gap and target effect from this complete internal source, calibrate the headline, cover, opening, body, and ending as separate communication jobs, then create platform-native WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## License

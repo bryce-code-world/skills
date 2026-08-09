@@ -58,4 +58,4 @@ sh scripts/check_platform_title.sh <文件或目录>
 
 任一平台稿缺少 front matter 标题、正文出现 H1、首段重复标题或正文为空时，检查失败，不进入发布。
 
-标题检查器不验证 `cover` 文件、封面语义和入口承诺。继续按 [platform-format-contract.md](platform-format-contract.md) 和 [communication-effects.md](communication-effects.md) 完成封面路径、渲染和三段传播门禁。
+标题检查器不验证 `cover` 文件、封面语义、入口承诺和全文传播效果。继续按 [platform-format-contract.md](platform-format-contract.md) 和 [communication-effects.md](communication-effects.md) 完成封面路径、渲染和五道传播门禁。
