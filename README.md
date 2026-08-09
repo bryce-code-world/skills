@@ -21,7 +21,7 @@
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 按可解码的传播效果链把完整内部底稿转写为标题、封面与四平台长文章。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 按可解码的传播效果链和真实标题样本校准，把完整内部底稿转写为标题、封面与四平台长文章。 |
 
 ## 安装
 
@@ -148,7 +148,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 适用于：
 
 - 从一篇完整、结论收敛的内部底稿生成简洁广播任务总结；
-- 推导读者共同认知、容易误解的概念、关键缺口和理解、判断或行动中的主要目标效果；
+- 区分读者能够识别的主题术语、已经理解的共同概念和必须先解释或容易误解的概念；
 - 面向普通大众时使用有共识的简单语言，先建立含义再引入必要术语；
 - 在正文前设计标题、封面和开头，成稿后校准并执行入口、兑现和效果门禁；
 - 生成公众号标准文章、知乎独立文章、CSDN 技术文章或掘金技术文章；
@@ -167,7 +167,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 使用示例：
 
 ```text
-使用 $broadcast 从这篇完整技术底稿推导认知缺口和目标效果，设计标题、封面、开头与正文，并生成公众号、知乎、CSDN 和掘金传播包。
+使用 $broadcast 从这篇完整技术底稿推导认知缺口和目标效果，先用真实同类样本校准标题机制，再设计标题、封面、开头与正文，并生成公众号、知乎、CSDN 和掘金传播包。
 ```
 
 ## License

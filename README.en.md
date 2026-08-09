@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Turn a complete internal source into titles, covers, and four platform-native articles through a decodable communication-effects model. |
+| [Broadcast](./broadcast/SKILL.md) | Turn a complete internal source into titles, covers, and four platform-native articles through a decodable communication-effects model calibrated against real headline samples. |
 
 ## Installation
 
@@ -147,7 +147,7 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
-- Deriving the audience's shared understanding, easily misread concepts, key gap, and primary comprehension, judgment, or action outcome from one complete internal source.
+- Separating terms the audience can recognize from concepts they already understand and concepts that still need explanation.
 - Using simple shared language for general audiences, establishing meaning before introducing necessary technical terms.
 - Designing the title, cover, and opening before drafting, then calibrating them against the finished article through entry, fulfillment, and effect gates.
 - Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
@@ -166,7 +166,7 @@ Visual work conditionally depends on Anthropic's `frontend-design` and `canvas-d
 Example:
 
 ```text
-Use $broadcast to derive the audience gap and target effect from this complete internal source, then design the title, cover, opening, and platform-native WeChat, Zhihu, CSDN, and Juejin articles.
+Use $broadcast to derive the audience gap and target effect from this complete internal source, calibrate headline mechanisms against real comparable samples, then design the title, cover, opening, and platform-native WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## License
