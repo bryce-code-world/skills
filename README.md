@@ -22,7 +22,7 @@
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼和应用个人风格，正向建立作者—读者关系并清理机械 AI 痕迹。 |
 | [广播（broadcast）](./broadcast/SKILL.md) | 按传播效果链和关系契约分别设计标题、封面、开头、正文和结尾，把完整内部底稿转写为四平台长图文。 |
-| [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，并准确核验账号与最终状态。 |
+| [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，核验最终状态并登记渠道对象和公开链接。 |
 
 ## 安装
 
@@ -183,6 +183,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 - 把验收通过的微信公众号、知乎、CSDN 或掘金文章预填或保存为草稿；
 - 在用户明确授权后公开发布，并从草稿箱或公开页面核验结果；
 - 区分已填充、草稿已保存、草稿已核验、已发布和发布已核验；
+- 在文章发布包目录维护渠道对象和规范公开链接，供后续数据追踪；
 - 按需加载目标渠道模块，新增平台时不复制核心授权与状态协议。
 
 分发不改写文章，也不自动安装浏览器工具、MCP、插件和运行时。浏览器能力不可用时保留本地发布包并转人工处理。

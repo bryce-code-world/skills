@@ -22,7 +22,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Engineer headlines, covers, openings, bodies, and endings separately, then turn a complete internal source into four platform-native articles. |
-| [Distribution](./distribution/SKILL.md) | Deliver accepted platform articles as drafts or public posts and verify the real account and final state. |
+| [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
 
 ## Installation
 
@@ -180,6 +180,7 @@ Use it for:
 - Prefilling or saving accepted WeChat, Zhihu, CSDN, and Juejin articles as drafts.
 - Publishing only after explicit authorization and verifying the result from the draft list or public page.
 - Distinguishing filled, draft-saved, draft-verified, published, and publish-verified states.
+- Maintaining channel objects and canonical public URLs in the article package for later data tracking.
 - Loading only the selected channel module while keeping authorization and state handling shared.
 
 Distribution does not rewrite content or automatically install browser tools, MCP servers, plugins, or runtimes. When browser control is unavailable, it preserves the local release package for manual delivery.
