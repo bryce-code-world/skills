@@ -1,4 +1,4 @@
 interface:
   display_name: "广播"
-  short_description: "以传播效果链重构内部底稿，生成标题、封面与四平台长图文"
-  default_prompt: "使用 $broadcast 从这篇完整内部底稿推导读者认知缺口和目标效果，设计标题、封面、开头与正文，并生成指定平台的完整传播包。"
+  short_description: "以可解码的传播效果链重构内部底稿，生成标题、封面与四平台长图文"
+  default_prompt: "使用 $broadcast 从这篇完整内部底稿推导读者认知起点、可解码语言和目标效果，设计标题、封面、开头与正文，并生成指定平台的完整传播包。"

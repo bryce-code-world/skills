@@ -21,7 +21,7 @@
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 按传播效果链把完整内部底稿转写为标题、封面与四平台长文章。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 按可解码的传播效果链把完整内部底稿转写为标题、封面与四平台长文章。 |
 
 ## 安装
 
@@ -148,7 +148,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 适用于：
 
 - 从一篇完整、结论收敛的内部底稿生成简洁广播任务总结；
-- 推导读者已有认知、关键缺口和理解、判断或行动中的主要目标效果；
+- 推导读者共同认知、容易误解的概念、关键缺口和理解、判断或行动中的主要目标效果；
+- 面向普通大众时使用有共识的简单语言，先建立含义再引入必要术语；
 - 在正文前设计标题、封面和开头，成稿后校准并执行入口、兑现和效果门禁；
 - 生成公众号标准文章、知乎独立文章、CSDN 技术文章或掘金技术文章；
 - 四个平台直接读取内部底稿和任务总结，彼此不作为内容上游；

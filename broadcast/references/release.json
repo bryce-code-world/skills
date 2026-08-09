@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill": "broadcast",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "source": "https://github.com/bryce-code-world/skills",
   "ref": "main",
   "path": "broadcast"
