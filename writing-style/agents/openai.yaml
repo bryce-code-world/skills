@@ -1,4 +1,4 @@
 interface:
   display_name: "声纹"
-  short_description: "提炼个人声纹，应用风格并清理中文长文中的机械 AI 痕迹"
-  default_prompt: "使用 $writing-style 保留内容事实和作者身份，检查材料支撑、段落推进、模板化结构、套话和机械节奏，只做必要修改。"
+  short_description: "建立作者读者关系，应用声纹并清理中文长文的机械 AI 痕迹"
+  default_prompt: "使用 $writing-style 保留内容事实和作者身份，先建立可信的说话位置、读者关系和口语边界，再检查材料支撑、段落推进、模板化结构、套话和机械节奏，只做必要修改。"
