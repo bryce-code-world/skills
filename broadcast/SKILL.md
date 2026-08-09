@@ -61,7 +61,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 
 1. 读取内部底稿、目标读者、目的、目标平台和授权边界。
 2. 验证底稿是否完整、收敛并适合公开转写；失败时转交 `$lightning` 或停止。
-3. 读取 [communication-effects.md](references/communication-effects.md)，从底稿和目标读者推导一个主要目标效果、关键认知缺口和心智迁移方向。
+3. 读取 [communication-effects.md](references/communication-effects.md)，从底稿和目标读者推导受众认知层级、主要目标效果、关键认知缺口和心智迁移方向。
 4. 读取 [task-summary.md](references/task-summary.md)，在转写目录生成简洁的 `00-广播任务总结.md`。它只保存传播策略，不复述底稿事实、定义和论证。
 5. 读取 [reader-continuity.md](references/reader-continuity.md)，为每个平台分别建立可解码语言基线、文章原型、内容主线和读者推进链。
 6. 调用 `$writing-style` 解析主风格和场景语气；不可用时使用通用默认风格并记录降级。
@@ -72,7 +72,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 11. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成。
 12. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理并运行当前系统的原生标题检查器。
 13. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
-14. 按 [communication-effects.md](references/communication-effects.md)、[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md)、[ending-engineering.md](references/ending-engineering.md) 和 [reader-continuity.md](references/reader-continuity.md) 执行入口门、第一屏门、推进门、最后一屏门、效果门和隔离冷读，修正后复测并写入 `06-读者测试.md`。
+14. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
 15. 执行底稿、平台、跨平台、事实、深度、传播、风格、视觉和格式验收，写入 `05-验收报告.md`。
 16. 交付任务总结、目标平台稿、素材、验收报告和读者测试。
 17. 只有用户明确授权投递时，才按 [publishing.md](references/publishing.md) 调用目标平台专属 Playwright MCP；实例缺失时自动安装官方 MCP、注册独立持久化 Profile、重新发现并检查能力，再处理草稿。
@@ -97,6 +97,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 
 ```text
 读者是谁：
+受众认知层级：
 可用于识别主题的术语：
 可直接参与理解的共同概念：
 必须先解释或容易误解的概念：
@@ -108,7 +109,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 完成迁移的内容主线：
 ```
 
-每个平台只保留一个主要目标效果和入口承诺，不要求所有文章都推动行动。面向普通大众时，默认使用大众已有共识的简单语言。标题和封面可以点名目标读者能够识别、且正文准备解释的术语，用于说明主题和筛选读者；入口承诺必须在不知道术语定义时仍然看得懂。标题还必须提供具体进入理由，通常组合可识别对象、未解决张力和读者损益中的至少两项；完整研究、候选和淘汰方法读取 [headline-engineering.md](references/headline-engineering.md)。摘要、提纲、开头、小标题、正文和图片不得依赖读者尚未建立的概念完成解释或推理。准确术语只在确有必要时保留，并按“熟悉现象或问题 → 通俗作用 → 准确名称 → 回到主线”进入。允许点名被解释的对象，不允许拿尚未解释的术语充当解释前提。例子、类比和故事只能解释底稿已有内容，不能成为新证据。
+每个平台只保留一个主要目标效果和入口承诺，不要求所有文章都推动行动。受众认知层级必须明确为普通大众、主题半熟悉读者或专业读者，不能为了让术语稿通过而在写作后静默缩窄读者。普通大众先从共同现象或问题进入，不在标题、摘要和第一屏依赖成组术语；主题半熟悉读者可以识别主题术语，但术语参与推理前仍需解释；专业读者只直接使用该群体真正共享的准确术语。标题和封面可以点名目标读者能够识别、且正文准备解释的对象；入口承诺必须在不知道术语定义时仍然看得懂。标题还必须提供具体进入理由，通常组合可识别对象、未解决张力和读者损益中的至少两项；完整研究、候选和淘汰方法读取 [headline-engineering.md](references/headline-engineering.md)。摘要、提纲、开头、小标题、正文和图片不得依赖读者尚未建立的概念完成解释或推理。准确术语只在确有必要时保留，并按“熟悉现象或问题 → 通俗作用 → 准确名称 → 回到主线”进入。允许点名被解释的对象，不允许拿尚未解释的术语充当解释前提。例子、类比和故事只能解释底稿已有内容，不能成为新证据。
 
 平台可以采用不同文章原型和阅读路径，但核心事实、观点强度、条件、例外和作者身份必须一致。完整连续性与冷读方法读取 [reader-continuity.md](references/reader-continuity.md)。
 
@@ -197,6 +198,7 @@ CSDN 和掘金必须同时满足：
 ### 平台门禁
 
 - 每篇文章符合目标平台的读者、深度、结构、格式和风格；
+- 受众认知层级已经明确，入口、术语密度和解释深度与该层级一致，没有为通过门禁临时缩窄读者；
 - 关键表达能够由目标读者按预期解码；标题和封面只点名可识别的主题术语，正文中的专业术语没有替代通俗解释或提前成为推理前提；
 - 标题、封面、开头、正文和结尾面向同一目标读者；前四者兑现同一入口承诺，结尾固化主要目标效果；
 - 标题研究区分真实数据、平台热门与普通编辑样本，没有把知名账号标题冒充爆文证据；
@@ -219,7 +221,7 @@ CSDN 和掘金必须同时满足：
 
 第一屏门、推进门和最后一屏门共同构成兑现链。入口强但兑现链失败、正文正确但入口无法吸引目标读者、读者能总结却没有完成心智迁移，均不得验收通过。完整测试输入、问题和降级记录读取 [communication-effects.md](references/communication-effects.md)。
 
-没有执行符合 [reader-continuity.md](references/reader-continuity.md) 的隔离冷读时，不得把概念进入、读者理解、内容主线或传播效果标记为通过。缩略提纲只能验收明确覆盖的局部设计，不得代替完整文章验收。
+没有由未参与写作的独立读者执行完整冷读和陌生场景迁移题时，不得把概念进入、读者理解、内容主线或传播效果标记为“独立验收通过”。隔离自检只能记录“设计自检完成，未独立验收”。缩略提纲只能验收明确覆盖的局部设计，不得代替完整文章验收。
 
 ### 跨平台门禁
 
@@ -283,5 +285,6 @@ MCP 只提供浏览器操作能力，不自动代表平台草稿已经保存。�
 - 各平台的关键压缩、展开和省略；
 - 底稿、平台、跨平台、事实、深度、传播、风格、视觉和格式验收；
 - 入口门、第一屏门、推进门、最后一屏门、效果门和隔离冷读发现的问题、修改动作及复测结论；
+- 陌生场景迁移题、读者判断过程和是否真正完成应用迁移；
 - 外部投递的准确状态；
 - 所有未决、失败和降级项。

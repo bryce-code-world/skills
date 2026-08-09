@@ -147,9 +147,9 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
-- Separating terms the audience can recognize from concepts they already understand and concepts that still need explanation.
+- Declaring the audience cognition level before writing, then separating recognizable terms from shared concepts and concepts that still need explanation.
 - Using simple shared language for general audiences, establishing meaning before introducing necessary technical terms.
-- Engineering the title, cover, opening, body, and ending separately, then validating them through entry, first-screen, progression, last-screen, and effect gates.
+- Engineering the title, cover, opening, body, and ending separately, then having an independent reader run all five gates plus an unseen transfer task.
 - Creating standard WeChat articles, standalone Zhihu articles, CSDN technical articles, or Juejin technical articles.
 - Having every platform read the same internal source and concise broadcast brief directly, never another platform draft.
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
