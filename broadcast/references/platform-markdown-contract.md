@@ -1,48 +1,57 @@
 # 平台 Markdown 标题契约
 
-本文件定义公众号、知乎、CSDN 和掘金平台稿共同遵守的标题结构。生成平台稿、执行平台验收或准备投递时必须读取。
+公众号、知乎、CSDN 和掘金文章统一使用 front matter 保存唯一发布标题，正文不再重复 H1。
 
-## 标题只有一个发布来源
-
-平台稿使用 front matter 的 `title` 作为发布标题。正文不再写文章一级标题，直接从导语开始，后续最高使用二级标题。
+## 文件结构
 
 ```markdown
 ---
 platform: wechat
-title: "推荐标题"
-summary: "文章摘要"
-source: "01-大众基础长文.md"
+title: "平台文章标题"
+summary: "可选摘要"
+source: "<权威内部底稿路径>"
 ---
 
-正文导语……
+这里直接开始导语。
 
 ## 第一个正文小标题
 ```
 
-对四个平台稿执行以下硬约束：
+必须满足：
 
-- front matter 必须包含目标平台和非空 `title`；
-- 正文不得出现任何 `# 一级标题`；
-- 正文第一个非空内容不得再次写出与 `title` 相同的纯文本标题；
-- 正文必须从导语、场景、问题或判断开始；
-- 正文小标题从 `##` 开始。
+- 文件第一行是 `---`；
+- front matter 包含非空 `platform` 和 `title`；
+- `source` 指向权威内部底稿，不指向 `00-广播任务总结.md` 或另一个平台稿；
+- front matter 在正文前闭合；
+- 正文第一个非空内容是导语，不重复标题；
+- 正文不出现 `# 标题`；
+- 正文小标题从 `##` 开始；
+- 每个平台文章只有一个发布标题来源。
 
-`01-大众基础长文.md` 是独立阅读的完整对外母稿，仍保留一个正文 H1。把母稿重构为平台稿时，将选定标题写入 front matter，并删除正文 H1。
+## 固定输出编号
 
-不要依赖发布工具自动删除重复标题。不同入口对 front matter 和首个 H1 的处理并不一致，标题与正文必须在本地发布包中已经分离。
+```text
+00-广播任务总结.md
+01-公众号文章.md
+02-知乎文章.md
+03-CSDN文章.md
+04-掘金文章.md
+05-验收报告.md
+06-读者测试.md
+```
+
+未选择或未通过门禁的平台保留缺号。发布时以 front matter 的 `platform` 为准，不根据编号猜平台。
 
 ## 机器检查
 
-平台稿生成和语言终检完成后，发布或交付前运行当前系统的原生检查器：
+运行当前系统原生脚本：
 
 ```text
 Windows:
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_platform_title.ps1 -Path <file-or-directory>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_platform_title.ps1 -Path <文件或目录>
 
 Linux / macOS:
-sh scripts/check_platform_title.sh <file-or-directory>
+sh scripts/check_platform_title.sh <文件或目录>
 ```
 
-检查器只处理 front matter 中 `platform` 为 `wechat`、`zhihu`、`csdn` 或 `juejin` 的 Markdown 文件。缺少标题、正文为空、正文含 H1 或首段重复标题时返回失败。
-
-检查器通过只能证明标题结构正确，不能替代事实、深度、传播、风格、平台格式和真实草稿验收。格式与渲染继续读取 [platform-format-contract.md](platform-format-contract.md)。
+任一平台稿缺少 front matter 标题、正文出现 H1、首段重复标题或正文为空时，检查失败，不进入发布。

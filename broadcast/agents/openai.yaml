@@ -1,4 +1,4 @@
 interface:
   display_name: "广播"
   short_description: "生成有深度、有作者感且排版规范的四平台长图文内容与草稿"
-  default_prompt: "使用 $broadcast 将这份清晰内容整理成知识单元账本和完整对外母稿，再按公众号、知乎、CSDN 或掘金的深度与格式规范生成文章。"
+  default_prompt: "使用 $broadcast 为这篇完整内部底稿生成简洁任务总结，并直接转写成符合公众号、知乎、CSDN 或掘金阅读任务的文章。"

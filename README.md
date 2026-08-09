@@ -21,7 +21,7 @@
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼、管理、选择并应用稳定可识别的个人图文表达风格。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 把清晰内容整理成知识单元账本和完整对外母稿，再按深度与格式规范适配四平台文章。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 把完整内部底稿先整理成简洁任务总结，再直接适配四平台长文章。 |
 
 ## 安装
 
@@ -147,8 +147,9 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 适用于：
 
-- 从同一内容内核生成知识单元账本和平台中立的完整对外母稿；
+- 从一篇完整、结论收敛的内部底稿生成简洁广播任务总结；
 - 生成公众号标准文章、知乎独立文章、CSDN 技术文章或掘金技术文章；
+- 四个平台直接读取内部底稿和任务总结，彼此不作为内容上游；
 - 对 CSDN 和掘金执行开发者内容准入门禁，不把无关内容强行同步到技术社区；
 - 在 CSDN 和掘金稿中保留必要、已脱敏且带环境和结果说明的代码块；
 - 公众号默认无目录并保留真实作者关系，知乎强化推理，CSDN 强化技术闭环，掘金强化工程取舍；
@@ -163,7 +164,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 使用示例：
 
 ```text
-使用 $broadcast 把这份技术内容整理成知识单元账本和完整对外母稿，并分别生成有深度、符合平台格式的公众号、知乎、CSDN 和掘金文章。
+使用 $broadcast 为这篇完整技术底稿生成简洁任务总结，并直接转写成有深度、符合平台格式的公众号、知乎、CSDN 和掘金文章。
 ```
 
 ## License
