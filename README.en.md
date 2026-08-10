@@ -17,6 +17,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | Skill | Purpose |
 |---|---|
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
+| [Eagle Eye](./eagle-eye/SKILL.md) | Find, verify, and deliver timely topics with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
@@ -37,6 +38,8 @@ You can also copy the `lightning` directory into your local skills directory.
 
 For Hello, replace the link or directory name with `hello`.
 
+For Eagle Eye, replace the link or directory name with `eagle-eye`.
+
 For Architecture, replace the link or directory name with `architecture`.
 
 For Visual Cognitive Learning, replace the link or directory name with `visual-cognitive-learning`.
@@ -47,7 +50,7 @@ For Broadcast, replace the link or directory name with `broadcast`.
 
 For Distribution, replace the link or directory name with `distribution`.
 
-The seven skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
+The eight skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
@@ -70,6 +73,25 @@ Example:
 
 ```text
 Use $hello to build my personal context profile through an ongoing interview.
+```
+
+## Eagle Eye
+
+Use it for:
+
+- Finding recent AI or technology events worth writing about.
+- Clustering duplicate coverage and verifying original sources.
+- Comparing the write-worthiness of candidate events.
+- Developing an evidence-backed angle that adds reader value.
+- Checking existing coverage, counter-evidence, and topic expiry online.
+- Using healthy Agent Reach channels as an optional acquisition layer when already installed.
+
+Eagle Eye stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
+
+Example:
+
+```text
+Use $eagle-eye to find up to three AI topics from the last seven days that are worth writing about, each with an original angle, and collect them in today's file under a directory I confirm.
 ```
 
 ## Lightning

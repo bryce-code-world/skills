@@ -1,0 +1,4 @@
+interface:
+  display_name: "鹰眼"
+  short_description: "发现、核验并筛选近期热点，以每日单文件交付独特选题"
+  default_prompt: "使用 $eagle-eye 从最近 7 天的 AI 热点中筛选不超过 3 个选题，并汇总到我确认目录中的当天单文件。"

@@ -17,6 +17,7 @@
 | Skill | 作用 |
 |---|---|
 | [你好（hello）](./hello/SKILL.md) | 通过持续访谈和会话暂存，建立并维护用户掌控的个人全景档案。 |
+| [鹰眼（eagle-eye）](./eagle-eye/SKILL.md) | 从近期热点中发现、核验并交付值得写且具有独特角度的选题。 |
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
@@ -37,6 +38,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装你好时，将链接或目录名替换为 `hello`。
 
+安装鹰眼时，将链接或目录名替换为 `eagle-eye`。
+
 安装架构图时，将链接或目录名替换为 `architecture`。
 
 安装可视化认知学习时，将链接或目录名替换为 `visual-cognitive-learning`。
@@ -47,7 +50,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装分发时，将链接或目录名替换为 `distribution`。
 
-七个 Skill 独立安装。业务 Skill 不在运行过程中自动安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
+八个 Skill 独立安装。业务 Skill 不在运行过程中自动安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
 
 架构图只对其 `dependencies.md` 声明的白名单依赖执行按需自动安装，不再询问。未知来源、来源变化、版本无法核验和依赖更新不自动执行。
 
@@ -70,6 +73,25 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 ```text
 使用 $hello 通过持续访谈建立我的个人全景档案。
+```
+
+## 鹰眼
+
+适用于：
+
+- 从近期 AI 或科技热点中筛选值得写的事件；
+- 聚合同一事件并回到原始来源核验；
+- 比较候选事件的可写性；
+- 为选题找到有证据、对读者有价值的独特角度；
+- 联网检查现有内容、反方证据和选题有效期。
+- 当前环境已经安装 Agent Reach 时，把健康渠道作为可选采集层。
+
+鹰眼停止在经过验证的选题，不继续写内部文章或公开平台文章。没有用户确认的交付目录时不会开始正式研究或创建文件。每次把不超过 3 个热点汇总为一个带日期的文件，同日同主题重跑时覆盖当天文件。
+
+使用示例：
+
+```text
+使用 $eagle-eye 从最近 7 天的 AI 热点中找出不超过 3 个值得写且有独特角度的选题，并汇总到我确认目录中的当天文件。
 ```
 
 ## 闪电
