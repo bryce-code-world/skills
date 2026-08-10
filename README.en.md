@@ -89,7 +89,7 @@ Use it for:
 - Checking existing coverage, counter-evidence, and topic expiry online.
 - Using healthy Agent Reach channels as an optional acquisition layer when already installed.
 
-Eagle Eye currently includes the AI direction. It reads the shared source catalog without owning its long-term maintenance. It stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
+Eagle Eye currently includes the AI direction. Direction configuration, the global shared source catalog, and five target-audience attention profiles are maintained separately. Eagle Eye reads sources without owning their long-term maintenance. It stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
 
 Example:
 
