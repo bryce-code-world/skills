@@ -17,7 +17,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | Skill | Purpose |
 |---|---|
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
-| [Eagle Eye](./eagle-eye/SKILL.md) | Find, verify, and deliver timely topics with evidence-backed original angles. |
+| [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
@@ -79,19 +79,22 @@ Use $hello to build my personal context profile through an ongoing interview.
 
 Use it for:
 
-- Finding recent AI or technology events worth writing about.
+- Finding recent AI events that deserve a target audience's attention.
+- Loading the AI direction first, then querying shared research, patent, open-source, policy, company, people, and public-attention sources.
 - Clustering duplicate coverage and verifying original sources.
+- Separating current attention from emerging attention potential.
+- Using a target-audience attention model instead of a single public-heat score.
 - Comparing the write-worthiness of candidate events.
 - Developing an evidence-backed angle that adds reader value.
 - Checking existing coverage, counter-evidence, and topic expiry online.
 - Using healthy Agent Reach channels as an optional acquisition layer when already installed.
 
-Eagle Eye stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
+Eagle Eye currently includes the AI direction. It reads the shared source catalog without owning its long-term maintenance. It stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
 
 Example:
 
 ```text
-Use $eagle-eye to find up to three AI topics from the last seven days that are worth writing about, each with an original angle, and collect them in today's file under a directory I confirm.
+Use $eagle-eye to find up to three AI topics from the last seven days that are worth writing about for AI developers, each with an original angle, and collect them in today's file under a directory I confirm.
 ```
 
 ## Lightning

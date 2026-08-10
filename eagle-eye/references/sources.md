@@ -1,113 +1,231 @@
-# 热点数据源
+# 共享信源目录与 AI 方向包
 
-每次研究先按主题选择来源，不要求所有来源都可用。数据源只提供候选、专业变化或讨论信号；关键事实仍需回到一手原文核验。
+本文件同时保存两类彼此独立的配置：
 
-## 选择来源
+1. 全局共享信源目录：回答“去哪里查”，未来方向共同使用；
+2. AI 方向包：回答“查什么”，并补充只覆盖 AI 的高质量来源。
 
-| 研究对象 | 候选发现 | 专业信号 | 必须核验 |
+鹰眼只读使用这些配置。热点研究过程中可以记录某个来源本次不可用，但不能据此修改、删除或永久降级信源记录。
+
+## 使用顺序
+
+```text
+读取 AI 方向包
+→ 用方向主题、实体和事件类型查询共享信源
+→ 合并 AI 特有来源
+→ 按证据角色完成发现、核验和注意力观察
+→ 交给目标用户注意力模型
+```
+
+“论文”“政策”“企业”“人物”等是信源类别，不是方向。GitHub、专利库、政府公报和企业披露可以服务 AI、机器人、生物医药等多个方向；区别只是查询条件和重点观察对象不同。
+
+## 信源记录契约
+
+长期维护信源时至少记录：
+
+| 字段 | 含义 |
+| --- | --- |
+| 来源 | 稳定名称和入口地址 |
+| 类别 | 产品、开发者、论文、专利、政策、企业、人物、媒体或大众信号 |
+| 覆盖 | 全球或地区、语言、行业和内容边界 |
+| 证据角色 | 候选发现、原始事实、独立验证或大众注意力 |
+| 获取方式 | 网页、RSS、公开 API、搜索、CLI 或已授权渠道 |
+| 访问条件 | 匿名、账号、API Key、Cookie、配额或付费限制 |
+| 更新速度 | 实时、每日、按发布或存在公开滞后 |
+| 质量边界 | 能证明什么，不能证明什么 |
+| 方向适用 | 全局通用，或仅适用于一个特定方向 |
+| 核验状态 | 本次是否实际检查，以及检查时间 |
+
+来源数量不能替代证据类型。推荐事件原则上至少需要一份原始来源、一份可靠独立背景，以及一类目标用户注意力信号；多个网站转载同一篇稿件只算一个来源。
+
+## 全局共享信源目录
+
+### 官方网页、产品与项目发布
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
 | --- | --- | --- | --- |
-| AI 模型、产品和公司动态 | AI HOT、Techmeme、Web 搜索 | Hacker News、GitHub、社区平台 | 官方公告、文档、模型卡、状态页 |
-| 论文与研究趋势 | AI HOT、arXiv API、Web 搜索 | GitHub 代码、研究者原文、技术讨论 | 论文原文、作者页面、正式代码仓库 |
-| 开发工具与开源项目 | Hacker News、GitHub Search、可选 `last30days` | Releases、Issues、Discussions | 官方仓库、发布说明、文档 |
-| 行业政策与商业变化 | Techmeme、可靠媒体、Web 搜索 | 公司和从业者反应 | 监管文件、公司公告、财报或正式声明 |
-| 公众关注与争议 | 可选 `last30days`、Reddit、X、YouTube、小红书 | 评论、互动量、反方观点 | 不能用社区信号代替事实核验 |
+| 主体官方网站、新闻室、文档和状态页 | 原始事实 | Web、RSS、站内搜索 | 优先确认发布内容、能力边界、日期和后续修订 |
+| 官方代码仓库、Release 和变更日志 | 原始事实 | GitHub/GitLab、RSS、Web | 代码存在不等于稳定可用；检查版本、许可和维护状态 |
+| 普通 Web 搜索 | 候选发现 | 搜索引擎 | 搜索结果和 AI 摘要不能作为引用，必须打开原页面 |
+| [Techmeme](https://www.techmeme.com/) | 候选发现、报道聚类 | Web | 聚类链接帮助还原报道关系，不能代替事件原文 |
+| [GDELT](https://docs.gdeltcloud.com/api-reference/introduction) | 候选发现、跨地区传播 | API、Web | 新闻覆盖量不等于事件真实性或目标读者价值 |
 
-至少组合一份一手来源、一份独立背景来源，以及一类目标读者信号。多个网站转载同一篇稿件只算一个来源。
+查询时组合方向关键词、主体、动作和绝对日期。先限制官方域名确认原始事实，再寻找独立来源补充背景和影响范围。
+
+### 开源与开发者生态
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| [GitHub Search API](https://docs.github.com/en/rest/search/search) | 候选发现 | API、CLI、Web | 搜索和高频访问可能需要授权；不要索取或输出凭据 |
+| GitHub Releases、Issues、Discussions | 原始事实、采用信号、反方证据 | API、CLI、Web | Release 和文档优先；Issue 只能证明具体反馈，不能直接外推行业共识 |
+| GitLab、语言包注册表和项目官方社区 | 原始事实、采用信号 | Web、API | 下载量与关注量只能作为相对信号，不能证明质量 |
+| [Hacker News API](https://github.com/HackerNews/API) | 开发者注意力、反方线索 | 公开 API | 分数和评论代表 HN 社区，不代表全部开发者 |
+| V2EX、B站、YouTube、Reddit、X、小红书等 | 目标用户信号 | 公开页面或用户已授权渠道 | 只观察问题、争议和传播；不能代替事实核验 |
+
+优先比较同一仓库或同类项目在相近时间窗内的 Release、贡献者、Issue、下载和讨论变化。Stars 不能直接解释为技术质量或生产采用。
+
+### 论文与实验室
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| [arXiv API](https://info.arxiv.org/help/api/index.html) | 候选发现、论文原文入口 | 公开 API、Web | 保留预印本状态、版本和发布日期；摘要只用于初筛 |
+| [OpenAlex API](https://developers.openalex.org/api-reference/introduction) | 论文、作者、机构和主题发现 | API | 按当前官方要求处理账号、API Key 和配额 |
+| [Crossref REST API](https://www.crossref.org/documentation/retrieve-metadata/rest-api/access-and-authentication/) | DOI 和出版元数据核验 | 公开 API | 元数据不能替代论文正文或实验复核 |
+| [Semantic Scholar Academic Graph API](https://www.semanticscholar.org/product/api) | 引文、作者和关联研究发现 | API、Web | 引用量存在时间和学科偏差，只作辅助信号 |
+| 大学、实验室和研究者官方页面 | 原始事实 | Web、RSS | 核对作者身份、项目页面、代码、数据与修订说明 |
+| 期刊、会议和同行评审页面 | 正式状态核验 | Web、API | 区分投稿、录用、正式发表、撤回和更正 |
+
+推荐研究型选题前至少阅读论文正文的核心方法、实验条件和限制，并查找代码、数据、后续版本、独立复现或反例。实验室声誉不能代替结果验证。
+
+### 专利与知识产权
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| [WIPO PATENTSCOPE](https://patentscope.wipo.int/) 与 [WIPO API Catalog](https://www.wipo.int/en/web/standards/ip-api-catalog/index) | 国际专利检索、官方入口 | Web、按官方能力使用 API | 申请不等于授权，更不等于产品已经实现 |
+| [EPO Open Patent Services](https://www.epo.org/en/searching-for-patents/data/web-services/ops) | 全球专利书目、法律状态和全文数据 | XML Web Service | 遵守配额和注册要求，核对专利族和法律状态 |
+| [USPTO Patent Public Search 与 Open Data](https://www.uspto.gov/patents/basics/online-patent-tools) | 美国专利原始记录 | Web、API | 按当前账户和访问要求使用，记录申请、公开和授权日期 |
+| 各国家或地区知识产权主管机关 | 本地专利原始记录 | 官方 Web、API | 优先核对正式状态、申请人、发明人和同族记录 |
+
+专利通常存在公开滞后，更适合发现技术布局和潜在趋势，不适合单独证明“今天刚发生的突破”。检索时使用方向关键词、重点申请人、发明人和分类号，并对同族专利去重。
+
+### 政策、法规与标准
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| 政府、立法机关和监管机构原文 | 原始事实 | Web、RSS、公开数据库 | 区分草案、征求意见、通过、发布、生效和执法 |
+| [Federal Register API](https://www.federalregister.gov/developers/documentation/api/v1) | 美国联邦规则与通知 | 公开 API、Web | 核对发布机构、法律阶段、生效日期和适用范围 |
+| [EUR-Lex](https://eur-lex.europa.eu/) | 欧盟法律和公报 | Web、Web Service | 核对文本版本、法律效力、成员国适用和实施时间 |
+| [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) 等标准机构入口 | 标准、框架和指南 | Web | 自愿框架不能写成强制法规 |
+| [OECD.AI](https://oecd.ai/en/) | 多国政策导航和比较 | Web | 用于发现与比较，关键义务回到各司法辖区原文 |
+| 中国网信、工信、科技、市场监管及标准主管部门 | 中国政策原文 | 官方 Web | 核对发文机关、文号、适用对象和实施日期 |
+
+政策注意力优先观察法律效力、覆盖人口或企业、执行时间、合规成本、处罚风险和利益相关方反应，不能只按媒体报道数量排序。
+
+### 大企业与产业
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| 企业投资者关系页面、新闻室和财报电话会材料 | 原始事实 | Web、RSS、邮件订阅 | 区分正式承诺、管理层预期、营销表述和已实现结果 |
+| [SEC EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces) | 美国上市公司披露 | 公开 API、Web | 关注 8-K、10-Q、10-K 等正式文件及修订版本 |
+| [HKEXnews](https://www.hkexnews.hk/) 和其他交易所公告 | 上市公司披露 | Web、搜索 | 核对公司主体、公告类型、发布时间和附件 |
+| 行业协会、采购公告、客户案例和合作方声明 | 产业验证 | Web | 单方客户案例不能直接外推普遍效果 |
+| Fortune Global 500 等权威企业榜单 | 观察名单 | Web、授权数据 | 榜单只决定跟踪对象，不是事件证据或热度证明 |
+| 可靠财经与产业媒体 | 独立背景 | Web、数据库 | 关键投资额、收入、订单和时间表回到正式披露 |
+
+建立方向观察名单时可以从全球大型企业、关键供应链企业和高成长公司中选主体。真正的候选事件来自财报、监管披露、投资、采购、产品、组织和客户变化，而不是“入榜”本身。
+
+### 人物与大众文化
+
+| 来源 | 证据角色 | 获取方式 | 使用边界 |
+| --- | --- | --- | --- |
+| 当事人官网、已验证账号、演讲和完整采访 | 当事人原文 | Web、视频、用户已授权渠道 | 区分本人表述、转述、剪辑和冒名账号 |
+| 活动主办方、经纪或所属机构正式页面 | 身份与事件核验 | Web | 商业宣传仍需独立背景验证 |
+| 完整播客、视频和公开文字记录 | 原始上下文 | Web、字幕 | 不用脱离上下文的短剪辑代表完整观点 |
+| 可靠人物报道、事实核查和专业媒体 | 独立验证 | Web | 不把匿名传闻和娱乐八卦包装成方向热点 |
+| 搜索与跨平台讨论 | 大众注意力 | 趋势工具、公开页面 | 高讨论只证明关注，不证明说法真实或与方向相关 |
+
+人物进入候选的前提是其行为或言论真实改变方向认知、采用、市场、政策或公共讨论。单纯知名度、争议和绯闻不构成热点价值。
+
+### 大众注意力信号
+
+| 来源 | 可观察信号 | 使用边界 |
+| --- | --- | --- |
+| [Wikimedia Pageviews API](https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/concepts/page-views.html) | 相关人物、组织和概念页面访问变化 | 注意语言版本、重定向、自动流量和突发事件基线 |
+| Google Trends | 搜索兴趣的相对变化 | 不是绝对搜索量；无稳定授权接口时只作人工或可用工具信号 |
+| [YouTube Data API](https://developers.google.com/youtube/v3/docs/videos) | 公开视频、观看、评论和频道传播 | 需要项目和配额；频道结构和推荐机制会造成偏差 |
+| Hacker News、V2EX、Reddit、X、小红书、B站等 | 讨论增速、问题密度、反方和跨圈传播 | 各平台用户结构不同，原始互动量不能跨平台直接相加 |
+| GDELT 与新闻聚类 | 媒体覆盖速度、国家和语言扩散 | 新闻转载去重后再判断，不用报道量证明事实重要性 |
+
+优先使用增速、持续时间、独立来源数量和跨圈扩散，而不是单一累计量。对重复转载、机器人流量、营销投放、单平台尖峰、旧闻翻炒和争议诱导降权。
+
+## AI 方向包
+
+### 范围与边界
+
+AI 方向关注能够改变 AI 能力、使用方式、开发生态、产业结构、规则或公众认知的近期事件，包括：
+
+- 模型、产品、Agent、平台和关键基础设施变化；
+- 开源项目、开发工具、算力、芯片、数据与安全事件；
+- 论文、实验室成果、专利布局、独立评测和复现；
+- AI 相关政策、监管、标准、诉讼和治理；
+- 大企业的投资、采购、组织、财报、合作和商业化；
+- 对 AI 采用和公共认知产生真实影响的人物与文化事件。
+
+排除只换标题的旧闻、没有新增事实的模型传闻、只靠榜单微小波动制造的比较、与 AI 实际影响无关的明星八卦，以及无法回到原始来源的营销摘要。
+
+### 查询配置
+
+按任务动态组合，不维护无限关键词表：
+
+| 维度 | AI 方向查询内容 |
+| --- | --- |
+| 核心概念 | artificial intelligence、AI、大模型、LLM、multimodal、agent、reasoning、inference、training |
+| 产品与能力 | model、API、benchmark、pricing、context、tool use、coding、voice、video、robotics |
+| 研究与产权 | arXiv 分类、论文主题、实验室、作者、专利申请人、CPC/IPC 相关分类 |
+| 政策与风险 | AI Act、model safety、copyright、privacy、security、standards、evaluation、governance |
+| 企业与产业 | capex、data center、chip、cloud、partnership、acquisition、earnings、customer adoption |
+| 重点实体 | 当前主要模型实验室、云厂商、芯片企业、开源组织、监管机构和目标用户关心的公司或人物 |
+
+关键词只负责召回。候选是否属于 AI 方向，最终按事件主体、核心动作和实际影响判断。
+
+### AI 特有高质量来源
+
+这些来源只补充共享信源，不复制共享目录：
+
+| 来源 | 作用 | 质量边界 |
+| --- | --- | --- |
+| OpenAI、Anthropic、Google DeepMind、Meta AI、Microsoft Research、NVIDIA、Mistral 等官方新闻、文档、模型卡和仓库 | 模型、产品、研究和平台原始变化 | 官方自评不能代替独立测试 |
+| 国内主要模型实验室、云厂商和官方开源组织的公告、文档、模型仓库 | 中文市场模型、产品、价格和生态变化 | 区分正式发布、灰度开放、邀测和路线图 |
+| [英国 AI Security Institute](https://www.aisi.gov.uk/research)、欧盟 AI Office、NIST AI 相关页面及各地 AI 专责机构 | 前沿评测、治理、政策和安全研究 | 研究报告、指南和强制法规的法律效力不同 |
+| Stanford HAI、MIT CSAIL、Berkeley AI Research 等 AI 研究机构官方页面 | 研究发现、实验室和作者入口 | 机构发布不能代替论文限制和外部复现 |
+| LM Arena、Artificial Analysis、Epoch AI、METR 等专业评测或分析机构 | 独立能力、成本、趋势和风险信号 | 核对方法、样本、版本、赞助关系和可复现性 |
+| [AI HOT](https://aihot.virxact.com) 等 AI 聚合服务 | 快速发现中文候选 | 模型摘要和聚合内容不能作为事实来源 |
+
+具体机构名单随主题选择，不要求每轮全部扫描。优先检查与候选主体、事件类型和目标用户最相关的来源。
+
+### AI 事件对目标用户的影响映射
+
+方向包只提供事件特征，不替目标用户决定权重：
+
+| 事件类型 | 优先提取的影响特征 |
+| --- | --- |
+| 模型与产品 | 能力差异、真实可用性、价格、速度、限制、入口和替代关系 |
+| 开源与开发者 | 许可、部署成本、兼容性、维护者可信度、采用速度和实际问题 |
+| 论文、实验室与专利 | 新颖性、实验条件、代码数据、复现、法律状态和产业时间尺度 |
+| 政策与治理 | 法律阶段、覆盖范围、生效时间、义务、处罚、合规成本和执行可能性 |
+| 企业与产业 | 投入规模、收入或成本影响、客户覆盖、供应链、竞争反应和兑现周期 |
+| 人物与大众文化 | 身份真实性、跨圈扩散、行为改变、公共利益和与 AI 的实质关联 |
+
+开发者、管理者、投资者和普通读者会对这些特征赋予不同权重。不要把事件类型直接等同于用户群，也不要预设同一热点适合所有人。
 
 ## Agent Reach 可选采集层
 
 - 项目：`https://github.com/Panniantong/Agent-Reach`
 - 作用：检测并路由网页、全网搜索、GitHub、YouTube、B站、V2EX、RSS，以及经过用户配置的社区平台。
-- 定位：采集基础设施，不负责事件聚类、可写性评分、独特角度和选题判断。
+- 定位：采集基础设施，不负责方向定义、事件聚类、目标用户注意力、独特角度和选题判断。
 
 当前环境存在 `$agent-reach` 或 `agent-reach` CLI 时：
 
-1. 运行 `agent-reach doctor --json`。
-2. 只选择 `status=ok` 且与当前研究有关的渠道。
+1. 运行 `agent-reach doctor --json`；命令无法解析时，Windows 官方 venv 安装可以检查 `%USERPROFILE%\.agent-reach-venv\Scripts\agent-reach.exe`。
+2. 只使用 `status=ok` 且与任务有关的渠道。
 3. `status=warn` 的渠道只有完成当前任务所需的只读验证后才能使用。
 4. `status=off`、`active_backend=null` 且未验证的渠道按不可用处理。
-5. 按 Agent Reach Skill 的渠道路由调用上游工具；Agent Reach 本身只负责选型、配置和体检。
-6. 在研究说明中记录渠道、实际后端和健康状态。
+5. 按 Agent Reach Skill 的渠道路由调用上游工具，并记录实际后端和状态。
 
-命令无法直接解析时，Windows 的官方 venv 安装可以检查 `%USERPROFILE%\.agent-reach-venv\Scripts\agent-reach.exe`。其他系统只使用当前环境明确提供的命令，不猜测安装位置。
-
-Agent Reach 是可选能力，不是鹰眼的依赖。不要在鹰眼运行时执行 `install`、`configure`、登录、Cookie 导入或浏览器会话读取。某个渠道不可用时继续使用后续直接来源。
-
-## AI HOT
-
-- 作用：快速发现最近 7 天的中文 AI 候选事件。
-- 地址：`https://aihot.virxact.com`
-- OpenAPI：`https://aihot.virxact.com/openapi.yaml`
-- 鉴权：公开匿名；API 请求需要浏览器样式 `User-Agent`。
-- 默认候选：`GET /api/public/items?mode=selected&since=<ISO 时间>&take=100`
-- 分类：`ai-models`、`ai-products`、`industry`、`paper`、`tip`。
-- 关键词：使用服务端 `q` 参数，不先拉固定数量再本地搜索。
-- 历史日报：`GET /api/public/daily/{YYYY-MM-DD}`；`items` 最长只覆盖最近 7 天。
-
-AI HOT 的摘要由模型生成，只能帮助发现候选。引用和核验必须打开每条记录的 `url` 或 `sourceUrl`。
-
-每次调用前检查 DNS 和 HTTP 状态。服务不可达、返回异常或没有原始链接时跳过，并改用官方站点、Techmeme、Hacker News、GitHub、arXiv 与普通 Web 搜索。本来源当前不构成强依赖。
-
-## Hacker News
-
-- 官方 API：`https://github.com/HackerNews/API`
-- 作用：发现开发者正在关注的产品、开源项目、论文和争议。
-- 常用入口：Top、Best、New stories，以及对应 Item 的评论树。
-
-分数和评论量只表示 Hacker News 社区关注度。评论可以帮助发现问题和反方角度，不能证明产品能力、事件原因或行业普遍性。
-
-## GitHub
-
-- Search API：`https://docs.github.com/en/rest/search/search`
-- 作用：查找近期仓库、提交、Release、Issue、Discussion 和实际采用问题。
-- 优先顺序：官方仓库 Release 与文档，其次是 Issue 和 Discussion，再其次是 Stars、Forks 等热度指标。
-
-搜索和速率限制可能需要 GitHub 登录或 Token。当前环境没有授权时使用公开仓库页面，不索取、保存或输出凭据。Stars 只表示关注，不等于技术质量或真实采用。
-
-## arXiv
-
-- 官方 API：`https://info.arxiv.org/help/api/index.html`
-- 作用：发现近期论文并核对标题、作者、摘要、版本和发布日期。
-
-论文摘要只用于初筛。推荐研究型选题前阅读论文正文，并检查作者代码、后续版本、评测条件和外部复现。预印本状态必须如实保留。
-
-## Techmeme
-
-- 地址：`https://www.techmeme.com/`
-- 作用：发现科技新闻簇、主要报道和讨论入口。
-
-Techmeme 是候选发现和报道聚类层，不是事件事实的最终来源。沿聚类链接回到公司公告、监管文件和独立报道。
-
-## last30days
-
-- 项目：`https://github.com/mvanhorn/last30days-skill`
-- 作用：在已经安装且可用时，增强 Reddit、X、YouTube、Hacker News、GitHub、arXiv、Techmeme 和 Web 等多来源发现，并提供跨来源聚类与互动信号。
-
-它不是鹰眼的依赖。不要在运行鹰眼时安装、更新或配置它，也不要自行读取浏览器 Cookie、账号会话或 API Key。只有当前环境已经提供、用户授权的数据源才能使用。
-
-互动量反映社会关注，不等于事实重要性。把它的聚类结果视为候选，仍按鹰眼的一手来源门禁重新核验。
-
-## 官方站点与普通 Web 搜索
-
-普通 Web 搜索是始终可用的基础路线：
-
-1. 用事件主体、动作、产品名和绝对日期搜索候选。
-2. 优先限制到官方域名，查公告、文档、状态页、模型卡和 Release。
-3. 再查至少一家独立来源补充背景和影响。
-4. 搜索选题的中英文同义表达与反方命题，验证角度是否同质化。
-
-新闻搜索结果页、搜索摘要和 AI 摘要都不是引用源。打开支持结论的具体页面后再记录链接。
+Agent Reach 是可选能力，不是鹰眼的依赖。不要在鹰眼运行时执行安装、更新、配置、登录、Cookie 导入或浏览器会话读取。某个渠道不可用时继续使用直接来源。
 
 ## 来源健康与降级
 
-在 `00-选题研究说明.md` 中记录：
+只在内部研究记录中维护本轮状态：
 
 ```text
 来源：
-用途：候选发现 / 专业信号 / 事实核验
+用途：候选发现 / 原始事实 / 独立验证 / 大众注意力
 状态：可用 / 无结果 / 不可达 / 需要授权 / 未检查
 覆盖时间：
 降级动作：
 ```
 
-可选来源失败时继续使用其他类别来源。缺少一手来源时保留为线索；缺少独立背景时进入观察；缺少目标读者信号时降低读者关联评分。不得用来源数量掩盖类型缺口。
+可选来源失败时继续使用其他同角色来源。缺少原始来源时只保留为线索；缺少独立背景时进入观察；缺少目标用户信号时不能声称“已经形成热点”，但可在权威变化和潜在影响充分时标记为潜在热点。
+
+来源健康记录默认不写入每日热点文件。只有来源缺口会实质影响推荐可信度时，才在对应热点的简介或事件入口中简要说明。
