@@ -1,4 +1,4 @@
 interface:
   display_name: "鹰眼"
-  short_description: "按目标读者发现并核验 AI 热点，交付独特选题"
-  default_prompt: "使用 $eagle-eye 面向 AI 开发者，从最近 7 天的 AI 热点中筛选不超过 3 个选题，并汇总到我确认目录中的当天单文件。"
+  short_description: "发现并核验 AI 热点，交付说人话的独特选题"
+  default_prompt: "使用 $eagle-eye 面向 AI 开发者，从最近 7 天的 AI 热点中筛选不超过 3 个选题，用不熟悉专题的人也能一遍看懂的语言汇总到我确认目录中的当天单文件。"

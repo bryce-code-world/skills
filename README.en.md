@@ -89,12 +89,12 @@ Use it for:
 - Checking existing coverage, counter-evidence, and topic expiry online.
 - Using healthy Agent Reach channels as an optional acquisition layer when already installed.
 
-Eagle Eye currently includes the AI direction. Direction configuration, the global shared source catalog, and five target-audience attention profiles are maintained separately. Eagle Eye reads sources without owning their long-term maintenance. It stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
+Eagle Eye currently includes the AI direction. Direction configuration, the global shared source catalog, and five target-audience attention profiles are maintained separately. Eagle Eye reads sources without owning their long-term maintenance. Topic cards are written first for the person choosing what to write: even when the eventual article targets specialists, someone new to the subject should understand in one pass what happened, who it affects, and what question is worth writing about. It stops at verified topics and does not continue into internal or public article writing. Research does not start and files are not created until the user confirms the delivery directory. Each run collects up to three topics in one dated file, and reruns for the same topic on the same day replace that day's file.
 
 Example:
 
 ```text
-Use $eagle-eye to find up to three AI topics from the last seven days that are worth writing about for AI developers, each with an original angle, and collect them in today's file under a directory I confirm.
+Use $eagle-eye to find up to three AI topics from the last seven days that are worth writing about for AI developers, each with an original angle, and explain them in plain language in today's file under a directory I confirm.
 ```
 
 ## Lightning

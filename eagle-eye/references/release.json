@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill": "eagle-eye",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "source": "https://github.com/bryce-code-world/skills",
   "ref": "main",
   "path": "eagle-eye"
