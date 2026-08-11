@@ -11,6 +11,9 @@ title: "平台文章标题"
 summary: "可选摘要"
 cover: "assets/<platform>/cover.png"
 source: "<权威内部底稿路径>"
+references:
+  - name: "外部资料名称"
+    url: "https://example.com/source"
 ---
 
 这里直接开始导语。
@@ -24,6 +27,8 @@ source: "<权威内部底稿路径>"
 - front matter 包含非空 `platform` 和 `title`；
 - `cover` 指向当前平台最终封面；封面尚未生成时不得把发布包标记为视觉验收通过；
 - `source` 指向权威内部底稿，不指向 `00-广播任务总结.md` 或另一个平台稿；
+- `references` 是可选的外部引用追溯清单，每项使用 `name` 和 `url`；它不属于发布正文，不生成文末来源章节；
+- 公众号正文不保留外部链接时，把支撑正文事实的完整地址写入 `references`，正文只按需要保留普通文本形式的机构、报告或实验名称；
 - front matter 在正文前闭合；
 - 正文第一个非空内容是导语，不重复标题；
 - 正文不出现 `# 标题`；
