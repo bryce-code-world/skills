@@ -29,6 +29,12 @@ output_abs=$(CDPATH= cd -- "$output" && pwd -P)
 body_md=$output_abs/body.md
 body_html=$output_abs/body.html
 manifest=$output_abs/manifest.json
+body_raw=$(mktemp "${TMPDIR:-/tmp}/distribution-body.XXXXXX")
+image_meta=$(mktemp "${TMPDIR:-/tmp}/distribution-images.XXXXXX")
+images_json=$(mktemp "${TMPDIR:-/tmp}/distribution-images-json.XXXXXX")
+trap 'rm -f -- "$body_raw" "$image_meta" "$images_json"' EXIT HUP INT TERM
+caption_prefix=$(printf '\345\233\276\346\263\250\357\274\232')
+legacy_caption_prefix=$(printf '\345\233\276\357\274\232')
 
 first_line=$(LC_ALL=C sed -n '1p' "$input")
 [ "$first_line" = '---' ] || { printf '%s\n' 'Article must start with YAML front matter.' >&2; exit 1; }
@@ -72,17 +78,116 @@ awk -v end="$front_end" '
         while (count > 0 && lines[count] == "") count--
         for (i=1; i<=count; i++) print lines[i]
     }
-' "$input" > "$body_md"
-[ -s "$body_md" ] || { printf '%s\n' 'Article body is empty.' >&2; exit 1; }
+' "$input" > "$body_raw"
+[ -s "$body_raw" ] || { printf '%s\n' 'Article body is empty.' >&2; exit 1; }
 
 if [ "$platform" = wechat ] || [ "$platform" = zhihu ]; then
-    if grep -Eq '^(>|```|\|.*\|[[:space:]]*$)' "$body_md"; then
+    if grep -Eq '^(>|```|\|.*\|[[:space:]]*$)' "$body_raw"; then
         printf '%s article contains a structure that is not allowed.\n' "$platform" >&2
         exit 1
     fi
 fi
 
-awk -v platform="$platform" '
+awk -v caption_prefix="$caption_prefix" -v legacy_caption_prefix="$legacy_caption_prefix" '
+function trim(s) {
+    sub(/^[[:space:]]+/, "", s)
+    sub(/[[:space:]]+$/, "", s)
+    return s
+}
+function is_caption(s) {
+    return index(s, caption_prefix) == 1 || index(s, legacy_caption_prefix) == 1
+}
+function caption_text(s) {
+    if (index(s, caption_prefix) == 1) s=substr(s, length(caption_prefix)+1)
+    else s=substr(s, length(legacy_caption_prefix)+1)
+    return trim(s)
+}
+function fail(message) {
+    print message > "/dev/stderr"
+    failed=1
+}
+{
+    sub(/\r$/, "")
+    lines[NR]=$0
+    current=trim($0)
+    if (substr(current,1,3) == "```") {
+        code_line[NR]=1
+        in_code=!in_code
+    } else if (in_code) {
+        code_line[NR]=1
+    }
+}
+END {
+    for (i=1; i<=NR; i++) {
+        if (i in code_line) continue
+        current=trim(lines[i])
+        if (current !~ /^!\[[^]]*\]\([^)]+\)$/) continue
+
+        alt=current
+        sub(/^!\[/, "", alt)
+        sub(/\].*$/, "", alt)
+        relative_path=current
+        sub(/^!\[[^]]*\]\(/, "", relative_path)
+        sub(/\)$/, "", relative_path)
+
+        caption_line=i+1
+        while (caption_line<=NR && trim(lines[caption_line]) == "") caption_line++
+        has_caption=(caption_line<=NR && is_caption(trim(lines[caption_line])))
+
+        if (alt == "") {
+            if (has_caption) fail("Decorative image must not have a caption at body line " caption_line ".")
+            record_count++
+            image_line[record_count]=i
+            caption_line_number[record_count]=0
+            image_alt[record_count]=alt
+            image_path[record_count]=relative_path
+            image_caption[record_count]=""
+            image_role[record_count]="decorative"
+        } else if (!has_caption || caption_text(trim(lines[caption_line])) == "") {
+            fail("Informative image is missing an adjacent caption at body line " i ".")
+        } else {
+            bound_caption[caption_line]=1
+            record_count++
+            image_line[record_count]=i
+            caption_line_number[record_count]=caption_line
+            image_alt[record_count]=alt
+            image_path[record_count]=relative_path
+            image_caption[record_count]=caption_text(trim(lines[caption_line]))
+            image_role[record_count]="informative"
+        }
+    }
+
+    for (i=1; i<=NR; i++) {
+        if (!(i in code_line) && is_caption(trim(lines[i])) && !(i in bound_caption)) fail("Orphan image caption at body line " i ".")
+    }
+    if (failed) exit 1
+
+    for (i=1; i<=record_count; i++) {
+        printf "%s%c%s%c%s%c%s%c%s%c%s\n", image_line[i], 28, caption_line_number[i], 28, image_alt[i], 28, image_path[i], 28, image_caption[i], 28, image_role[i]
+    }
+}
+' "$body_raw" > "$image_meta"
+
+awk -F '\034' -v platform="$platform" -v caption_prefix="$caption_prefix" -v metadata="$image_meta" '
+BEGIN {
+    while ((getline record < metadata) > 0) {
+        split(record, fields, "\034")
+        if (fields[2] != "0") caption_by_line[fields[2]]=fields[5]
+    }
+    close(metadata)
+}
+{
+    if (NR in caption_by_line) {
+        line=caption_prefix caption_by_line[NR]
+        if (platform == "csdn" || platform == "juejin") line="*" line "*"
+        print line
+    } else {
+        print
+    }
+}
+' "$body_raw" > "$body_md"
+
+awk -F '\034' -v platform="$platform" -v metadata="$image_meta" '
 function esc(s) {
     gsub(/&/, "\\&amp;", s)
     gsub(/</, "\\&lt;", s)
@@ -120,11 +225,19 @@ function flush_list() {
 }
 function flush_all() { flush_paragraph(); flush_list() }
 BEGIN {
+    while ((getline record < metadata) > 0) {
+        split(record, fields, "\034")
+        caption_by_image[fields[1]]=fields[5]
+        if (fields[2] != "0") bound_caption[fields[2]]=1
+    }
+    close(metadata)
     pstyle=(platform=="wechat" ? "font-size:16px;line-height:1.85;color:#303030;margin:0 0 20px;text-align:left;letter-spacing:0.02em;" : "")
     h2style=(platform=="wechat" ? "font-size:19px;line-height:1.5;font-weight:700;color:#242424;margin:42px 0 20px;padding-left:10px;border-left:3px solid #c58a45;text-align:left;" : "")
     h3style=(platform=="wechat" ? "font-size:17px;line-height:1.55;font-weight:700;color:#242424;margin:32px 0 16px;text-align:left;" : "")
     lstyle=(platform=="wechat" ? "font-size:16px;line-height:1.85;color:#303030;margin:0 0 14px;text-align:left;padding-left:0;" : "")
-    istyle=(platform=="wechat" ? "display:block;width:100%;height:auto;margin:28px auto 10px;" : "max-width:100%;height:auto;")
+    istyle=(platform=="wechat" ? "display:block;width:100%;height:auto;margin:28px auto 8px;" : "max-width:100%;height:auto;")
+    image_container_style=(platform=="wechat" ? "margin:0;" : "")
+    caption_style=(platform=="wechat" ? "font-size:13px;line-height:1.6;color:#888888;margin:0 0 24px;text-align:center;" : "")
     image_count=0
     print "<section data-distribution-platform=\"" platform "\">"
 }
@@ -134,6 +247,7 @@ BEGIN {
     trimmed=line
     sub(/^[[:space:]]+/, "", trimmed)
     sub(/[[:space:]]+$/, "", trimmed)
+    if (NR in bound_caption) next
     if (in_code) {
         if (substr(trimmed,1,3) == "```") {
             print "<pre><code class=\"language-" esc(code_language) "\">" esc(code_content) "</code></pre>"
@@ -183,7 +297,17 @@ BEGIN {
         alt=trimmed; sub(/^!\[/,"",alt); sub(/\].*$/,"",alt)
         image_count++
         placeholder=sprintf("__DISTRIBUTION_IMAGE_%03d__",image_count)
-        print "<p style=\"" pstyle "\"><img src=\"" placeholder "\" alt=\"" esc(alt) "\" style=\"" istyle "\" /></p>"
+        if (NR in caption_by_image && caption_by_image[NR] != "") {
+            caption=inline(caption_by_image[NR])
+            if (platform == "wechat") {
+                print "<p data-image=\"true\" style=\"" image_container_style "\"><img src=\"" placeholder "\" alt=\"" esc(alt) "\" style=\"" istyle "\" /></p>"
+                print "<p data-image-caption=\"true\" style=\"" caption_style "\">" caption "</p>"
+            } else {
+                print "<figure data-image=\"true\"><img src=\"" placeholder "\" alt=\"" esc(alt) "\" style=\"" istyle "\" /><figcaption>" caption "</figcaption></figure>"
+            }
+        } else {
+            print "<p data-image=\"true\" style=\"" image_container_style "\"><img src=\"" placeholder "\" alt=\"" esc(alt) "\" style=\"" istyle "\" /></p>"
+        }
         next
     }
     flush_list()
@@ -194,7 +318,7 @@ END {
     flush_all()
     print "</section>"
 }
-' "$body_md" > "$body_html"
+' "$body_raw" > "$body_html"
 
 json_escape() {
     awk 'BEGIN { ORS="" } { if (NR > 1) printf "\\n"; gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\r/, "\\r"); gsub(/\t/, "\\t"); printf "%s", $0 }'
@@ -208,7 +332,28 @@ if [ -n "$cover" ]; then
     cover_abs=$(CDPATH= cd -- "$cover_dir" && pwd -P)/$cover_name
 fi
 
-image_count=$(grep -Ec '^!\[[^]]*\]\([^)]+\)[[:space:]]*$' "$body_md" || true)
+image_count=0
+: > "$images_json"
+field_separator=$(printf '\034')
+while IFS="$field_separator" read -r image_line caption_line alt relative_path caption role; do
+    [ -n "$image_line" ] || continue
+    image_file=$input_dir/$relative_path
+    [ -f "$image_file" ] || { printf 'Article image does not exist: %s\n' "$image_file" >&2; exit 1; }
+    image_dir=$(dirname -- "$image_file")
+    image_name=$(basename -- "$image_file")
+    image_abs=$(CDPATH= cd -- "$image_dir" && pwd -P)/$image_name
+    image_count=$((image_count + 1))
+    placeholder=$(printf '__DISTRIBUTION_IMAGE_%03d__' "$image_count")
+    placeholder_json=$(printf '%s' "$placeholder" | json_escape)
+    relative_path_json=$(printf '%s' "$relative_path" | json_escape)
+    image_abs_json=$(printf '%s' "$image_abs" | json_escape)
+    alt_json=$(printf '%s' "$alt" | json_escape)
+    caption_json=$(printf '%s' "$caption" | json_escape)
+    role_json=$(printf '%s' "$role" | json_escape)
+    [ "$image_count" -eq 1 ] || printf ',\n' >> "$images_json"
+    printf '    {"placeholder": "%s", "relative_path": "%s", "absolute_path": "%s", "alt": "%s", "caption": "%s", "role": "%s"}' \
+        "$placeholder_json" "$relative_path_json" "$image_abs_json" "$alt_json" "$caption_json" "$role_json" >> "$images_json"
+done < "$image_meta"
 title_json=$(printf '%s' "$title" | json_escape)
 summary_json=$(printf '%s' "$summary" | json_escape)
 source_json=$(printf '%s' "$source" | json_escape)
@@ -219,7 +364,7 @@ body_html_json=$(printf '%s' "$body_html" | json_escape)
 
 {
     printf '{\n'
-    printf '  "schema_version": 1,\n'
+    printf '  "schema_version": 2,\n'
     printf '  "platform": "%s",\n' "$platform"
     printf '  "title": "%s",\n' "$title_json"
     printf '  "summary": "%s",\n' "$summary_json"
@@ -228,7 +373,10 @@ body_html_json=$(printf '%s' "$body_html" | json_escape)
     printf '  "cover": "%s",\n' "$cover_json"
     printf '  "body_markdown": "%s",\n' "$body_md_json"
     printf '  "body_html": "%s",\n' "$body_html_json"
-    printf '  "image_count": %s\n' "$image_count"
+    printf '  "images": [\n'
+    cat "$images_json"
+    [ "$image_count" -eq 0 ] || printf '\n'
+    printf '  ]\n'
     printf '}\n'
 } > "$manifest"
 

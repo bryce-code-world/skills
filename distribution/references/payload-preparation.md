@@ -30,6 +30,12 @@ Windows 自测入口同样只依赖 Windows PowerShell 5.1：
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_prepare_article.ps1
 ```
 
+macOS、Linux 或装有 POSIX `sh` 的环境运行：
+
+```sh
+sh scripts/test_prepare_article.sh
+```
+
 ## 固定产物
 
 脚本只在本次任务登记的 `.agent-tmp/<task-id>/` 或系统临时目录生成：
@@ -42,6 +48,13 @@ body.html       # 用于富文本编辑器的标准 HTML
 
 浏览器步骤上传图片后，用平台托管地址替换 `body.html` 中的 `__DISTRIBUTION_IMAGE_NNN__` 占位符，再填入编辑器。载荷使用完毕后按项目临时资源规则清理整个任务目录。
 
+`manifest.json` 使用 `schema_version: 2`。每张正文图记录 `placeholder`、`relative_path`、`absolute_path`、`alt`、`caption` 和 `role`：
+
+- `informative`：`alt` 非空，必须存在紧邻图片的非空 `图注：`；
+- `decorative`：`alt` 为空，`caption` 必须为空；
+- 兼容读取历史 `图：`，输出统一规范化为 `图注：`；
+- 孤立图注、信息图缺少图注和装饰图带图注立即失败，不得作为普通正文继续转换。
+
 ## 微信富文本基线
 
 - 正文：16px、1.85 行高、深灰、左对齐；
@@ -50,9 +63,10 @@ body.html       # 用于富文本编辑器的标准 HTML
 - 强调：只转换 Markdown 已有的语义加粗，不新增重点；
 - 有序和无序列表：转换为正文级段落，保持 16px、1.85 行高，避免微信导入器压缩原生列表；
 - 图片：正文宽度自适应，前后留白；
+- 图注：紧邻信息图，13px、1.6 行高、灰色、居中，明显弱于正文；
 - 禁止蓝底标题、大色块、卡片堆叠和整段高亮。
 
-其他平台优先使用原生标题、列表、代码和 Markdown 能力，不复制微信公众号富文本样式。
+知乎的 `body.html` 使用关联的 `figure`/`figcaption` 语义。CSDN 和掘金的 `body.md` 把规范图注转换为紧邻图片的 Markdown 弱化样式。三个平台都优先使用原生标题、列表、代码和图片能力，不复制微信公众号富文本样式。
 
 ## 失败条件
 
@@ -61,5 +75,6 @@ body.html       # 用于富文本编辑器的标准 HTML
 - 正文或封面不存在；
 - 微信公众号或知乎正文包含平台契约禁止的代码块、引用块或 Markdown 表格；
 - 正文图片不存在；
+- 信息图缺少紧邻图注、存在孤立图注，或装饰图带有图注；
 - 生成物不再是 UTF-8、LF 或存在未替换图片占位符；
-- 真实编辑器回读后的语义、重点、标题层级或列表样式与载荷不一致。
+- 真实编辑器回读后的语义、重点、标题层级、列表、图片或图注与载荷不一致。

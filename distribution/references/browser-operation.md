@@ -42,14 +42,14 @@
 
 1. 从平台官方入口进入创作后台。
 2. 读取当前页面，识别新建、草稿和内容管理入口。
-3. 先识别标题、正文和目标动作控件，再识别封面、图片、摘要、分类和标签。
+3. 先识别标题、正文和目标动作控件，再识别封面、图片、图注、摘要、分类和标签。
 4. 不操作含义不清、不可逆或超出授权的控件。
 5. 填充后回读关键字段，不以输入动作成功代替页面内容确认。
 6. 保存或发布后离开编辑器，从草稿箱、内容列表或公开页面重新核验。
 
 平台变化时重新读取页面结构。渠道 reference 只记录稳定字段和确认节点，不保存易失效选择器。
 
-投递前用 [payload-preparation.md](payload-preparation.md) 的原生脚本生成标准载荷。浏览器步骤只消费 `manifest.json`、`body.html` 或 `body.md`，不得在任务现场重新编写 Markdown、DOCX 或 HTML 转换脚本。
+投递前用 [payload-preparation.md](payload-preparation.md) 的原生脚本生成标准载荷。浏览器步骤只消费 `manifest.json`、`body.html` 或 `body.md`，按清单中的 `alt`、`caption` 和 `role` 核对图片语义，不得在任务现场重新编写 Markdown、DOCX 或 HTML 转换脚本。
 
 ## 幂等与恢复
 

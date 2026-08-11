@@ -70,7 +70,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 8. 读取 [body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md)，对用户指定且通过门禁的平台，直接从“内部底稿 + 广播任务总结 + 对应平台 reference”独立转写完整文章。任何平台稿都不得作为另一个平台稿的上游。
 9. 调用 `$writing-style` 对每篇完整平台稿执行一次关系与声音检查、结构与语言去模板化，修复匿名说明书、机械结构、假洞察、清单堆叠、均匀节奏、伪口语和身份问题，不抹平平台差异。
 10. 对全部平台稿执行跨平台一致性检查，核对事实、观点、边界、主要目标效果、作者身份和来源，没有平台临时补造内容。
-11. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计和最窄阅读宽度门禁。
+11. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计、替代文字、可见图注和最窄阅读宽度门禁。
 12. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理并运行当前系统的原生标题检查器。
 13. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
 14. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
@@ -155,7 +155,7 @@ CSDN 和掘金必须同时满足：
 
 平台稿必须使用带 front matter 的 Markdown。`title` 是唯一发布标题，正文直接从导语开始，不得出现 H1；正文小标题从 `##` 开始。
 
-公众号和知乎正文禁止围栏代码块、引用块、Markdown 表格、ASCII 排版、横向滚动结构、脚注、尾注和文末参考资料章节。公众号正文还禁止 Markdown 文字链接、可见网址和独立图片注释；保留必要的来源名称作为普通文本，把完整外部引用写入 front matter 的 `references` 供本地回溯，不把该元数据渲染为正文。CSDN 和掘金只保留技术论证必需且已经脱敏的受控代码块；未执行的代码不得声称已经验证。
+公众号和知乎正文禁止围栏代码块、引用块、Markdown 表格、ASCII 排版、横向滚动结构、脚注、尾注和文末参考资料章节。公众号正文还禁止 Markdown 文字链接和可见网址；保留必要的来源名称作为普通文本，把完整外部引用写入 front matter 的 `references` 供本地回溯，不把该元数据渲染为正文。四个平台的正文图统一遵守 [platform-markdown-contract.md](references/platform-markdown-contract.md) 的图片语义契约，替代文字不能代替可见图注。CSDN 和掘金只保留技术论证必需且已经脱敏的受控代码块；未执行的代码不得声称已经验证。
 
 平台层可以重构底稿中已有内容的标题、摘要、开头、段落、转场、解释深度、代码呈现、结尾、插图位置和排版。不得新增底稿中不存在的事实、案例、经历、核心观点、运行结果或第二条主线。
 
@@ -194,6 +194,8 @@ CSDN 和掘金必须同时满足：
 精确结构图优先使用当前环境已有的原生可编辑图形能力；能力不足时交付准确视觉规格，不临时引入额外 Skill。概念视觉、编辑插画或平台封面偏重气质与视觉隐喻时调用 `$canvas-design`；既定方向需要照片、复杂插画或纹理位图时调用 `$imagegen`。生成后必须保留可编辑源或设计说明，实际渲染并按最窄代表阅读宽度执行冷读；只能识别文字或节点、却不能快速理解核心关系时，视觉验收失败。
 
 图片只能压缩或澄清正文已经解释的内容，不能首次引入陌生核心概念，也不能反向修改底稿事实。
+
+信息型正文图必须同时提供非空替代文字和紧邻图片的 `图注：`。替代文字描述图片内容，图注说明读者应从图中理解什么；两者不得互相冒充。纯装饰图使用空替代文字且不添加图注。缺失图注、孤立图注或装饰图带图注时，平台稿格式验收失败。
 
 ## 完成验收
 

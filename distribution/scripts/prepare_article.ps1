@@ -16,6 +16,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$CaptionLinePattern = '^(?:\u56FE\u6CE8|\u56FE)\uFF1A\s*(.*)$'
+$CanonicalCaptionPrefix = ([string][char]0x56FE) + ([char]0x6CE8) + ([char]0xFF1A)
 
 function Write-Utf8Lf {
     param([string]$Path, [string]$Text)
@@ -73,6 +75,7 @@ function Test-SpecialLine {
         $trimmed -match '^```' -or
         $trimmed -match '^-\s+' -or
         $trimmed -match '^\d+\.\s+' -or
+        $trimmed -match $CaptionLinePattern -or
         $trimmed -match '^!\[[^\]]*\]\([^)]+\)$'
     )
 }
@@ -161,9 +164,71 @@ $listStyle = if ($Platform -eq 'wechat') {
     ''
 }
 $imageStyle = if ($Platform -eq 'wechat') {
-    'display:block;width:100%;height:auto;margin:28px auto 10px;'
+    'display:block;width:100%;height:auto;margin:28px auto 8px;'
 } else {
     'max-width:100%;height:auto;'
+}
+$imageContainerStyle = if ($Platform -eq 'wechat') { 'margin:0;' } else { '' }
+$captionStyle = if ($Platform -eq 'wechat') {
+    'font-size:13px;line-height:1.6;color:#888888;margin:0 0 24px;text-align:center;'
+} else {
+    ''
+}
+
+$captionByImageLine = @{}
+$boundCaptionLines = @{}
+$captionByCaptionLine = @{}
+$codeLines = @{}
+$insideCode = $false
+for ($lineIndex = 0; $lineIndex -lt $bodyLines.Count; $lineIndex++) {
+    if ($bodyLines[$lineIndex].Trim() -match '^```') {
+        $codeLines[$lineIndex] = $true
+        $insideCode = -not $insideCode
+    } elseif ($insideCode) {
+        $codeLines[$lineIndex] = $true
+    }
+}
+
+for ($lineIndex = 0; $lineIndex -lt $bodyLines.Count; $lineIndex++) {
+    if ($codeLines.ContainsKey($lineIndex)) {
+        continue
+    }
+    $trimmed = $bodyLines[$lineIndex].Trim()
+    if ($trimmed -notmatch '^!\[([^\]]*)\]\([^)]+\)$') {
+        continue
+    }
+
+    $alt = $matches[1]
+    $captionLineIndex = $lineIndex + 1
+    while ($captionLineIndex -lt $bodyLines.Count -and [string]::IsNullOrWhiteSpace($bodyLines[$captionLineIndex])) {
+        $captionLineIndex++
+    }
+    $captionMatch = if ($captionLineIndex -lt $bodyLines.Count) {
+        [regex]::Match($bodyLines[$captionLineIndex].Trim(), $CaptionLinePattern)
+    } else {
+        $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($alt)) {
+        if ($null -ne $captionMatch -and $captionMatch.Success) {
+            throw "Decorative image must not have a caption at body line $($captionLineIndex + 1)."
+        }
+        continue
+    }
+
+    if ($null -eq $captionMatch -or -not $captionMatch.Success -or [string]::IsNullOrWhiteSpace($captionMatch.Groups[1].Value)) {
+        throw "Informative image is missing an adjacent caption at body line $($lineIndex + 1)."
+    }
+
+    $captionByImageLine[$lineIndex] = $captionMatch.Groups[1].Value.Trim()
+    $boundCaptionLines[$captionLineIndex] = $true
+    $captionByCaptionLine[$captionLineIndex] = $captionMatch.Groups[1].Value.Trim()
+}
+
+for ($lineIndex = 0; $lineIndex -lt $bodyLines.Count; $lineIndex++) {
+    if (-not $codeLines.ContainsKey($lineIndex) -and $bodyLines[$lineIndex].Trim() -match $CaptionLinePattern -and -not $boundCaptionLines.ContainsKey($lineIndex)) {
+        throw "Orphan image caption at body line $($lineIndex + 1)."
+    }
 }
 
 $blocks = New-Object System.Collections.Generic.List[string]
@@ -196,9 +261,23 @@ while ($index -lt $bodyLines.Count) {
             relative_path = $relativePath
             absolute_path = $absolutePath
             alt = $alt
+            caption = if ($captionByImageLine.ContainsKey($index)) { [string]$captionByImageLine[$index] } else { '' }
+            role = if ([string]::IsNullOrWhiteSpace($alt)) { 'decorative' } else { 'informative' }
         })
         $encodedAlt = [System.Net.WebUtility]::HtmlEncode($alt)
-        $blocks.Add('<p style="' + $paragraphStyle + '"><img src="' + $placeholder + '" alt="' + $encodedAlt + '" style="' + $imageStyle + '" /></p>')
+        if ($captionByImageLine.ContainsKey($index)) {
+            $caption = Convert-Inline ([string]$captionByImageLine[$index]) $Platform
+            if ($Platform -eq 'wechat') {
+                $blocks.Add('<p data-image="true" style="' + $imageContainerStyle + '"><img src="' + $placeholder + '" alt="' + $encodedAlt + '" style="' + $imageStyle + '" /></p>')
+                $blocks.Add('<p data-image-caption="true" style="' + $captionStyle + '">' + $caption + '</p>')
+            } else {
+                $blocks.Add('<figure data-image="true"><img src="' + $placeholder + '" alt="' + $encodedAlt + '" style="' + $imageStyle + '" /><figcaption>' + $caption + '</figcaption></figure>')
+            }
+        } else {
+            $blocks.Add('<p data-image="true" style="' + $imageContainerStyle + '"><img src="' + $placeholder + '" alt="' + $encodedAlt + '" style="' + $imageStyle + '" /></p>')
+        }
+    } elseif ($boundCaptionLines.ContainsKey($index)) {
+        # The caption is emitted with its image so it cannot fall through as body text.
     } elseif ($line -match '^-\s+(.+)$') {
         $items = New-Object System.Collections.Generic.List[object]
         while ($index -lt $bodyLines.Count -and $bodyLines[$index].Trim() -match '^-\s+(.+)$') {
@@ -260,11 +339,25 @@ while ($index -lt $bodyLines.Count) {
     $index++
 }
 
+$normalizedBodyLines = New-Object System.Collections.Generic.List[string]
+for ($lineIndex = 0; $lineIndex -lt $bodyLines.Count; $lineIndex++) {
+    if ($boundCaptionLines.ContainsKey($lineIndex)) {
+        $captionLine = $CanonicalCaptionPrefix + [string]$captionByCaptionLine[$lineIndex]
+        if ($Platform -in @('csdn', 'juejin')) {
+            $captionLine = '*' + $captionLine + '*'
+        }
+        $normalizedBodyLines.Add($captionLine)
+    } else {
+        $normalizedBodyLines.Add($bodyLines[$lineIndex])
+    }
+}
+$normalizedBodyText = ($normalizedBodyLines -join "`n").Trim()
+
 $bodyMarkdownPath = Join-Path $resolvedOutput 'body.md'
 $bodyHtmlPath = Join-Path $resolvedOutput 'body.html'
 $manifestPath = Join-Path $resolvedOutput 'manifest.json'
 
-Write-Utf8Lf $bodyMarkdownPath ($bodyText + "`n")
+Write-Utf8Lf $bodyMarkdownPath ($normalizedBodyText + "`n")
 Write-Utf8Lf $bodyHtmlPath (("<section data-distribution-platform=`"$Platform`">`n" + ($blocks -join "`n") + "`n</section>`n"))
 
 $coverPath = $null
@@ -283,7 +376,7 @@ foreach ($imageRecord in $imageRecords) {
 }
 
 $manifest = [ordered]@{
-    schema_version = 1
+    schema_version = 2
     platform = $Platform
     title = [string]$meta['title']
     summary = $manifestSummary
