@@ -70,7 +70,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 8. 读取 [body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md)，对用户指定且通过门禁的平台，直接从“内部底稿 + 广播任务总结 + 对应平台 reference”独立转写完整文章。任何平台稿都不得作为另一个平台稿的上游。
 9. 调用 `$writing-style` 对每篇完整平台稿执行一次关系与声音检查、结构与语言去模板化，修复匿名说明书、机械结构、假洞察、清单堆叠、均匀节奏、伪口语和身份问题，不抹平平台差异。
 10. 对全部平台稿执行跨平台一致性检查，核对事实、观点、边界、主要目标效果、作者身份和来源，没有平台临时补造内容。
-11. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成。
+11. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计和最窄阅读宽度门禁。
 12. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理并运行当前系统的原生标题检查器。
 13. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
 14. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
@@ -189,7 +189,9 @@ CSDN 和掘金必须同时满足：
 - 只有一个平台需要的解释图、裁切或排版素材，进入对应平台目录。
 - 没有正文视觉能够增加价值时，明确记录“无需共享正文插图”，不添加装饰图；这不取消平台封面的入口任务。
 
-精确结构图优先使用当前环境已有的原生可编辑图形能力；能力不足时交付准确视觉规格，不临时引入额外 Skill。概念视觉、编辑插画或平台封面偏重气质与视觉隐喻时调用 `$canvas-design`；既定方向需要照片、复杂插画或纹理位图时调用 `$imagegen`。生成后必须保留可编辑源或设计说明，实际渲染并按目标阅读宽度查看。
+正文图读取 [body-visual-engineering.md](references/body-visual-engineering.md)。先压缩信息并建立第一阅读层级，再选择流程、责任区、对比、层级、因果或数据结构；语义节点数量不等于卡片数量，不默认使用等重卡片承载所有节点。空间不足时先删减或合并信息，不先缩小字体。
+
+精确结构图优先使用当前环境已有的原生可编辑图形能力；能力不足时交付准确视觉规格，不临时引入额外 Skill。概念视觉、编辑插画或平台封面偏重气质与视觉隐喻时调用 `$canvas-design`；既定方向需要照片、复杂插画或纹理位图时调用 `$imagegen`。生成后必须保留可编辑源或设计说明，实际渲染并按最窄代表阅读宽度执行冷读；只能识别文字或节点、却不能快速理解核心关系时，视觉验收失败。
 
 图片只能压缩或澄清正文已经解释的内容，不能首次引入陌生核心概念，也不能反向修改底稿事实。
 
