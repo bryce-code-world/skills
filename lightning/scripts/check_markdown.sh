@@ -64,8 +64,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 case "$COMMAND" in
-    check|compare|self-test) ;;
-    *) fail 'Command must be one of: check, compare, self-test.' ;;
+    check|readability|compare|self-test) ;;
+    *) fail 'Command must be one of: check, readability, compare, self-test.' ;;
 esac
 
 absolute_path() {
@@ -263,6 +263,145 @@ run_check() {
     return "$check_code"
 }
 
+ensure_utf8_locale() {
+    utf8_length=$(printf '中' | awk '{ print length($0) }')
+    [ "$utf8_length" = 1 ] && return
+
+    for utf8_locale in C.UTF-8 C.utf8 en_US.UTF-8 en_US.utf8 zh_CN.UTF-8 zh_CN.utf8; do
+        utf8_length=$(LC_ALL=$utf8_locale awk 'BEGIN { print length("中") }' 2>/dev/null) || continue
+        if [ "$utf8_length" = 1 ]; then
+            LC_ALL=$utf8_locale
+            export LC_ALL
+            return
+        fi
+    done
+    fail 'readability requires an available UTF-8 locale.'
+}
+
+scan_readability_file() {
+    readability_file=$1
+    readability_warnings=$2
+    awk -v file="$readability_file" -v warnings="$readability_warnings" '
+        function trim(text) {
+            sub(/^[ \t]+/, "", text)
+            sub(/[ \t]+$/, "", text)
+            return text
+        }
+        function marker_length(text, character, count) {
+            character = substr(text, 1, 1)
+            count = 0
+            while (substr(text, count + 1, 1) == character) count++
+            return count
+        }
+        function emit(line, characters, separators, text, separator) {
+            separator = sprintf("%c", 28)
+            print file separator line separator characters separator separators separator text >> warnings
+        }
+        {
+            raw = $0
+            sub(/\r$/, "", raw)
+            trimmed = raw
+            sub(/^[ \t]*/, "", trimmed)
+            if (NR == 1 && trimmed == "---") {
+                frontmatter = 1
+                next
+            }
+            if (frontmatter) {
+                if (trimmed == "---") frontmatter = 0
+                next
+            }
+            is_marker = (substr(trimmed, 1, 3) == "```" || substr(trimmed, 1, 3) == "~~~")
+            if (is_marker) {
+                character = substr(trimmed, 1, 1)
+                length_now = marker_length(trimmed)
+                if (fence_character == "") {
+                    fence_character = character
+                    fence_length = length_now
+                } else if (character == fence_character && length_now >= fence_length) {
+                    fence_character = ""
+                    fence_length = 0
+                }
+                next
+            }
+            if (fence_character != "" || trimmed == "" || trimmed ~ /^#/ || trimmed ~ /^\|/) next
+
+            visible = raw
+            gsub(/\]\((<[^>]+>|[^)[:space:]]+)\)/, "]", visible)
+            gsub(/\]\[[^]]*\]/, "]", visible)
+            gsub(/[`*_~]/, "", visible)
+            sub(/^[ \t]*([-*+]|[0-9]+[.)])[ \t]+/, "", visible)
+
+            rest = visible
+            while (rest != "") {
+                if (match(rest, /[。！？!?]/)) {
+                    sentence = substr(rest, 1, RSTART)
+                    rest = substr(rest, RSTART + RLENGTH)
+                } else {
+                    sentence = rest
+                    rest = ""
+                }
+                sentence = trim(sentence)
+                if (sentence == "") continue
+                compact = sentence
+                gsub(/[[:space:]]/, "", compact)
+                punctuation = sentence
+                separators = gsub(/[，；：]/, "", punctuation)
+                characters = length(compact)
+                if (characters >= 55 || separators >= 3) emit(NR, characters, separators, sentence)
+            }
+        }
+    ' "$readability_file" || fail "Cannot inspect Markdown readability: $readability_file"
+}
+
+readability_json() {
+    readability_source=$1
+    readability_result=
+    readability_count=0
+    while IFS="$SEP" read -r warning_path warning_line warning_characters warning_separators warning_text; do
+        [ -n "$warning_path" ] || continue
+        [ "$readability_count" -eq 0 ] || readability_result=$readability_result,
+        path_json=$(json_escape "$warning_path")
+        text_json=$(json_escape "$warning_text")
+        readability_result=$readability_result'{"file":"'$path_json'","line":'$warning_line',"characters":'$warning_characters',"separators":'$warning_separators',"text":"'$text_json'"}'
+        readability_count=$((readability_count + 1))
+    done < "$readability_source"
+    READABILITY_JSON=$readability_result
+    READABILITY_COUNT=$readability_count
+}
+
+run_readability() {
+    readability_path=$1
+    ensure_utf8_locale
+    readability_files=$(mktemp "$WORK_DIR/readability-files.XXXXXX") || fail 'Cannot create readability file list.'
+    readability_warnings=$(mktemp "$WORK_DIR/readability-warnings.XXXXXX") || fail 'Cannot create readability warning file.'
+    readability_file_count=0
+
+    if [ -f "$readability_path" ]; then
+        case "$readability_path" in
+            *.md) printf '%s\n' "$readability_path" > "$readability_files" ;;
+            *) fail "Expected a Markdown file: $readability_path" ;;
+        esac
+    elif [ -d "$readability_path" ]; then
+        find "$readability_path" -type f -name '*.md' -print | sort > "$readability_files" ||
+            fail "Cannot enumerate Markdown files: $readability_path"
+        [ -s "$readability_files" ] || fail "No Markdown files found: $readability_path"
+    else
+        fail "Path does not exist: $readability_path"
+    fi
+
+    while IFS= read -r readability_file; do
+        [ -n "$readability_file" ] || continue
+        readability_file_count=$((readability_file_count + 1))
+        scan_readability_file "$readability_file" "$readability_warnings"
+    done < "$readability_files"
+
+    readability_json "$readability_warnings"
+    if [ "$READABILITY_COUNT" -gt 0 ]; then review_required=true; else review_required=false; fi
+    path_json=$(json_escape "$readability_path")
+    printf '{"ok":true,"command":"readability","path":"%s","files_checked":%s,"review_required":%s,"warnings":[%s]}\n' \
+        "$path_json" "$readability_file_count" "$review_required" "$READABILITY_JSON"
+}
+
 append_literal() {
     literal_file=$1
     literal_kind=$2
@@ -425,14 +564,27 @@ self_test() {
     printf '%s' "$compare_json" | grep -q '"review_required":true' ||
         fail 'Self-test failed: literal comparison.'
 
+    {
+        printf '%s\n' '---'
+        printf '%s\n' 'description: "This intentionally long frontmatter value must not become a readability warning candidate."'
+        printf '%s\n\n' '---'
+        printf '对象满足条件时，执行动作一，执行动作二；出现异常时，执行联动结果。\n\n'
+        printf '| 很长的表格行，包含多个逗号，仍然不进入正文句子告警。 |\n'
+    } > "$self_root/readability.md"
+    readability_json=$(sh "$SCRIPT_PATH" readability --path "$self_root/readability.md") ||
+        fail 'Self-test failed: readability warnings.'
+    printf '%s' "$readability_json" | grep -q '"review_required":true' &&
+        printf '%s' "$readability_json" | grep -q '"separators":4' ||
+        fail 'Self-test failed: readability warnings.'
+
     recursive_code=0
     recursive_json=$(sh "$SCRIPT_PATH" check --path "$self_root") || recursive_code=$?
-    [ "$recursive_code" -eq 1 ] && printf '%s' "$recursive_json" | grep -q '"files_checked":7' ||
+    [ "$recursive_code" -eq 1 ] && printf '%s' "$recursive_json" | grep -q '"files_checked":8' ||
         fail 'Self-test failed: unicode directory recursion.'
 
     runtime=$(uname -s 2>/dev/null || printf unknown)
     runtime_json=$(json_escape "$runtime")
-    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":6,"checks":[{"name":"valid file","passed":true},{"name":"missing local link","passed":true},{"name":"unclosed fence","passed":true},{"name":"duplicate todo","passed":true},{"name":"literal comparison","passed":true},{"name":"unicode directory recursion","passed":true}]}\n' "$runtime_json"
+    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":7,"checks":[{"name":"valid file","passed":true},{"name":"missing local link","passed":true},{"name":"unclosed fence","passed":true},{"name":"duplicate todo","passed":true},{"name":"literal comparison","passed":true},{"name":"readability warnings","passed":true},{"name":"unicode directory recursion","passed":true}]}\n' "$runtime_json"
 }
 
 if [ "$COMMAND" = self-test ]; then
@@ -452,6 +604,11 @@ case "$COMMAND" in
         [ -n "$PATH_ARG" ] || fail 'Missing required argument: --path'
         run_check "$(absolute_path "$PATH_ARG")"
         exit $?
+        ;;
+    readability)
+        [ -n "$PATH_ARG" ] || fail 'Missing required argument: --path'
+        run_readability "$(absolute_path "$PATH_ARG")"
+        exit 0
         ;;
     compare)
         [ -n "$SOURCE" ] || fail 'Missing required argument: --source'

@@ -15,7 +15,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$script:Commands = @('check', 'compare', 'self-test')
+$script:Commands = @('check', 'readability', 'compare', 'self-test')
 
 function Fail([string]$Message) {
     throw [System.InvalidOperationException]::new($Message)
@@ -212,6 +212,104 @@ function Test-MarkdownPath([string]$Path) {
     }
 }
 
+function New-ReadabilityWarning(
+    [string]$File,
+    [int]$Line,
+    [int]$Characters,
+    [int]$Separators,
+    [string]$Text
+) {
+    return @{
+        file = $File
+        line = $Line
+        characters = $Characters
+        separators = $Separators
+        text = $Text
+    }
+}
+
+function Test-ReadabilityFile([string]$File) {
+    try {
+        $content = [IO.File]::ReadAllText($File)
+    }
+    catch {
+        Fail "Cannot read ${File}: $($_.Exception.Message)"
+    }
+
+    $warnings = @()
+    $lines = $content -split "`r?`n"
+    $fenceCharacter = $null
+    $fenceLength = 0
+    $inFrontmatter = $false
+
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        $line = $lines[$index]
+        $trimmed = $line.TrimStart()
+        if ($index -eq 0 -and $trimmed -eq '---') {
+            $inFrontmatter = $true
+            continue
+        }
+        if ($inFrontmatter) {
+            if ($trimmed -eq '---') {
+                $inFrontmatter = $false
+            }
+            continue
+        }
+        $fenceMatch = [regex]::Match($line, '^\s*(?<marker>`{3,}|~{3,})')
+        if ($fenceMatch.Success) {
+            $marker = $fenceMatch.Groups['marker'].Value
+            $character = $marker.Substring(0, 1)
+            if ($null -eq $fenceCharacter) {
+                $fenceCharacter = $character
+                $fenceLength = $marker.Length
+            }
+            elseif ($character -eq $fenceCharacter -and $marker.Length -ge $fenceLength) {
+                $fenceCharacter = $null
+                $fenceLength = 0
+            }
+            continue
+        }
+        if ($null -ne $fenceCharacter -or -not $trimmed -or $trimmed.StartsWith('#') -or $trimmed.StartsWith('|')) {
+            continue
+        }
+
+        $visible = [regex]::Replace($line, '!?\[([^\]]*)\]\((?:<[^>]+>|[^)\s]+)\)', '$1')
+        $visible = [regex]::Replace($visible, '\[([^\]]+)\]\[[^\]]*\]', '$1')
+        $visible = [regex]::Replace($visible, '`([^`]+)`', '$1')
+        $visible = [regex]::Replace($visible, '^\s*(?:[-*+]|\d+[.)])\s+', '')
+        $visible = $visible -replace '[*_~]', ''
+
+        foreach ($match in [regex]::Matches($visible, '[^。！？!?]+[。！？!?]?')) {
+            $sentence = $match.Value.Trim()
+            if (-not $sentence) {
+                continue
+            }
+            $characters = ($sentence -replace '\s+', '').Length
+            $separators = [regex]::Matches($sentence, '[，；：]').Count
+            if ($characters -ge 55 -or $separators -ge 3) {
+                $warnings += New-ReadabilityWarning $File ($index + 1) $characters $separators $sentence
+            }
+        }
+    }
+    return $warnings
+}
+
+function Test-ReadabilityPath([string]$Path) {
+    $files = @(Get-MarkdownFiles $Path)
+    $warnings = @()
+    foreach ($file in $files) {
+        $warnings += @(Test-ReadabilityFile $file)
+    }
+    return @{
+        ok = $true
+        command = 'readability'
+        path = $Path
+        files_checked = $files.Count
+        review_required = ($warnings.Count -gt 0)
+        warnings = $warnings
+    }
+}
+
 function Add-Literal($Map, [string]$Kind, [string]$Value) {
     $normalized = $Value.Trim()
     if (-not $normalized) {
@@ -340,8 +438,21 @@ function Invoke-SelfTest {
         $compare = Compare-Literals $source $output
         $checks += @{ name = 'literal comparison'; passed = ($compare.ok -and $compare.review_required -and $compare.source_only.Count -gt 0 -and $compare.output_only.Count -gt 0) }
 
+        $readability = Join-Path $base 'readability.md'
+        Write-TestFile $readability (@(
+            '---',
+            'description: "This intentionally long frontmatter value must not become a readability warning candidate."',
+            '---',
+            '',
+            '对象满足条件时，执行动作一，执行动作二；出现异常时，执行联动结果。',
+            '',
+            '| 很长的表格行，包含多个逗号，仍然不进入正文句子告警。 |'
+        ) -join "`n")
+        $readabilityResult = Test-ReadabilityPath $readability
+        $checks += @{ name = 'readability warnings'; passed = ($readabilityResult.ok -and $readabilityResult.review_required -and $readabilityResult.warnings.Count -eq 1) }
+
         $directoryResult = Test-MarkdownPath $base
-        $checks += @{ name = 'unicode directory recursion'; passed = ($directoryResult.files_checked -eq 7) }
+        $checks += @{ name = 'unicode directory recursion'; passed = ($directoryResult.files_checked -eq 8) }
 
         $failed = @($checks | Where-Object { -not $_.passed })
         if ($failed.Count -gt 0) {
@@ -373,6 +484,11 @@ try {
             $result = Test-MarkdownPath (Get-Option $options '--path' $true)
             Write-Json $result
             if ($result.ok) { exit 0 } else { exit 1 }
+        }
+        'readability' {
+            $result = Test-ReadabilityPath (Get-Option $options '--path' $true)
+            Write-Json $result
+            exit 0
         }
         'compare' {
             $result = Compare-Literals (Get-Option $options '--source' $true) (Get-Option $options '--output' $true)
