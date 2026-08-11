@@ -21,14 +21,6 @@ description: "以自己为第一读者，在不丢失关键信息的前提下，
 
 压缩表达，不压缩事实，也不压缩理解事实所需的逻辑关系。
 
-## 维护版本与依赖
-
-每次触发时读取 [dependencies.md](references/dependencies.md)，按其中的 24 小时规则执行非阻塞自身更新检查。
-
-更新检查失败或发现新版本时，继续使用当前版本完成文档任务；只在交付时报告，不让检查中断当前工作。
-
-只有当前任务确实需要外部 Skill 时才检查对应依赖。缺失时先说明并等待一次安装确认，不预装全部可选能力。
-
 ## 执行工作流
 
 1. 读取原始材料、目标文件和适用的项目规则。
@@ -349,9 +341,9 @@ TODO-01：确认失败重试次数。
 
 只有当前任务确实需要外部能力时，才读取 [references/orchestration.md](references/orchestration.md)。
 
-准备调用但发现 Skill 不可用时，按 [dependencies.md](references/dependencies.md) 请求一次安装确认。
+只使用当前环境已经可用且用户允许的外部能力。外部 Skill 不可用时，执行 [references/orchestration.md](references/orchestration.md) 中的降级方案。
 
-用户拒绝、本轮不能加载或安装失败时，执行声明的降级方案。
+本 Skill 不安装或更新其他 Skill、插件或运行时。
 
 只调用完成任务所需的最少能力。
 
