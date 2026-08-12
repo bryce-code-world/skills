@@ -27,74 +27,22 @@ function New-Layer {
     }
 }
 
-function Test-YqParser {
-    param([string]$Path, [string]$TempDirectory)
-    $utf8 = New-Object Text.UTF8Encoding($false)
-    $valid = Join-Path $TempDirectory 'parser-valid.yaml'
-    $invalid = Join-Path $TempDirectory 'parser-invalid.yaml'
-    [IO.File]::WriteAllText($valid, "name: sample-skill`ndescription: sample`n", $utf8)
-    [IO.File]::WriteAllText($invalid, "name: [broken`n", $utf8)
-    & $Path eval -e '.name == "sample-skill" and (.description | type == "!!str")' $valid *> $null
-    $validCode = $LASTEXITCODE
-    & $Path eval '.' $invalid *> $null
-    $invalidCode = $LASTEXITCODE
-    return ($validCode -eq 0 -and $invalidCode -ne 0)
-}
-
-function Install-TemporaryYq {
-    param([string]$TempDirectory)
-
-    $version = 'v4.53.3'
-    $architecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE')
-    switch -Regex ($architecture) {
-        '^(AMD64|x86_64)$' {
-            $asset = 'yq_windows_amd64.exe'
-            $expectedHash = 'e279bc506a452eeafcdf364f91a025455e402a8001169083caf01f4b64a544e2'
-        }
-        '^(ARM64|aarch64)$' {
-            $asset = 'yq_windows_arm64.exe'
-            $expectedHash = 'c80ac96ff2a8d77d452d91304e11feef8fb23239900b3d1d88f47c2ec93be970'
-        }
-        default { throw "temporary yq is unsupported on architecture: $architecture" }
+function ConvertFrom-PortableScalar {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -ne $Value.Trim()) { return $null }
+    if ($Value -match '^"[^"\\]*"$' -or $Value -match "^'[^']*'$" ) {
+        return $Value.Substring(1, $Value.Length - 2)
     }
-    $path = Join-Path $TempDirectory 'yq.exe'
-    $url = "https://github.com/mikefarah/yq/releases/download/$version/$asset"
-    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $curl) {
-        & $curl.Source -fL --connect-timeout 15 --max-time 90 -o $path $url
-        if ($LASTEXITCODE -ne 0) { throw 'temporary yq download failed' }
-    } else {
-        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $path -TimeoutSec 90
-    }
-    $actualHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actualHash -ne $expectedHash) {
-        Remove-Item -LiteralPath $path -Force
-        throw "temporary yq SHA-256 mismatch for $asset"
-    }
-    [pscustomobject]@{
-        Path = $path
-        Record = [ordered]@{
-            name = 'yq'
-            version = $version
-            source = $url
-            sha256 = $expectedHash
-            hash_verified = $true
-            temporary = $true
-        }
-    }
+    if ($Value -match '[\[\]{}&*!|>@`#]' -or $Value -match ':\s' -or $Value -match '["'']') { return $null }
+    return $Value
 }
 
 function Test-Structure {
-    param(
-        [string]$SkillFile,
-        [bool]$AllowTempYamlParser,
-        [string]$AuditTempDirectory
-    )
+    param([string]$SkillFile)
 
     if (-not (Test-Path -LiteralPath $SkillFile -PathType Leaf)) {
         return [pscustomobject]@{
             Layer = New-Layer 'FAIL' 'SRA-STRUCT-001' 'SKILL.md is missing'
-            AuthorizationRequired = $false
         }
     }
 
@@ -102,7 +50,6 @@ function Test-Structure {
     if ($lines.Count -lt 4 -or $lines[0] -ne '---') {
         return [pscustomobject]@{
             Layer = New-Layer 'FAIL' 'SRA-STRUCT-002' 'frontmatter must start on the first line'
-            AuthorizationRequired = $false
         }
     }
     $closing = -1
@@ -112,79 +59,43 @@ function Test-Structure {
     if ($closing -lt 2) {
         return [pscustomobject]@{
             Layer = New-Layer 'FAIL' 'SRA-STRUCT-002' 'frontmatter closing delimiter is missing'
-            AuthorizationRequired = $false
         }
     }
 
     $frontmatter = @($lines[1..($closing - 1)])
-    $nameCount = @($frontmatter | Where-Object { $_ -match '^name\s*:' }).Count
-    $descriptionCount = @($frontmatter | Where-Object { $_ -match '^description\s*:' }).Count
-    if ($nameCount -ne 1 -or $descriptionCount -ne 1) {
+    if ($frontmatter.Count -ne 2) {
         return [pscustomobject]@{
-            Layer = New-Layer 'FAIL' 'SRA-STRUCT-003' 'frontmatter must contain exactly one name and one description'
-            AuthorizationRequired = $false
+            Layer = New-Layer 'FAIL' 'SRA-STRUCT-003' 'frontmatter must contain only name and description'
+            Name = $null
         }
     }
-
-    $temp = Join-Path $AuditTempDirectory 'yaml'
-    [IO.Directory]::CreateDirectory($temp) | Out-Null
-    try {
-        $toolRecord = $null
-        $yq = Get-Command yq -ErrorAction SilentlyContinue | Select-Object -First 1
-        $yqPath = if ($null -eq $yq) { $null } else { $yq.Source }
-        if ($null -ne $yqPath -and -not (Test-YqParser $yqPath $temp)) { $yqPath = $null }
-        if ($null -eq $yqPath -and -not $AllowTempYamlParser) {
+    $values = @{}
+    foreach ($line in $frontmatter) {
+        if ($line -notmatch '^(name|description): (.+)$' -or $values.ContainsKey($Matches[1])) {
             return [pscustomobject]@{
-                Layer = New-Layer 'BLOCKED' 'SRA-STRUCT-004' 'strict YAML parser is unavailable or failed self-test'
-                AuthorizationRequired = $true
-                Tool = $null
+                Layer = New-Layer 'FAIL' 'SRA-STRUCT-003' 'frontmatter must contain name and description exactly once'
                 Name = $null
             }
         }
-        if ($null -eq $yqPath) {
-            try {
-                $download = Install-TemporaryYq $temp
-                $yqPath = $download.Path
-                $toolRecord = $download.Record
-                if (-not (Test-YqParser $yqPath $temp)) { throw 'temporary yq failed self-test' }
-            } catch {
-                return [pscustomobject]@{
-                    Layer = New-Layer 'BLOCKED' 'SRA-STRUCT-004' $_.Exception.Message
-                    AuthorizationRequired = $false
-                    Tool = $null
-                    Name = $null
-                }
-            }
-        }
-        $utf8 = New-Object Text.UTF8Encoding($false)
-        $yaml = Join-Path $temp 'frontmatter.yaml'
-        [IO.File]::WriteAllLines($yaml, $frontmatter, $utf8)
-        & $yqPath eval -e 'type == "!!map" and (.name | type == "!!str") and (.description | type == "!!str")' $yaml *> $null
-        if ($LASTEXITCODE -ne 0) {
+        $parsed = ConvertFrom-PortableScalar $Matches[2]
+        if ($null -eq $parsed -or $parsed.Length -eq 0) {
             return [pscustomobject]@{
-                Layer = New-Layer 'FAIL' 'SRA-STRUCT-005' 'frontmatter is not valid strict YAML metadata'
-                AuthorizationRequired = $false
-                Tool = $toolRecord
+                Layer = New-Layer 'FAIL' 'SRA-STRUCT-004' 'frontmatter uses a value outside the portable scalar subset'
                 Name = $null
             }
         }
-        $parsedName = (& $yqPath eval -r '.name' $yaml 2>$null).Trim()
-        if ($parsedName.Length -gt 64 -or $parsedName -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
-            return [pscustomobject]@{
-                Layer = New-Layer 'FAIL' 'SRA-STRUCT-006' 'skill name does not match the portable naming contract'
-                AuthorizationRequired = $false
-                Tool = $toolRecord
-                Name = $parsedName
-            }
-        }
+        $values[$Matches[1]] = $parsed
+    }
+    $parsedName = $values.name
+    if ($parsedName.Length -gt 64 -or $parsedName -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
         return [pscustomobject]@{
-            Layer = New-Layer 'PASS' 'SRA-STRUCT-005' 'frontmatter passed strict YAML validation'
-            AuthorizationRequired = $false
-            Tool = $toolRecord
+            Layer = New-Layer 'FAIL' 'SRA-STRUCT-006' 'skill name does not match the portable naming contract'
             Name = $parsedName
         }
-    } finally {
-        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
+    }
+    return [pscustomobject]@{
+        Layer = New-Layer 'PASS' 'SRA-STRUCT-005' 'frontmatter matches the portable two-field subset'
+        Name = $parsedName
     }
 }
 
@@ -232,7 +143,6 @@ function Invoke-Audit {
     param([string[]]$InputArguments)
 
     $source = $null
-    $allowTempYamlParser = $false
     $scope = 'full'
     $installer = 'direct'
     for ($i = 0; $i -lt $InputArguments.Count; $i++) {
@@ -242,7 +152,6 @@ function Invoke-Audit {
                 if ($i -ge $InputArguments.Count) { throw '--source requires a value' }
                 $source = $InputArguments[$i]
             }
-            '--allow-temp-yaml-parser' { $allowTempYamlParser = $true }
             '--scope' {
                 $i++
                 if ($i -ge $InputArguments.Count -or $InputArguments[$i] -notin @('static', 'full')) { throw '--scope must be static or full' }
@@ -264,7 +173,7 @@ function Invoke-Audit {
     $result = $null
     try {
         $skillFile = Join-Path $skillRoot 'SKILL.md'
-        $structureCheck = Test-Structure $skillFile $allowTempYamlParser $auditTemp
+        $structureCheck = Test-Structure $skillFile
         $structure = $structureCheck.Layer
         $release = New-Layer 'NOT_RUN' 'SRA-RELEASE-000' 'stopped after structure'
         $install = New-Layer 'NOT_RUN' 'SRA-INSTALL-000' 'stopped after structure'
@@ -294,9 +203,7 @@ function Invoke-Audit {
             target = [ordered]@{ source = $skillRoot; skill = $structureCheck.Name; commit = $null }
             scope = $scope
             overall = if ($exitCode -eq 0) { 'PASS' } elseif ($exitCode -eq 1) { 'FAIL' } else { 'INCOMPLETE' }
-            authorization_required = $structureCheck.AuthorizationRequired
             layers = $layers
-            tools = @($structureCheck.Tool | Where-Object { $null -ne $_ })
             cleanup = [ordered]@{ status = 'PENDING'; residual_path = $auditTemp }
         }
     } finally {
@@ -316,7 +223,7 @@ function Invoke-Audit {
 }
 
 function Invoke-AuditFixture {
-    param([ValidateSet('missing-skill', 'valid', 'duplicate-name')][string]$Kind)
+    param([ValidateSet('missing-skill', 'valid', 'duplicate-name', 'complex-yaml')][string]$Kind)
     $root = Join-Path ([IO.Path]::GetTempPath()) ('skill-release-auditor-test-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($root) | Out-Null
     try {
@@ -326,7 +233,10 @@ function Invoke-AuditFixture {
         if ($Kind -eq 'duplicate-name') {
             [IO.File]::WriteAllText((Join-Path $root 'SKILL.md'), "---`nname: sample-skill`nname: other-skill`ndescription: Sample skill for tests.`n---`n", (New-Object Text.UTF8Encoding($false)))
         }
-        Invoke-Audit @('--source', $root)
+        if ($Kind -eq 'complex-yaml') {
+            [IO.File]::WriteAllText((Join-Path $root 'SKILL.md'), "---`nname: sample-skill`ndescription: >`n  Multiline descriptions are outside the portable subset.`n---`n", (New-Object Text.UTF8Encoding($false)))
+        }
+        Invoke-Audit @('--source', $root, '--scope', 'static')
     } finally {
         if (Test-Path -LiteralPath $root) {
             Remove-Item -LiteralPath $root -Recurse -Force
@@ -340,13 +250,16 @@ function Invoke-SelfTest {
     Assert-Equal 'missing-skill structure' $case.Result.layers.structure.status 'FAIL'
 
     $case = Invoke-AuditFixture -Kind 'valid'
-    Assert-Equal 'missing-yq exit' $case.ExitCode 2
-    Assert-Equal 'missing-yq structure' $case.Result.layers.structure.status 'BLOCKED'
-    Assert-Equal 'missing-yq authorization' $case.Result.authorization_required $true
+    Assert-Equal 'native-frontmatter exit' $case.ExitCode 0
+    Assert-Equal 'native-frontmatter structure' $case.Result.layers.structure.status 'PASS'
 
     $case = Invoke-AuditFixture -Kind 'duplicate-name'
     Assert-Equal 'duplicate-name exit' $case.ExitCode 1
     Assert-Equal 'duplicate-name structure' $case.Result.layers.structure.status 'FAIL'
+
+    $case = Invoke-AuditFixture -Kind 'complex-yaml'
+    Assert-Equal 'complex-yaml exit' $case.ExitCode 1
+    Assert-Equal 'complex-yaml structure' $case.Result.layers.structure.status 'FAIL'
 
     $root = Join-Path ([IO.Path]::GetTempPath()) ('skill-release-auditor-contract-' + [Guid]::NewGuid().ToString('N'))
     $skillRoot = Join-Path $root 'sample-skill'
@@ -364,31 +277,8 @@ function Invoke-SelfTest {
     Write-Output '{"self_test":"PASS"}'
 }
 
-function Invoke-IntegrationTest {
-    $root = Join-Path ([IO.Path]::GetTempPath()) ('skill-release-auditor-integration-' + [Guid]::NewGuid().ToString('N'))
-    $skillRoot = Join-Path $root 'sample-skill'
-    [IO.Directory]::CreateDirectory($skillRoot) | Out-Null
-    [IO.File]::WriteAllText((Join-Path $skillRoot 'SKILL.md'), "---`nname: sample-skill`ndescription: Sample skill for tests.`n---`n`n# Sample`n", (New-Object Text.UTF8Encoding($false)))
-    try {
-        $case = Invoke-Audit @('--source', $skillRoot, '--allow-temp-yaml-parser', '--scope', 'static', '--installer', 'direct')
-        Assert-Equal 'integration exit' $case.ExitCode 0
-        Assert-Equal 'integration structure' $case.Result.layers.structure.status 'PASS'
-        Assert-Equal 'integration release' $case.Result.layers.release.status 'PASS'
-        Assert-Equal 'integration install' $case.Result.layers.install.status 'PASS'
-        Assert-Equal 'integration cleanup' $case.Result.cleanup.status 'PASS'
-        Write-Output '{"integration_test":"PASS"}'
-    } finally {
-        if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
-    }
-}
-
 if ($Command -eq 'self-test') {
     Invoke-SelfTest
-    exit 0
-}
-
-if ($Command -eq 'integration-test') {
-    Invoke-IntegrationTest
     exit 0
 }
 

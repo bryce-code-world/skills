@@ -234,7 +234,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 检查器提供 Windows PowerShell 5.1+ 与 macOS POSIX `sh` 原生脚本，不要求 Python。
 
-缺少严格 YAML 解析能力时，它会先请求授权。获得授权后才临时下载固定版本 `yq`，校验哈希并在完成后清理。
+Frontmatter 使用脚本内置的双字段子集校验。
+这项检查不依赖 Python、Node.js 或额外 YAML 工具，也不会联网下载程序。
 
 默认只在当前对话中报告，不生成报告文件，也不修改或重新发布被检 Skill。
 

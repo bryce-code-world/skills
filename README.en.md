@@ -231,7 +231,8 @@ Use it for:
 
 The auditor provides native Windows PowerShell 5.1+ and macOS POSIX `sh` scripts without requiring Python.
 
-If strict YAML parsing is unavailable, it requests permission before downloading a pinned `yq`. It verifies the hash and removes the temporary tool after the check.
+Frontmatter is checked against a built-in two-field subset.
+It requires no Python, Node.js, or external YAML tool and never downloads a program for structure validation.
 
 By default, it reports in the current conversation. It neither creates a report file nor modifies or republishes the checked skill.
 

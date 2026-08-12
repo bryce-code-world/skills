@@ -22,7 +22,7 @@ macOS:
 sh scripts/audit_release.sh audit --source <skill-directory> --scope static --installer direct
 ```
 
-5. 脚本返回 `authorization_required: true` 时，说明临时解析器的版本、来源、哈希、位置和清理范围。取得用户同意后，在原命令中增加 `--allow-temp-yaml-parser`。不要保存这次授权。
+5. 结构检查只接受 [adapter-contract.md](references/adapter-contract.md) 定义的双字段 Frontmatter 子集。复杂 YAML 直接失败，不下载解析器或尝试降级解析。
 6. 静态层出现 `FAIL` 或 `BLOCKED` 时，停止安装器、发现和行为检查。把后续层记为 `NOT_RUN`。
 7. 用户要求或发布说明采用 `npx skills add` 时，再执行隔离的 npx 适配器。直接获取检查不自动等同于 npx 安装通过。
 8. 只有宿主提供真实 Skill 名称与路径或等价调用轨迹时，才把发现层判为 `PASS`。文件存在和安装器成功不能代替宿主证据。
@@ -52,11 +52,10 @@ sh scripts/audit_release.sh audit --source <skill-directory> --scope static --in
 两个脚本参数和退出码一致：
 
 ```text
-audit --source <local-fixed-skill-directory> [--scope static|full] [--installer direct|none] [--allow-temp-yaml-parser]
+audit --source <local-fixed-skill-directory> [--scope static|full] [--installer direct|none]
 self-test
-integration-test
 ```
 
-`self-test` 不联网。`integration-test` 会实际下载临时 YAML 解析器，只在用户已经授权联网验收时运行。
+`self-test` 不联网，也不调用 Python、Node.js、包管理器或额外 YAML 工具。
 
 脚本的 `PASS` 只覆盖它实际执行的规则。远端固定、npx 安装、Codex 发现和行为判断仍按适配器契约补齐，不能根据静态脚本结果推断。

@@ -2,10 +2,7 @@
 
 set -u
 
-YQ_VERSION=v4.53.3
 AUDIT_TEMP=
-YQ_PATH=
-TOOL_JSON=
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'
@@ -52,79 +49,45 @@ hash_manifest() {
   [ ! -f "$failure" ]
 }
 
-test_yq() {
-  parser=$1
-  parser_dir=$2
-  printf '%s\n' 'name: sample-skill' 'description: sample' > "$parser_dir/parser-valid.yaml"
-  printf '%s\n' 'name: [broken' > "$parser_dir/parser-invalid.yaml"
-  "$parser" eval -e '.name == "sample-skill" and (.description | type == "!!str")' "$parser_dir/parser-valid.yaml" >/dev/null 2>&1 || return 1
-  "$parser" eval '.' "$parser_dir/parser-invalid.yaml" >/dev/null 2>&1 && return 1
-  return 0
-}
-
-install_temp_yq() {
-  tool_dir=$1
-  os=$(uname -s)
-  arch=$(uname -m)
-  suffix=
-  case "$os:$arch" in
-    Darwin:x86_64) asset=yq_darwin_amd64; expected=b4ba1ecce3c47f00803f4f964de38394326c7a32eb6540616e04fb2935a0f08d ;;
-    Darwin:arm64|Darwin:aarch64) asset=yq_darwin_arm64; expected=877de31753a4dd2401aa048937aa9a7fc4d5f6ce858cf31508c5802954297213 ;;
-    MINGW*:x86_64) asset=yq_windows_amd64.exe; expected=e279bc506a452eeafcdf364f91a025455e402a8001169083caf01f4b64a544e2; suffix=.exe ;;
-    MINGW*:arm64|MINGW*:aarch64) asset=yq_windows_arm64.exe; expected=c80ac96ff2a8d77d452d91304e11feef8fb23239900b3d1d88f47c2ec93be970; suffix=.exe ;;
-    *) YQ_ERROR="temporary yq is unsupported on $os/$arch"; return 1 ;;
-  esac
-  command -v curl >/dev/null 2>&1 || { YQ_ERROR='curl is required to acquire temporary yq'; return 1; }
-  command -v shasum >/dev/null 2>&1 || command -v certutil.exe >/dev/null 2>&1 || { YQ_ERROR='SHA-256 tool is unavailable'; return 1; }
-  url="https://github.com/mikefarah/yq/releases/download/$YQ_VERSION/$asset"
-  YQ_PATH=$tool_dir/yq$suffix
-  curl -fL --connect-timeout 15 --max-time 90 -o "$YQ_PATH" "$url" >/dev/null 2>&1 || { YQ_ERROR='temporary yq download failed'; return 1; }
-  actual=$(sha256_file "$YQ_PATH") || { YQ_ERROR='temporary yq hash could not be calculated'; return 1; }
-  if [ "$actual" != "$expected" ]; then
-    rm -f "$YQ_PATH"
-    YQ_ERROR="temporary yq SHA-256 mismatch for $asset"
-    return 1
-  fi
-  chmod 700 "$YQ_PATH" 2>/dev/null || true
-  test_yq "$YQ_PATH" "$tool_dir" || { YQ_ERROR='temporary yq failed self-test'; return 1; }
-  TOOL_JSON=$(printf '{"name":"yq","version":"%s","source":"%s","sha256":"%s","hash_verified":true,"temporary":true}' "$YQ_VERSION" "$url" "$expected")
-  return 0
-}
-
 check_structure() {
   skill_file=$1
-  allow_temp=$2
-  STRUCTURE_AUTH=false
   STRUCTURE_NAME=
-  TOOL_JSON=
   if [ ! -f "$skill_file" ]; then STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-001 'SKILL.md is missing'); STRUCTURE_STATUS=FAIL; return; fi
   [ "$(sed -n '1p' "$skill_file")" = '---' ] || { STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-002 'frontmatter must start on the first line'); STRUCTURE_STATUS=FAIL; return; }
   closing=$(awk 'NR > 1 && $0 == "---" { print NR; exit }' "$skill_file")
   [ -n "$closing" ] && [ "$closing" -ge 3 ] || { STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-002 'frontmatter closing delimiter is missing'); STRUCTURE_STATUS=FAIL; return; }
-  yaml_dir=$AUDIT_TEMP/yaml
-  mkdir -p "$yaml_dir"
-  sed -n "2,$((closing - 1))p" "$skill_file" > "$yaml_dir/frontmatter.yaml"
-  name_count=$(grep -c '^name[[:space:]]*:' "$yaml_dir/frontmatter.yaml")
-  description_count=$(grep -c '^description[[:space:]]*:' "$yaml_dir/frontmatter.yaml")
-  if [ "$name_count" -ne 1 ] || [ "$description_count" -ne 1 ]; then STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-003 'frontmatter must contain exactly one name and one description'); STRUCTURE_STATUS=FAIL; return; fi
-  if command -v yq >/dev/null 2>&1 && test_yq "$(command -v yq)" "$yaml_dir"; then
-    YQ_PATH=$(command -v yq)
-  elif [ "$allow_temp" = true ]; then
-    install_temp_yq "$yaml_dir" || { STRUCTURE_JSON=$(layer_json BLOCKED SRA-STRUCT-004 "$YQ_ERROR"); STRUCTURE_STATUS=BLOCKED; return; }
-  else
-    STRUCTURE_JSON=$(layer_json BLOCKED SRA-STRUCT-004 'strict YAML parser is unavailable or failed self-test')
-    STRUCTURE_STATUS=BLOCKED
-    STRUCTURE_AUTH=true
-    return
-  fi
-  if ! "$YQ_PATH" eval -e 'type == "!!map" and (.name | type == "!!str") and (.description | type == "!!str")' "$yaml_dir/frontmatter.yaml" >/dev/null 2>&1; then STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-005 'frontmatter is not valid strict YAML metadata'); STRUCTURE_STATUS=FAIL; return; fi
-  STRUCTURE_NAME=$("$YQ_PATH" eval -r '.name' "$yaml_dir/frontmatter.yaml")
+  [ "$closing" -eq 4 ] || { STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-003 'frontmatter must contain only name and description'); STRUCTURE_STATUS=FAIL; return; }
+  if ! STRUCTURE_NAME=$(sed -n '2,3p' "$skill_file" | awk '
+    function scalar(value, first, last, inner, i, c) {
+      if (value == "" || value ~ /^[[:space:]]/ || value ~ /[[:space:]]$/) return 0
+      first = substr(value, 1, 1); last = substr(value, length(value), 1)
+      if (first == "\"" || first == "\047") {
+        if (length(value) < 2 || last != first) return 0
+        inner = substr(value, 2, length(value) - 2)
+        return index(inner, first) == 0 && index(inner, "\\") == 0
+      }
+      if (index(value, "\"") || index(value, "\047") || value ~ /:[[:space:]]/) return 0
+      for (i = 1; i <= length(value); i++) {
+        c = substr(value, i, 1)
+        if (index("[]{}&*!|>@`#", c)) return 0
+      }
+      return 1
+    }
+    {
+      if ($0 !~ /^(name|description): /) exit 1
+      split_at = index($0, ": "); key = substr($0, 1, split_at - 1); value = substr($0, split_at + 2)
+      if (seen[key]++ || !scalar(value)) exit 1
+      if (substr(value, 1, 1) == "\"" || substr(value, 1, 1) == "\047") value = substr(value, 2, length(value) - 2)
+      values[key] = value
+    }
+    END { if (seen["name"] != 1 || seen["description"] != 1) exit 1; print values["name"] }
+  '); then STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-004 'frontmatter is outside the portable two-field subset'); STRUCTURE_STATUS=FAIL; return; fi
   case "$STRUCTURE_NAME" in
     ''|*[!a-z0-9-]*|-*|*-) STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-006 'skill name does not match the portable naming contract'); STRUCTURE_STATUS=FAIL; return ;;
     *--*) STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-006 'skill name does not match the portable naming contract'); STRUCTURE_STATUS=FAIL; return ;;
   esac
   [ "${#STRUCTURE_NAME}" -le 64 ] || { STRUCTURE_JSON=$(layer_json FAIL SRA-STRUCT-006 'skill name exceeds 64 characters'); STRUCTURE_STATUS=FAIL; return; }
-  STRUCTURE_JSON=$(layer_json PASS SRA-STRUCT-005 'frontmatter passed strict YAML validation')
+  STRUCTURE_JSON=$(layer_json PASS SRA-STRUCT-005 'frontmatter matches the portable two-field subset')
   STRUCTURE_STATUS=PASS
 }
 
@@ -155,11 +118,11 @@ check_direct_install() {
 }
 
 run_audit() {
-  source_path=$1; allow_temp=$2; scope=$3; installer=$4
+  source_path=$1; scope=$2; installer=$3
   [ -d "$source_path" ] || { printf '%s\n' '{"schema_version":1,"overall":"ERROR","error":"only local source paths are implemented"}'; return 3; }
   AUDIT_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/skill-release-auditor-XXXXXX") || return 3
   trap cleanup EXIT HUP INT TERM
-  check_structure "$source_path/SKILL.md" "$allow_temp"
+  check_structure "$source_path/SKILL.md"
   RELEASE_JSON=$(layer_json NOT_RUN SRA-RELEASE-000 'stopped after structure'); RELEASE_STATUS=NOT_RUN
   INSTALL_JSON=$(layer_json NOT_RUN SRA-INSTALL-000 'stopped after structure'); INSTALL_STATUS=NOT_RUN
   if [ "$STRUCTURE_STATUS" = PASS ]; then
@@ -173,11 +136,10 @@ run_audit() {
   selected="$STRUCTURE_STATUS $RELEASE_STATUS $INSTALL_STATUS"
   [ "$scope" = full ] && selected="$selected NOT_RUN NOT_RUN"
   case " $selected " in *' FAIL '*) code=1; overall=FAIL ;; *' BLOCKED '*|*' NOT_RUN '*) code=2; overall=INCOMPLETE ;; *) code=0; overall=PASS ;; esac
-  tools="[]"; [ -n "$TOOL_JSON" ] && tools="[$TOOL_JSON]"
   cleanup
   if [ -d "$AUDIT_TEMP" ]; then cleanup_json=$(layer_json FAIL SRA-CLEANUP-001 "temporary directory remains: $AUDIT_TEMP"); [ "$code" -eq 0 ] && code=2 && overall=INCOMPLETE; else cleanup_json='{"status":"PASS","residual_path":null}'; fi
   AUDIT_TEMP=
-  printf '{"schema_version":1,"target":{"source":"%s","skill":"%s","commit":null},"scope":"%s","overall":"%s","authorization_required":%s,"layers":{"remote":%s,"structure":%s,"release":%s,"install":%s,"discovery":%s,"behavior":%s},"tools":%s,"cleanup":%s}\n' "$(json_escape "$source_path")" "$(json_escape "$STRUCTURE_NAME")" "$scope" "$overall" "$STRUCTURE_AUTH" "$(layer_json NOT_RUN SRA-REMOTE-000 'local source path')" "$STRUCTURE_JSON" "$RELEASE_JSON" "$INSTALL_JSON" "$DISCOVERY_JSON" "$BEHAVIOR_JSON" "$tools" "$cleanup_json"
+  printf '{"schema_version":1,"target":{"source":"%s","skill":"%s","commit":null},"scope":"%s","overall":"%s","layers":{"remote":%s,"structure":%s,"release":%s,"install":%s,"discovery":%s,"behavior":%s},"cleanup":%s}\n' "$(json_escape "$source_path")" "$(json_escape "$STRUCTURE_NAME")" "$scope" "$overall" "$(layer_json NOT_RUN SRA-REMOTE-000 'local source path')" "$STRUCTURE_JSON" "$RELEASE_JSON" "$INSTALL_JSON" "$DISCOVERY_JSON" "$BEHAVIOR_JSON" "$cleanup_json"
   return "$code"
 }
 
@@ -187,18 +149,19 @@ audit_fixture() {
   case "$kind" in
     valid) printf '%s\n' '---' 'name: sample-skill' 'description: Sample skill for tests.' '---' > "$fixture/SKILL.md" ;;
     duplicate-name) printf '%s\n' '---' 'name: sample-skill' 'name: other-skill' 'description: Sample skill for tests.' '---' > "$fixture/SKILL.md" ;;
+    complex-yaml) printf '%s\n' '---' 'name: sample-skill' 'description: >' '  Multiline descriptions are outside the portable subset.' '---' > "$fixture/SKILL.md" ;;
   esac
-  set +e; output=$(run_audit "$fixture" false full direct); code=$?; set -e
+  set +e; output=$(run_audit "$fixture" static direct); code=$?; set -e
   rm -rf "$fixture"
   structure=$(printf '%s\n' "$output" | sed -n 's/.*"structure":{"status":"\([A-Z_]*\)".*/\1/p')
-  authorization=$(printf '%s\n' "$output" | sed -n 's/.*"authorization_required":\(true\|false\).*/\1/p')
-  [ "$kind" = missing-skill ] && printf '%s|%s\n' "$code" "$structure" || printf '%s|%s|%s\n' "$code" "$structure" "$authorization"
+  printf '%s|%s\n' "$code" "$structure"
 }
 
 self_test() {
   assert_equal missing-skill "$(audit_fixture missing-skill)" '1|FAIL'
-  assert_equal missing-yq "$(audit_fixture valid)" '2|BLOCKED|true'
-  assert_equal duplicate-name "$(audit_fixture duplicate-name)" '1|FAIL|false'
+  assert_equal native-frontmatter "$(audit_fixture valid)" '0|PASS'
+  assert_equal duplicate-name "$(audit_fixture duplicate-name)" '1|FAIL'
+  assert_equal complex-yaml "$(audit_fixture complex-yaml)" '1|FAIL'
   contract=$(mktemp -d "${TMPDIR:-/tmp}/skill-release-auditor-contract.XXXXXX") || exit 3
   skill_root=$contract/sample-skill
   mkdir -p "$skill_root"
@@ -214,28 +177,17 @@ self_test() {
   printf '%s\n' '{"self_test":"PASS"}'
 }
 
-integration_test() {
-  fixture=$(mktemp -d "${TMPDIR:-/tmp}/skill-release-auditor-integration.XXXXXX") || exit 3
-  printf '%s\n' '---' 'name: sample-skill' 'description: Sample skill for tests.' '---' > "$fixture/SKILL.md"
-  set +e; output=$(run_audit "$fixture" true static direct); code=$?; set -e
-  rm -rf "$fixture"
-  assert_equal integration-exit "$code" 0
-  printf '%s\n' '{"integration_test":"PASS"}'
-}
-
 command=${1:-audit}
 case "$command" in
   self-test) self_test; exit 0 ;;
-  integration-test) integration_test; exit 0 ;;
   audit) shift ;;
   *) printf '%s\n' "unknown command: $command" >&2; exit 3 ;;
 esac
 
-source_path=; allow_temp=false; scope=full; installer=direct
+source_path=; scope=full; installer=direct
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --source) shift; [ "$#" -gt 0 ] || { printf '%s\n' '--source requires a value' >&2; exit 3; }; source_path=$1 ;;
-    --allow-temp-yaml-parser) allow_temp=true ;;
     --scope) shift; [ "$#" -gt 0 ] || exit 3; scope=$1; [ "$scope" = static ] || [ "$scope" = full ] || exit 3 ;;
     --installer) shift; [ "$#" -gt 0 ] || exit 3; installer=$1; [ "$installer" = direct ] || [ "$installer" = none ] || exit 3 ;;
     *) printf '%s\n' "unknown argument: $1" >&2; exit 3 ;;
@@ -243,5 +195,5 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 [ -n "$source_path" ] || { printf '%s\n' '--source is required' >&2; exit 3; }
-run_audit "$source_path" "$allow_temp" "$scope" "$installer"
+run_audit "$source_path" "$scope" "$installer"
 exit $?

@@ -12,24 +12,22 @@
 
 私有仓库没有现成只读权限时标记 `BLOCKED`。不要发起登录，不要请求或保存 Token。
 
-## 二、严格 YAML
+## 二、Frontmatter 子集
 
-优先使用 PATH 中能够通过正常和损坏 YAML 自测的 `yq`。不可用时，原生脚本返回 `authorization_required: true`。
+原生脚本不解析通用 YAML，只接受 Skill 入口实际需要的可移植子集：
 
-用户同意后增加 `--allow-temp-yaml-parser`。脚本按系统和架构下载 `mikefarah/yq` `v4.53.3`，并使用脚本内固定 SHA-256 校验：
+- `---` 必须位于首行，结束分隔符必须位于第四行；
+- 分隔符之间只能有 `name: <value>` 和 `description: <value>`，顺序不限且各出现一次；
+- 字段不得缩进，冒号后必须有一个空格；
+- 值必须是非空单行字符串；允许无转义的单引号或双引号包裹；
+- 未加引号的值不得包含 YAML 集合、锚点、标签、块文本、注释或嵌套映射控制字符。
 
-| 平台 | 文件 | SHA-256 |
-|---|---|---|
-| Windows x64 | `yq_windows_amd64.exe` | `e279bc506a452eeafcdf364f91a025455e402a8001169083caf01f4b64a544e2` |
-| Windows ARM64 | `yq_windows_arm64.exe` | `c80ac96ff2a8d77d452d91304e11feef8fb23239900b3d1d88f47c2ec93be970` |
-| macOS Intel | `yq_darwin_amd64` | `b4ba1ecce3c47f00803f4f964de38394326c7a32eb6540616e04fb2935a0f08d` |
-| macOS Apple Silicon | `yq_darwin_arm64` | `877de31753a4dd2401aa048937aa9a7fc4d5f6ce858cf31508c5802954297213` |
-
-哈希不一致时不执行下载文件。该授权不包含全局安装、PATH 修改、包管理器或其他工具。
+多行字符串、数组、对象、锚点、引用、标签和其他复杂 YAML 直接判为 `FAIL`。检查器不下载解析器，不申请安装授权，也不因 PATH 中存在某个工具而改变判定。
 
 ## 三、直接安装
 
-原生脚本的 `--installer direct` 把固定 Skill 目录复制到本次临时目录下的 `.agents/skills/<name>`。
+原生脚本的 `--installer direct` 把固定 Skill 目录复制到本次临时目录。
+安装位置为 `.agents/skills/<name>`。
 
 脚本比较文件数量和 SHA-256。这个适配器不写入用户目录，也不证明 Codex 已经发现 Skill。
 
