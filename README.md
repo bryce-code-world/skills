@@ -24,6 +24,7 @@
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼和应用个人风格，正向建立作者—读者关系并清理机械 AI 痕迹。 |
 | [广播（broadcast）](./broadcast/SKILL.md) | 按传播效果链和关系契约分别设计标题、封面、开头、正文和结尾，把完整内部底稿转写为四平台长图文。 |
 | [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，核验最终状态并登记渠道对象和公开链接。 |
+| [Skill 发布后校验（skill-release-auditor）](./skill-release-auditor/SKILL.md) | 分层核验已发布 Skill 的远端、结构、发布一致性、隔离安装、Codex 发现和触发边界。 |
 
 ## 安装
 
@@ -50,7 +51,9 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装分发时，将链接或目录名替换为 `distribution`。
 
-八个 Skill 独立安装。业务 Skill 不在运行过程中自动安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
+安装 Skill 发布后校验时，将链接或目录名替换为 `skill-release-auditor`。
+
+九个 Skill 独立安装。业务 Skill 不在运行过程中自动安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
 
 架构图只对其 `dependencies.md` 声明的白名单依赖执行按需自动安装，不再询问。未知来源、来源变化、版本无法核验和依赖更新不自动执行。
 
@@ -217,6 +220,28 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 ```text
 使用 $distribution 把这个验收通过的公众号发布包保存到指定公众号草稿箱，重新打开草稿核对标题、正文、封面和移动端排版，不要公开发布。
+```
+
+## Skill 发布后校验
+
+适用于：
+
+- 检查 GitHub 上的单 Skill 或多 Skill 仓库是否发布完整；
+- 把 branch 或 tag 固定为 commit 后核验结构和版本一致性；
+- 在系统临时目录验证直接获取或 `npx skills add` 安装；
+- 区分文件落盘、Codex 真实发现和触发行为；
+- 准确报告失败、阻塞、未执行和临时资源清理结果。
+
+检查器提供 Windows PowerShell 5.1+ 与 macOS POSIX `sh` 原生脚本，不要求 Python。
+
+缺少严格 YAML 解析能力时，它会先请求授权。获得授权后才临时下载固定版本 `yq`，校验哈希并在完成后清理。
+
+默认只在当前对话中报告，不生成报告文件，也不修改或重新发布被检 Skill。
+
+使用示例：
+
+```text
+使用 $skill-release-auditor 检查这个 GitHub Skill 的发布结果，并分别说明六层状态和未验证项。
 ```
 
 ## License

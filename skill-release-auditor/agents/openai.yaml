@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill 发布后校验"
+  short_description: "只读核验已发布 Skill 的可访问、结构、安装、发现与行为"
+  default_prompt: "使用 $skill-release-auditor 检查这个 GitHub Skill 的发布结果，并区分失败、阻塞和未执行项。"

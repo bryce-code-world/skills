@@ -24,6 +24,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Engineer headlines, covers, openings, bodies, and endings separately, then turn a complete internal source into four platform-native articles. |
 | [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
+| [Skill Release Auditor](./skill-release-auditor/SKILL.md) | Verify a published skill's remote source, structure, release consistency, isolated installation, Codex discovery, and trigger boundaries. |
 
 ## Installation
 
@@ -50,7 +51,9 @@ For Broadcast, replace the link or directory name with `broadcast`.
 
 For Distribution, replace the link or directory name with `distribution`.
 
-The eight skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
+For Skill Release Auditor, replace the link or directory name with `skill-release-auditor`.
+
+The nine skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
@@ -214,6 +217,28 @@ Example:
 
 ```text
 Use $distribution to save this accepted WeChat release package to the specified account's draft box, reopen it to verify the title, body, cover, and mobile layout, and do not publish it.
+```
+
+## Skill Release Auditor
+
+Use it for:
+
+- Checking whether a single-skill or multi-skill GitHub repository is fully published.
+- Pinning a branch or tag to a commit before validating structure and version consistency.
+- Testing direct retrieval or `npx skills add` inside an operating-system temporary directory.
+- Separating files on disk from real Codex discovery and trigger behavior.
+- Reporting failures, blockers, skipped checks, and temporary-resource cleanup accurately.
+
+The auditor provides native Windows PowerShell 5.1+ and macOS POSIX `sh` scripts without requiring Python.
+
+If strict YAML parsing is unavailable, it requests permission before downloading a pinned `yq`. It verifies the hash and removes the temporary tool after the check.
+
+By default, it reports in the current conversation. It neither creates a report file nor modifies or republishes the checked skill.
+
+Example:
+
+```text
+Use $skill-release-auditor to check this GitHub skill release and report all six layers plus anything that remains unverified.
 ```
 
 ## License
