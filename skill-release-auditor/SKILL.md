@@ -7,12 +7,23 @@ description: 检查已经发布到 GitHub 的 Agent Skill 是否可访问、可�
 
 把“仓库存在”“文件落盘”“宿主发现”和“行为正确”分别取证。只有所有必需层都有充分证据时才报告通过。
 
+## 先执行访问权限硬门禁
+
+私有仓库没有现成只读权限，且用户明确不提供凭据时，判定是确定的：
+
+- 远端层只能写 `BLOCKED`，不得写成 `FAIL`、`BLOCKED 或 FAIL` 或其他候选状态；
+- 结构、发布、安装、发现和行为层只能写 `NOT_RUN`；
+- 最小证据只写“缺少只读访问权限”。
+
+先报告这组状态，再询问用户是否愿意提供本地副本路径。不得登录、索取 Token、推测仓库内容或展开尚未运行的层。
+
 ## 执行工作流
 
 1. 读取 [validation-contract.md](references/validation-contract.md)。
 2. 确认 GitHub 仓库、Skill 相对路径、ref、安装方式和检查范围。只有答案会改变检查对象时才询问一个关键问题。
 3. 按 [adapter-contract.md](references/adapter-contract.md) 把 ref 固定为 40 位 commit，并在系统临时目录取得只读副本。不要执行候选仓库中的脚本。
-4. 在固定副本的目标 Skill 目录运行当前平台脚本：
+4. 远端层为 `FAIL` 或 `BLOCKED` 时立即停止。结构、发布、安装、发现和行为层全部记为 `NOT_RUN`，不得因为这些层同样缺少输入而重复标记 `BLOCKED`。
+5. 在固定副本的目标 Skill 目录运行当前平台脚本：
 
 ```text
 Windows:
@@ -22,12 +33,12 @@ macOS:
 sh scripts/audit_release.sh audit --source <skill-directory> --scope static --installer direct
 ```
 
-5. 结构检查只接受 [adapter-contract.md](references/adapter-contract.md) 定义的双字段 Frontmatter 子集。复杂 YAML 直接失败，不下载解析器或尝试降级解析。
-6. 静态层出现 `FAIL` 或 `BLOCKED` 时，停止安装器、发现和行为检查。把后续层记为 `NOT_RUN`。
-7. 用户要求或发布说明采用 `npx skills add` 时，再执行隔离的 npx 适配器。直接获取检查不自动等同于 npx 安装通过。
-8. 只有宿主提供真实 Skill 名称与路径或等价调用轨迹时，才把发现层判为 `PASS`。文件存在和安装器成功不能代替宿主证据。
-9. 行为层只使用已确认预期的正向、反向、边界和失败样本。没有确认样本或真实调用证据时记为 `BLOCKED`。
-10. 清理本次登记的临时资源并验证不存在残留。直接在当前对话中汇总结果，不创建报告文件。
+6. 结构检查只接受 [adapter-contract.md](references/adapter-contract.md) 定义的双字段 Frontmatter 子集。复杂 YAML 直接失败，不下载解析器或尝试降级解析。
+7. 结构或发布层出现 `FAIL` 或 `BLOCKED` 时，停止安装器、发现和行为检查。把后续层记为 `NOT_RUN`。
+8. 用户要求或发布说明采用 `npx skills add` 时，再执行隔离的 npx 适配器。直接获取检查不自动等同于 npx 安装通过。
+9. 只有宿主提供真实 Skill 名称与路径或等价调用轨迹时，才把发现层判为 `PASS`。文件存在和安装器成功不能代替宿主证据。
+10. 行为层优先读取目标 Skill 自带的 `references/behavior-cases.md`，并按其中已确认预期执行正向、反向、边界和失败样本。没有完整案例或真实调用证据时记为 `BLOCKED`。
+11. 清理本次登记的临时资源并验证不存在残留。直接在当前对话中汇总结果，不创建报告文件。
 
 ## 保持只读边界
 
@@ -59,3 +70,7 @@ self-test
 `self-test` 不联网，也不调用 Python、Node.js、包管理器或额外 YAML 工具。
 
 脚本的 `PASS` 只覆盖它实际执行的规则。远端固定、npx 安装、Codex 发现和行为判断仍按适配器契约补齐，不能根据静态脚本结果推断。
+
+## 行为验收
+
+发布后在全新会话中使用 [behavior-cases.md](references/behavior-cases.md) 验证触发、非触发、只读边界和阻塞处理。案例只定义预期，不授权修改被检查对象或远端。

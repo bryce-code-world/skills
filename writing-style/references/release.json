@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill": "writing-style",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "source": "https://github.com/bryce-code-world/skills",
   "ref": "main",
   "path": "writing-style"

@@ -142,3 +142,7 @@ sh scripts/profile_store.sh resolve-root --root <path>
 6. 是否使用预期版本、快照、日志和写后校验。
 7. 是否允许用户跳过、纠正、撤回和删除。
 8. 是否避免诊断、固定标签、诱导问题和无关敏感披露。
+
+## 行为验收
+
+发布后在全新会话中使用 [behavior-cases.md](references/behavior-cases.md) 验证触发、非触发、权限边界和失败处理。案例只定义预期，不授权读取或修改个人资料。
