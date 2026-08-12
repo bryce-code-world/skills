@@ -1,6 +1,6 @@
 # 传播关系契约
 
-本文件只定义 `broadcast` 必须推导的传播关系。具体用词、口语、网络用语、句段节奏、读者往返和去模板化由 `$writing-style` 的 [relationship-and-voice.md](../../writing-style/references/relationship-and-voice.md) 实现。
+本文件只定义 `broadcast` 必须推导的传播关系。具体用词、口语、网络用语、句段节奏、读者往返和去模板化由 `$writing-style` 实现。当前 Skill 只保留调用契约，不读取相邻 Skill 的文件。
 
 ## 为什么需要关系契约
 
@@ -65,4 +65,4 @@
 - 没有虚构经历、假装熟络、情绪表演和口癖配额；
 - Writing Style 能根据契约完成语言实现，而不需要 Broadcast 预写具体措辞。
 
-研究依据与适用边界保留在 [communication-effects.md](communication-effects.md) 和 Writing Style 的 [relationship-and-voice.md](../../writing-style/references/relationship-and-voice.md)，不在此重复展开。
+传播研究依据与适用边界保留在 [communication-effects.md](communication-effects.md)。语言实现遵守运行时可用的 `$writing-style` 契约，不在当前 Skill 内重复展开。

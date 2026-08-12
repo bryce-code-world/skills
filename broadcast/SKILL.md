@@ -129,7 +129,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，按
 广播通用默认风格
 ```
 
-每次公开长文都使用 `$writing-style`。具体输入、三个调用阶段和返回契约以其 [broadcast-integration.md](../writing-style/references/broadcast-integration.md) 为唯一权威；不可用时使用通用默认风格，并由 `broadcast` 执行同等人工门禁。
+每次公开长文都使用 `$writing-style`。调用输入包括内部底稿、目标读者、目标平台、关系契约、主要目标效果、入口承诺和不可改变项。分别在写作前、完整平台稿完成后和格式处理后调用，接收场景风格、语言修正、身份检查和降级结论。不可用时使用通用默认风格，并由 `broadcast` 执行同等人工门禁。
 
 可以吸收具体场景进入、现象到本质递进、观点与案例交替、偏离后扣回主线、长短段落调节和结尾回收等通用机制。不得复制其他作者的身份、经历、人格、标志性口癖、固定标题或签名结构。
 
@@ -205,7 +205,7 @@ CSDN 和掘金必须同时满足：
 - 目标平台内容：对应 `platform-*.md`；
 - 标题、封面、开头、正文和结尾：五个 `*-engineering.md`；
 - 五道传播门禁、陌生场景迁移题、失败条件和状态：[communication-effects.md](references/communication-effects.md)；
-- 关系契约：[relationship-engineering.md](references/relationship-engineering.md)；语言与身份：[broadcast-integration.md](../writing-style/references/broadcast-integration.md)；
+- 关系契约：[relationship-engineering.md](references/relationship-engineering.md)；语言与身份由 `$writing-style` 处理，不可用时由 `broadcast` 执行同等人工门禁；
 - Markdown 与真实渲染边界：[platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)。
 
 跨平台只检查共同事实、主要目标效果、作者身份和来源一致，同时确认各平台直接读取底稿、存在真实阅读任务差异且互不作为内容上游。
