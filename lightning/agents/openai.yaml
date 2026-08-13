@@ -1,4 +1,4 @@
 interface:
   display_name: "闪电"
-  short_description: "快速整理内部文档，让自己易读、让 AI 清晰理解并行动"
-  default_prompt: "使用 $lightning 整理这份内部文档，在不丢失关键信息的前提下，让我和 AI 都能快速理解并行动。"
+  short_description: "优先让文档所有者易读，再让 AI 准确理解背景"
+  default_prompt: "使用 $lightning 整理这份内部文档，优先让我看懂、理解完整且易于重读，再让 AI 把它作为背景信息准确理解。"
