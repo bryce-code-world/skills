@@ -1,4 +1,4 @@
 interface:
   display_name: "广播"
   short_description: "识别内容特性并设计传播工程，把内部底稿转成平台长文"
-  default_prompt: "使用 $broadcast 识别这篇完整内部底稿的内容任务、材料边界和各平台主导原型，再生成并验收指定平台长图文。"
+  default_prompt: "使用 $broadcast 识别这篇完整内部底稿的内容任务、材料边界、内容拓扑、知识单元深度和各平台主导原型，再生成并验收指定平台长图文。"

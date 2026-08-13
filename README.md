@@ -23,7 +23,7 @@
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [学习教练（learn-everything-cn）](./learn-everything-cn/SKILL.md) | 以 `learn-everything` 为核心，把主题或材料转成自然中文的渐进课程、练习和续学状态。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼和应用个人风格，正向建立作者—读者关系并清理机械 AI 痕迹。 |
-| [广播（broadcast）](./broadcast/SKILL.md) | 识别内容任务、材料边界和平台原型，再设计完整传播工程，把内部底稿转写为四平台长图文。 |
+| [广播（broadcast）](./broadcast/SKILL.md) | 识别内容任务、拓扑、深度和平台原型，再设计完整传播工程，把内部底稿转写为四平台长图文。 |
 | [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，核验最终状态并登记渠道对象和公开链接。 |
 | [Skill 发布后校验（skill-release-auditor）](./skill-release-auditor/SKILL.md) | 分层核验已发布 Skill 的远端、结构、发布一致性、隔离安装、Codex 发现和触发边界。 |
 
@@ -204,6 +204,8 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 - 从一篇完整、结论收敛的内部底稿生成简洁广播任务总结；
 - 确定一个全局内容任务，记录底稿可用与禁用材料，并为每个平台选择一个有证据支撑的主导文章原型；
+- 识别单命题、多模块全景或双主线，区分连续阅读与参考查询，并把知识单元标为核心、支撑或延伸；
+- 知乎、CSDN、掘金深度长文不设 3000 字默认上限；公众号可做精华版，但保留核心结论、证据、最短推理链和边界；
 - 写作前明确普通大众、主题半熟悉读者或专业读者，并区分能够识别的主题术语、已经理解的共同概念和必须先解释的概念；
 - 面向普通大众时使用有共识的简单语言，先建立含义再引入必要术语；
 - 写作前建立作者说话位置、读者关系、对话距离、情绪温度和口语边界，不用网络用语配额制造“人味”；
@@ -225,7 +227,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 使用示例：
 
 ```text
-使用 $broadcast 识别这篇完整技术底稿的内容任务、材料边界和各平台主导原型，再推导认知缺口与目标效果，生成并验收公众号、知乎、CSDN 和掘金传播包。
+使用 $broadcast 识别这篇完整技术底稿的内容任务、材料边界、内容拓扑、知识单元深度和各平台主导原型，再推导认知缺口与目标效果，生成并验收公众号、知乎、CSDN 和掘金传播包。
 ```
 
 ## 分发

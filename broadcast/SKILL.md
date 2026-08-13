@@ -1,6 +1,6 @@
 ---
 name: broadcast
-description: "把一篇事实、观点和结论已经收敛的内部底稿，先识别内容任务、可用材料和各平台主导文章原型，再按可解码的传播效果链和真实样本校准，分别设计读者认知迁移、标题、封面、开头、正文和结尾，直接转写为微信公众号、知乎、CSDN 或掘金的独立长图文，并完成入口、第一屏、推进、最后一屏、效果、风格、视觉、格式和跨平台一致性验收。用于内部文章公开转写、多平台适配、深度技术文章、大众化、去 AI 套话与传播优化。CSDN 和掘金只接收开发者相关内容。不要用于整理零散或事实冲突的材料、生成平台中立母稿、公众号卡片、知乎回答、小红书、短视频、模仿作者身份、虚构经历或未经授权发布。"
+description: "把一篇事实、观点和结论已经收敛的内部底稿，识别内容任务、内容拓扑、阅读方式、知识单元深度和平台主导原型，再按传播效果链与真实样本校准，分别设计标题、封面、开篇结构、正文和结尾，直接转写为微信公众号、知乎、CSDN 或掘金的独立长图文，并完成深度、入口、第一屏、推进、最后一屏、效果、风格、视觉、格式和跨平台一致性验收。用于内部文章公开转写、多平台适配、深度技术文章、大众化、去 AI 套话与传播优化。CSDN 和掘金只接收开发者相关内容。不要用于整理零散或事实冲突的材料、公众号卡片、知乎回答、小红书、短视频、模仿作者身份、虚构经历或未经授权发布。"
 ---
 
 # 广播
@@ -60,7 +60,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，先
 - 文章已经能够独立阅读，不依赖补齐零散聊天或隐含背景；
 - 用户目标是公开转写，而不是继续整理内部材料。
 
-输入仍然零散、冲突或结论未收敛时，建议先使用 `$lightning` 整理；当前不可用或整理后仍不满足时停止，不在 `broadcast` 内补写底稿，也不生成平台中立母稿。
+输入仍然零散、冲突或结论未收敛时，建议先使用 `$lightning` 整理；当前不可用或整理后仍不满足时停止，不在 `broadcast` 内补写底稿。
 
 取得完整底稿后，文件名和目录只使用本 Skill“交付发布包”定义的结构，不临时发明另一套交付格式。
 
@@ -80,32 +80,34 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，先
 1. 读取内部底稿、目标读者、目的、目标平台和授权边界。
 2. 验证底稿是否完整、收敛并适合公开转写；失败时转交 `$lightning` 或停止。
 3. 读取 [content-routing.md](references/content-routing.md)，确定一个全局内容任务，记录可用、缺失与禁用材料，并为每个平台选择一个主导文章原型。混合内容无法裁决时停止并请求确认。
-4. 读取 [communication-effects.md](references/communication-effects.md)，根据内容任务和目标读者推导受众认知层级、主要目标效果、关键认知缺口和心智迁移方向。
-5. 读取 [task-summary.md](references/task-summary.md)，在转写目录生成简洁的 `00-广播任务总结.md`，显式保存内容画像和传播策略，不复述底稿事实、定义和论证。
-6. 读取 [reader-continuity.md](references/reader-continuity.md) 和 [relationship-engineering.md](references/relationship-engineering.md)，根据已经确定的内容画像，为每个平台建立可解码语言基线、内容主线、读者推进链和关系契约。
-7. 调用 `$writing-style` 解析主风格和场景语气，并把作者说话位置、读者关系、对话距离、情绪温度和口语边界交给它落实；不可用时使用通用默认风格并记录降级。
-8. 读取 [headline-engineering.md](references/headline-engineering.md)、[cover-engineering.md](references/cover-engineering.md) 和 [opening-engineering.md](references/opening-engineering.md)。只使用内容画像允许的材料，为每个平台建立样本校准、入口张力和机制不同的候选，再确定入口承诺、标题假设、封面视觉命题和第一屏任务。CSDN 和掘金先执行技术内容准入门禁，不适配时记录原因并跳过。
-9. 读取 [body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md)，按平台主导原型独立转写完整文章，局部机制不得开启第二条主线。任何平台稿都不得作为另一个平台稿的上游。
-10. 调用 `$writing-style` 对每篇完整平台稿执行一次关系与声音检查、结构与语言去模板化，修复匿名说明书、机械结构、假洞察、清单堆叠、均匀节奏、伪口语和身份问题，不抹平平台差异。
-11. 对全部平台稿执行跨平台一致性检查，核对事实、观点、边界、全局内容任务、材料画像、主要目标效果、作者身份和来源，没有平台临时补造内容。
-12. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计、替代文字、可见图注和最窄阅读宽度门禁。
-13. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理并运行当前系统的原生标题检查器。
-14. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
-15. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
-16. 执行内容路由、底稿、平台、跨平台、事实、深度、传播、风格、视觉和格式验收，写入 `05-验收报告.md`。
-17. 交付任务总结、目标平台稿、素材、验收报告和读者测试。
-18. 只有用户明确要求投递时，才把验收通过的发布包、目标平台、账号和动作授权交给 `$distribution`；分发能力不可用时保留本地发布包并说明人工投递边界。
+4. 读取 [depth-routing.md](references/depth-routing.md)，确定内容拓扑、阅读方式、核心/支撑/延伸知识单元和每个平台输出形态。需要系列时先请求用户确认，不静默增加文章数量。
+5. 读取 [communication-effects.md](references/communication-effects.md)，根据内容任务和目标读者推导受众认知层级、主要目标效果、关键认知缺口和心智迁移方向。
+6. 读取 [task-summary.md](references/task-summary.md)，在转写目录生成简洁的 `00-广播任务总结.md`，显式保存内容画像、深度决策和传播策略，不复述底稿事实、定义和论证。
+7. 读取 [reader-continuity.md](references/reader-continuity.md) 和 [relationship-engineering.md](references/relationship-engineering.md)，根据已经确定的内容画像与深度决策，为每个平台建立可解码语言基线、内容主线、读者推进链和关系契约。
+8. 调用 `$writing-style` 解析主风格和场景语气，并把作者说话位置、读者关系、对话距离、情绪温度和口语边界交给它落实；不可用时使用通用默认风格并记录降级。
+9. 读取 [headline-engineering.md](references/headline-engineering.md)、[cover-engineering.md](references/cover-engineering.md) 和 [opening-engineering.md](references/opening-engineering.md)。只使用内容画像允许的材料，为每个平台先选择一种主要开篇结构，再建立样本校准、入口张力和机制不同的候选，确定入口承诺、标题假设、封面视觉命题和第一屏任务。CSDN 和掘金先执行技术内容准入门禁，不适配时记录原因并跳过。
+10. 读取 [body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md)，按平台主导原型、知识单元角色和输出形态独立转写完整文章，局部机制不得开启第二条主线。任何平台稿都不得作为另一个平台稿的上游。
+11. 调用 `$writing-style` 对每篇完整平台稿执行一次关系与声音检查、结构与语言去模板化，修复匿名说明书、机械结构、假洞察、清单堆叠、均匀节奏、伪口语和身份问题，不抹平平台差异。
+12. 对全部平台稿执行跨平台一致性检查，核对事实、观点、边界、全局内容任务、材料画像、主要目标效果、作者身份和来源，没有平台临时补造内容。
+13. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计、替代文字、可见图注和最窄阅读宽度门禁。
+14. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理，运行当前系统的原生标题检查器和长度检查器。最终可见正文超过 3000 字时生成与脚本一致的长文阅读提示。
+15. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
+16. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
+17. 执行内容路由、深度路由、底稿、平台、跨平台、事实、传播、风格、视觉和格式验收，写入 `05-验收报告.md`。
+18. 交付任务总结、目标平台稿、素材、验收报告和读者测试。
+19. 只有用户明确要求投递时，才把验收通过的发布包、目标平台、账号和动作授权交给 `$distribution`；分发能力不可用时保留本地发布包并说明人工投递边界。
 
 ## 使用广播任务总结
 
 `00-广播任务总结.md` 只保存完成转写所需的最小策略：
 
-- 目标读者、内容任务和材料画像；
+- 目标读者、内容任务、材料画像、内容拓扑和阅读方式；
+- 核心、支撑、延伸知识单元及各平台输出形态；
 - 关键认知缺口和主要目标效果；
 - 各平台主导原型、内容主线和入口承诺；
 - 本次特别要求、视觉任务和交付边界。
 
-它不是事实来源、知识账本、文章提纲或隐藏母稿。不得复制底稿章节、大段定义、事实清单和完整论证；通常保持一屏左右，每项尽量一两句话。完整模板和失败处理读取 [task-summary.md](references/task-summary.md)。
+它不是事实来源、知识账本或文章提纲。不得复制底稿章节、大段定义、事实清单和完整论证。简单内容通常保持一屏；复杂内容只增加知识单元名称、角色和平台处理结果。完整模板和失败处理读取 [task-summary.md](references/task-summary.md)。
 
 四个平台的共同输入固定为：
 
@@ -127,7 +129,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，先
 每个平台一个主导文章原型
 ```
 
-全局内容任务只从知识解释、观点论证、方法教程、产品或创新传播中选择一个。每个平台只从问题解释、观点论证、方法分享、能力演化、认知变化或真实经验复盘中选择一个主导原型。完整识别、混合内容裁决、材料不足降级和平台覆盖边界读取 [content-routing.md](references/content-routing.md)。
+全局内容任务只从知识解释、观点论证、方法教程、产品或创新传播中选择一个。每个平台只从问题解释、观点论证、方法分享、能力演化、认知变化或真实经验复盘中选择一个主导原型。完整识别、混合内容裁决、材料不足降级和平台覆盖边界读取 [content-routing.md](references/content-routing.md)。内容拓扑、阅读方式、知识单元角色和平台输出形态读取 [depth-routing.md](references/depth-routing.md)。
 
 全局内容任务、材料画像、事实强度和主要目标效果跨平台保持一致。平台主导原型可以不同。
 
@@ -217,6 +219,8 @@ CSDN 和掘金必须同时满足：
 
 目标平台需要的事实或论证不在底稿时，缩小结论、删除对应段落，或者停止并请求补充底稿；不得从其他平台稿或常识中补造。
 
+深度不按统一字数验收。多模块全景、双主线和参考查询内容必须先完整覆盖核心知识单元，再按平台压缩支撑与延伸内容。知乎、CSDN 和掘金不设默认 3000 字上限；微信公众号可以更聚焦，但不能删除核心结论、关键证据、最短完整推理链、主要边界和至少一个可迁移判断或应用方式。
+
 ## 处理视觉
 
 平台封面属于入口传播，正文视觉属于解释传播，两者分开处理：
@@ -247,12 +251,14 @@ CSDN 和掘金必须同时满足：
 按以下唯一权威来源验收，不在入口文件复制问卷和详细规则：
 
 - 内容画像与路由：[content-routing.md](references/content-routing.md)；
+- 内容拓扑、阅读方式与深度路由：[depth-routing.md](references/depth-routing.md)；
 - 底稿与任务总结：[task-summary.md](references/task-summary.md)；
 - 目标平台内容：对应 `platform-*.md`；
 - 标题、封面、开头、正文和结尾：五个 `*-engineering.md`；
 - 五道传播门禁、陌生场景迁移题、失败条件和状态：[communication-effects.md](references/communication-effects.md)；
 - 关系契约：[relationship-engineering.md](references/relationship-engineering.md)；语言与身份由 `$writing-style` 处理，不可用时由 `broadcast` 执行同等人工门禁；
 - Markdown 与真实渲染边界：[platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)。
+- 平台标题与长文提示：运行当前系统的 `scripts/check_platform_title.*` 和 `scripts/check_article_length.*`；长度脚本必须通过 `self-test`，平台稿必须通过 `check`。
 
 跨平台检查全局内容任务、材料画像、共同事实、主要目标效果、作者身份和来源是否一致。同时确认各平台直接读取底稿，存在真实阅读任务差异，并且互不作为内容上游。
 
@@ -297,8 +303,8 @@ assets/shared/              # 至少两个平台需要同一正文图时
 报告：
 
 - 权威内部底稿和广播任务总结；
-- 全局内容任务、底稿可用与禁用材料、各平台主导文章原型及降级项；
-- 目标平台版本、主要目标效果、认知缺口和入口承诺；
+- 全局内容任务、底稿可用与禁用材料、内容拓扑、阅读方式、知识单元角色、各平台输出形态与主导文章原型及降级项；
+- 目标平台版本、主要目标效果、认知缺口、入口承诺和主要开篇结构；
 - 标题与封面样本来源、证据等级、最终传播机制和被淘汰方向；
 - 标题、封面、开头、正文与结尾的任务分工、承诺一致性和目标效果；
 - 风格、去模板化和跨平台一致性结论；
