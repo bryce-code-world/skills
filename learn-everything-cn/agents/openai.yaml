@@ -1,0 +1,4 @@
+interface:
+  display_name: "学习教练"
+  short_description: "以 learn-everything 为核心，提供中文渐进学习与安全续学"
+  default_prompt: "使用 $learn-everything-cn 把这个主题整理成一门可逐步学习、练习和续学的中文课程。"

@@ -21,6 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
+| [Learning Coach](./learn-everything-cn/SKILL.md) | Use `learn-everything` as the core to turn a topic or source into a natural Chinese course with practice and resumable state. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Identify the content task, material boundaries, and platform archetypes before turning an internal source into four platform-native articles. |
 | [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
@@ -45,6 +46,8 @@ For Architecture, replace the link or directory name with `architecture`.
 
 For Visual Cognitive Learning, replace the link or directory name with `visual-cognitive-learning`.
 
+For Learning Coach, replace the link or directory name with `learn-everything-cn`.
+
 For Writing Style, replace the link or directory name with `writing-style`.
 
 For Broadcast, replace the link or directory name with `broadcast`.
@@ -53,9 +56,11 @@ For Distribution, replace the link or directory name with `distribution`.
 
 For Skill Release Auditor, replace the link or directory name with `skill-release-auditor`.
 
-The nine skills install independently. Business skills do not install missing capabilities while running; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
+The ten skills can be installed independently. Except for the allowlisted dependencies below, business skills do not install missing capabilities at runtime; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
+
+Learning Coach validates `learn-everything` on first use. If missing, it installs a pinned commit into the user-level skills directory; conflicts, hash failures, or permission failures stop the workflow without overwriting or updating anything.
 
 Broadcast, Writing Style, and Distribution do not perform 24-hour update checks at runtime.
 
@@ -155,6 +160,24 @@ Example:
 
 ```text
 Use $visual-cognitive-learning to turn this software development SOP into an offline single-file HTML that teaches the flow step by step and reveals the whole process at the end.
+```
+
+## Learning Coach
+
+Use it for:
+
+- Turning a topic into a progressive learning path with a course map.
+- Teaching from a PDF, paper, book chapter, URL, local document, or codebase one lesson at a time.
+- Building mastery evidence through recall, practice, hints, correction, and teach-back.
+- Saving checkpoints and resuming the course in a later session.
+- Teaching naturally in Chinese while preserving precise source terms.
+
+It uses a pinned Xiaomi MiMo `learn-everything` as its core dependency. A missing dependency is installed and verified automatically, then the current session continues. Without an explicit learning workspace, course progress is not written into the current project.
+
+Example:
+
+```text
+Use $learn-everything-cn to assess my baseline and teach me Go concurrency chapter by chapter, one question at a time, with a resumable checkpoint.
 ```
 
 ## Writing Style
