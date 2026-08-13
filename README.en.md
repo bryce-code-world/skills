@@ -22,7 +22,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
-| [Broadcast](./broadcast/SKILL.md) | Engineer headlines, covers, openings, bodies, and endings separately, then turn a complete internal source into four platform-native articles. |
+| [Broadcast](./broadcast/SKILL.md) | Identify the content task, material boundaries, and platform archetypes before turning an internal source into four platform-native articles. |
 | [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
 | [Skill Release Auditor](./skill-release-auditor/SKILL.md) | Verify a published skill's remote source, structure, release consistency, isolated installation, Codex discovery, and trigger boundaries. |
 
@@ -178,6 +178,7 @@ Use $writing-style to extract my personal style from these articles. Show the ca
 
 Use it for:
 
+- Selecting one global content task, recording usable and forbidden source material, and choosing one evidence-backed archetype per platform.
 - Declaring the audience cognition level before writing, then separating recognizable terms from shared concepts and concepts that still need explanation.
 - Using simple shared language for general audiences, establishing meaning before introducing necessary technical terms.
 - Engineering the title, cover, opening, body, and ending separately, then having an independent reader run all five gates plus an unseen transfer task.
@@ -185,7 +186,7 @@ Use it for:
 - Having every platform read the same internal source and concise broadcast brief directly, never another platform draft.
 - Applying a developer-content eligibility gate before generating CSDN or Juejin versions.
 - Keeping only necessary, sanitized code blocks with environment and result context in CSDN and Juejin articles.
-- Keeping WeChat personal and directory-free by default, strengthening reasoning on Zhihu, technical closure on CSDN, and engineering trade-offs on Juejin.
+- Keeping WeChat personal and directory-free by default, strengthening reasoning on Zhihu, technical closure on CSDN, and engineering trade-offs on Juejin without overriding the content profile.
 - Applying a restrained editorial visual system and handing real-draft layout criteria to Distribution for verification.
 - Generating a title-aligned entry cover for each platform and shared body infographics only when they improve understanding.
 - Handing accepted release packages to `$distribution` when delivery is explicitly requested, without managing accounts, browsers, or publication state inside Broadcast.
@@ -197,7 +198,7 @@ Use `canvas-design` when conceptual visuals or platform covers need it, and `ima
 Example:
 
 ```text
-Use $broadcast to derive the audience gap and target effect from this complete internal source, calibrate the headline, cover, opening, body, and ending as separate communication jobs, then create platform-native WeChat, Zhihu, CSDN, and Juejin articles.
+Use $broadcast to identify the content task, material boundaries, and platform archetypes in this complete internal source, then derive the audience gap and target effect before creating and validating WeChat, Zhihu, CSDN, and Juejin articles.
 ```
 
 ## Distribution
