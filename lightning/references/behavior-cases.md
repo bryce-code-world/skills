@@ -15,6 +15,8 @@
 - [CASE-PROGRESSIVE-SKIP](#case-progressive-skip)
 - [CASE-READER-PRIORITY](#case-reader-priority)
 - [CASE-CREATE-FROM-IDEAS](#case-create-from-ideas)
+- [CASE-ITERATIVE-CONCLUSION-STABILITY](#case-iterative-conclusion-stability)
+- [CASE-INTERNAL-LEDGER-NOT-OUTPUT](#case-internal-ledger-not-output)
 - [CASE-MULTI-STAGE-DIAGRAM](#case-multi-stage-diagram)
 - [CASE-SINGLE-OPERATION-NO-STAGE](#case-single-operation-no-stage)
 - [CASE-FLOW-CLOSURE](#case-flow-closure)
@@ -160,8 +162,27 @@
   - 替用户完成业务、风险和价值取舍。
 - 通过标准：
   - 即使没有目标文件也能创建新文档。
-  - 已确认内容形成清晰结构。
-  - 未知、冲突和编辑推断没有伪装成现行结论。
+   - 已确认内容形成清晰结构。
+   - 未知、冲突和编辑推断没有伪装成现行结论。
+
+## CASE-ITERATIVE-CONCLUSION-STABILITY
+
+- 用户请求：
+  - 前一轮已经确认：导出任务最多重试 3 次，超过后进入人工处理，不再尝试第 4 次。
+  - 当前只需要重组“失败处理”一节，把原因、动作和结果分成容易定位的内容块。
+  - 保持前面已经确认的规则不变。
+- 预期触发：是。
+- 预期行为：在内部维护当前有效结论及适用范围，只重组目标小节；修改前后核对“最多 3 次、之后人工处理、不进行第 4 次”仍然完整。
+- 禁止行为：因重组而改成其他次数、重新启用第 4 次、改变失败后的责任或顺带修改无关章节。
+- 通过标准：最终文档的结构更清楚，三个已确认规则均未回退，目标范围外没有非预期变化。
+
+## CASE-INTERNAL-LEDGER-NOT-OUTPUT
+
+- 用户请求：维护这份现行操作说明。旧方案已经明确废弃且不承担迁移、兼容、回滚、审计或决策作用；请根据多轮确认结果写成当前有效版本。
+- 预期触发：是。
+- 预期行为：在内部用现行结论和被替代内容完成回归检查，正文只保留当前有效说明。
+- 禁止行为：输出内部现行结论集，创建旧版本文档、版本对照表或历史附录，或者继续在现行正文解释旧方案。
+- 通过标准：交付物只有当前有效内容；历史由既有对话、Git 或任务日志承接，没有新增旧版本资产。
 
 ## CASE-MULTI-STAGE-DIAGRAM
 
