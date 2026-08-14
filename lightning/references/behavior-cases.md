@@ -9,6 +9,7 @@
 - [CASE-BOUNDARY](#case-boundary)
 - [CASE-FAILURE](#case-failure)
 - [CASE-READABILITY](#case-readability)
+- [CASE-LOCAL-CONTENT-GROUPING](#case-local-content-grouping)
 - [CASE-PARAGRAPH-INDEPENDENCE](#case-paragraph-independence)
 - [CASE-PROGRESSIVE-READING](#case-progressive-reading)
 - [CASE-PROGRESSIVE-SKIP](#case-progressive-skip)
@@ -65,6 +66,27 @@
 - 预期行为：先用一句白话说明幂等键是什么，再按理解需要说明作用过程、最小例子和必要边界；同一逻辑内容较多时，使用分点或带空行的短段形成视觉阅读块。
 - 禁止行为：用另一个未解释的抽象词替代定义，把全部内容保留在一个密集长段，或机械改成连续的一句话一段。
 - 通过标准：读者能够先用一句话复述概念，再快速定位过程、示例和边界；视觉分段没有破坏逻辑连续性。
+
+## CASE-LOCAL-CONTENT-GROUPING
+
+- 用户请求：
+  - 使用 Lightning 整理一节已经一句一段的“权限变更后的刷新”说明。
+  - 材料说明哪些变化触发权限刷新 WS，以及通知哪些员工。
+  - 材料说明哪些增删操作同时产生 IM。
+  - 材料说明前端收到通知后重新获取完整权限。
+  - 材料说明哪些应用变化不触发本节通知。
+- 预期触发：是。
+- 预期行为：
+  - 先识别信息点回答的读者问题，再形成可命名内容块。
+  - 需要独立定位或维护时使用小标题，内容较少时使用总述加列表。
+- 禁止行为：
+  - 因每句话已有空行而保持整节散点平铺。
+  - 为每句话机械创建小标题。
+  - 把触发条件、接收方动作和排除边界混入同一内容块。
+  - 改变任何权限事实。
+- 通过标准：
+  - 无上下文读者能够分别复述触发范围、IM 条件、前端动作和排除边界。
+  - 连续同质信息保持紧凑，空行没有被当作语义分组。
 
 ## CASE-PARAGRAPH-INDEPENDENCE
 
