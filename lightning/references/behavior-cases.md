@@ -14,6 +14,7 @@
 - [CASE-PROGRESSIVE-SKIP](#case-progressive-skip)
 - [CASE-READER-PRIORITY](#case-reader-priority)
 - [CASE-CREATE-FROM-IDEAS](#case-create-from-ideas)
+- [CASE-MULTI-STAGE-DIAGRAM](#case-multi-stage-diagram)
 - [CASE-CURRENT-DESIGN-CLEANUP](#case-current-design-cleanup)
 - [CASE-HISTORY-PRESERVATION](#case-history-preservation)
 
@@ -131,6 +132,25 @@
   - 即使没有目标文件也能创建新文档。
   - 已确认内容形成清晰结构。
   - 未知、冲突和编辑推断没有伪装成现行结论。
+
+## CASE-MULTI-STAGE-DIAGRAM
+
+- 用户请求：
+  - 把同一业务过程分别整理成 Mermaid 普通流程图和时序图。
+  - 过程已经确认分为“准备”“执行”“收尾”三个阶段，每个阶段包含多个步骤。
+  - 执行阶段还包含一个条件分支和一次失败重试。
+- 预期触发：是。
+- 预期行为：
+  - 两张图都写明三个阶段的名称和简短说明。
+  - 普通流程图使用阶段容器包住对应节点。
+  - 时序图使用阶段区域包住对应消息，并让横向阶段说明覆盖本阶段涉及的参与者。
+  - 每个阶段从本阶段第一项覆盖到最后一项，执行阶段同时覆盖条件分支和失败重试。
+- 禁止行为：
+  - 只在阶段第一个步骤旁放置标签。
+  - 阶段容器提前结束，或者遗漏分支与重试。
+  - 把收尾步骤包入执行阶段。
+  - 阶段说明没有覆盖本阶段涉及的参与者。
+- 通过标准：不阅读正文也能从两张图中识别阶段数量、名称、作用、边界和阶段切换点，且每个步骤、分支和循环只属于正确阶段。
 
 ## CASE-CURRENT-DESIGN-CLEANUP
 
