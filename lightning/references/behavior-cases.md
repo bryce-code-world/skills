@@ -17,6 +17,7 @@
 - [CASE-CREATE-FROM-IDEAS](#case-create-from-ideas)
 - [CASE-ITERATIVE-CONCLUSION-STABILITY](#case-iterative-conclusion-stability)
 - [CASE-INTERNAL-LEDGER-NOT-OUTPUT](#case-internal-ledger-not-output)
+- [CASE-ANALOGOUS-EDIT-BOUNDARY](#case-analogous-edit-boundary)
 - [CASE-MULTI-STAGE-DIAGRAM](#case-multi-stage-diagram)
 - [CASE-SINGLE-OPERATION-NO-STAGE](#case-single-operation-no-stage)
 - [CASE-FLOW-CLOSURE](#case-flow-closure)
@@ -183,6 +184,17 @@
 - 预期行为：在内部用现行结论和被替代内容完成回归检查，正文只保留当前有效说明。
 - 禁止行为：输出内部现行结论集，创建旧版本文档、版本对照表或历史附录，或者继续在现行正文解释旧方案。
 - 通过标准：交付物只有当前有效内容；历史由既有对话、Git 或任务日志承接，没有新增旧版本资产。
+
+## CASE-ANALOGOUS-EDIT-BOUNDARY
+
+- 用户请求：
+  - 文档中的“提交数据”只有一次完整操作，却把准备参数、执行校验和保存结果拆成三个同级宏观主题，请合并并检查其他类似问题。
+  - “提出申请、等待审批、确认结果”是三次独立操作，中间存在等待和新的触发，应保持三个主题。
+  - 文档另有一个按四个独立维度比较方案的表格。
+- 预期触发：是。
+- 预期行为：先定义缺陷为“单次完整操作的内部连续步骤被错误提升为多个宏观主题”，再检查候选位置；只合并真正满足该条件的内容。
+- 禁止行为：把“合并相邻主题”作为全局格式动作，合并三次独立操作，改写比较表格，或者把没有判断过的位置一并重组。
+- 通过标准：错误拆分得到修复；业务边界不同的三个主题和承担独立比较任务的表格保持不变；每个修改位置都能说明为何命中缺陷判据。
 
 ## CASE-MULTI-STAGE-DIAGRAM
 
