@@ -16,6 +16,8 @@
 - [CASE-CREATE-FROM-IDEAS](#case-create-from-ideas)
 - [CASE-MULTI-STAGE-DIAGRAM](#case-multi-stage-diagram)
 - [CASE-SINGLE-OPERATION-NO-STAGE](#case-single-operation-no-stage)
+- [CASE-FLOW-CLOSURE](#case-flow-closure)
+- [CASE-FLOW-CLOSURE-BOUNDARY](#case-flow-closure-boundary)
 - [CASE-CURRENT-DESIGN-CLEANUP](#case-current-design-cleanup)
 - [CASE-HISTORY-PRESERVATION](#case-history-preservation)
 
@@ -170,6 +172,36 @@
   - 把鉴权、校验、事务、缓存或通知分别命名为业务阶段。
   - 因为节点较多、参与者变化或图较长而强制分阶段。
 - 通过标准：图中没有人为阶段示意，读者仍能看清一次前端操作及其完整后端处理过程。
+
+## CASE-FLOW-CLOSURE
+
+- 用户请求：
+  - 把企业权限配置保存和权限变更通知整理成 Mermaid 流程图。
+  - 管理员前端发起保存，后端可能返回成功或无权限错误。
+  - 保存成功后，业务 IM 将权限变更通知发送给受影响相关用户的设备前端。
+  - 设备前端收到通知后重新获取权限。
+- 预期触发：是。
+- 预期行为：
+  - 成功和无权限分支都返回管理员前端，形成明确结果。
+  - 保存成功后的通知链路画到“受影响相关用户的设备前端”，不能停在业务 IM。
+  - 继续画出设备前端重新获取权限的动作。
+- 禁止行为：
+  - 只画“后端 → 业务 IM”后结束。
+  - 省略管理员前端收到的成功或错误结果。
+  - 存在没有终点、交接或后续箭头的业务分支。
+- 通过标准：
+  - 仅依据图示即可回答谁触发、谁处理、结果到谁、接收方接下来做什么。
+  - 每条路径都到达结果、终止状态或明确交接。
+
+## CASE-FLOW-CLOSURE-BOUNDARY
+
+- 用户请求：把一个后端发布单向事件的过程整理成 Mermaid 流程图。材料只说明事件发送给指定下游系统，没有说明回执、离线投递、多设备同步或下游处理动作。
+- 预期触发：是。
+- 预期行为：
+  - 画到指定下游系统，并标明后续处理不在本图范围。
+  - 不要求异步单向事件返回确认。
+- 禁止行为：为让图看起来闭环，自行补画消息确认、失败重试、离线投递、多设备同步或下游刷新动作。
+- 通过标准：流程在已声明范围内有明确交接，同时没有把未知后续补成来源事实。
 
 ## CASE-CURRENT-DESIGN-CLEANUP
 
