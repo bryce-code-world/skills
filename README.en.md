@@ -173,6 +173,7 @@ Use it for:
 - Building graded evidence through recall, practice, hints, correction, transfer, and real work.
 - Revalidating fast-changing topics and reshaping stale learning paths when resuming.
 - Teaching naturally in Chinese while preserving precise source terms.
+- Keeping ongoing turns in session and consolidating progress only at durable checkpoints instead of creating files and delivery noise every turn.
 
 Every formal topic requires a user-selected parent directory. The skill creates a Chinese topic subdirectory beneath it and expands the workspace only when needed. Without that directory, it may clarify the goal but does not create course assets.
 
