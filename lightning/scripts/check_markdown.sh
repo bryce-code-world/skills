@@ -281,7 +281,8 @@ ensure_utf8_locale() {
 scan_readability_file() {
     readability_file=$1
     readability_warnings=$2
-    awk -v file="$readability_file" -v warnings="$readability_warnings" '
+    readability_paragraphs=$3
+    awk -v file="$readability_file" -v warnings="$readability_warnings" -v paragraphs="$readability_paragraphs" '
         function trim(text) {
             sub(/^[ \t]+/, "", text)
             sub(/[ \t]+$/, "", text)
@@ -293,9 +294,28 @@ scan_readability_file() {
             while (substr(text, count + 1, 1) == character) count++
             return count
         }
-        function emit(line, characters, separators, text, separator) {
+        function emit_warning(line, characters, separators, text, separator) {
             separator = sprintf("%c", 28)
             print file separator line separator characters separator separators separator text >> warnings
+        }
+        function sentence_count(text, count) {
+            count = 0
+            while (match(text, /[。！？!?]+/)) {
+                count++
+                text = substr(text, RSTART + RLENGTH)
+            }
+            return count
+        }
+        function flush_paragraph(count, separator) {
+            if (paragraph_text == "") return
+            count = sentence_count(paragraph_visible)
+            if (count >= 2) {
+                separator = sprintf("%c", 28)
+                print file separator paragraph_line separator count separator paragraph_text >> paragraphs
+            }
+            paragraph_text = ""
+            paragraph_visible = ""
+            paragraph_line = 0
         }
         {
             raw = $0
@@ -312,6 +332,7 @@ scan_readability_file() {
             }
             is_marker = (substr(trimmed, 1, 3) == "```" || substr(trimmed, 1, 3) == "~~~")
             if (is_marker) {
+                flush_paragraph()
                 character = substr(trimmed, 1, 1)
                 length_now = marker_length(trimmed)
                 if (fence_character == "") {
@@ -323,7 +344,10 @@ scan_readability_file() {
                 }
                 next
             }
-            if (fence_character != "" || trimmed == "" || trimmed ~ /^#/ || trimmed ~ /^\|/) next
+            if (fence_character != "" || trimmed == "" || trimmed ~ /^#/ || trimmed ~ /^\|/) {
+                flush_paragraph()
+                next
+            }
 
             visible = raw
             gsub(/\]\((<[^>]+>|[^)[:space:]]+)\)/, "]", visible)
@@ -347,9 +371,25 @@ scan_readability_file() {
                 punctuation = sentence
                 separators = gsub(/[，；：]/, "", punctuation)
                 characters = length(compact)
-                if (characters >= 55 || separators >= 3) emit(NR, characters, separators, sentence)
+                if (characters >= 55 || separators >= 3) emit_warning(NR, characters, separators, sentence)
+            }
+
+            if (trimmed ~ /^>/ || trimmed ~ /^([-*+]|[0-9]+[.)])[ \t]+/) {
+                flush_paragraph()
+                next
+            }
+            paragraph_raw = trim(raw)
+            paragraph_visible_line = trim(visible)
+            if (paragraph_text == "") {
+                paragraph_line = NR
+                paragraph_text = paragraph_raw
+                paragraph_visible = paragraph_visible_line
+            } else {
+                paragraph_text = paragraph_text " " paragraph_raw
+                paragraph_visible = paragraph_visible " " paragraph_visible_line
             }
         }
+        END { flush_paragraph() }
     ' "$readability_file" || fail "Cannot inspect Markdown readability: $readability_file"
 }
 
@@ -369,11 +409,28 @@ readability_json() {
     READABILITY_COUNT=$readability_count
 }
 
+paragraphs_json() {
+    paragraphs_source=$1
+    paragraphs_result=
+    paragraphs_count=0
+    while IFS="$SEP" read -r paragraph_path paragraph_line paragraph_sentences paragraph_text; do
+        [ -n "$paragraph_path" ] || continue
+        [ "$paragraphs_count" -eq 0 ] || paragraphs_result=$paragraphs_result,
+        path_json=$(json_escape "$paragraph_path")
+        text_json=$(json_escape "$paragraph_text")
+        paragraphs_result=$paragraphs_result'{"file":"'$path_json'","line":'$paragraph_line',"sentence_count":'$paragraph_sentences',"text":"'$text_json'"}'
+        paragraphs_count=$((paragraphs_count + 1))
+    done < "$paragraphs_source"
+    PARAGRAPHS_JSON=$paragraphs_result
+    PARAGRAPHS_COUNT=$paragraphs_count
+}
+
 run_readability() {
     readability_path=$1
     ensure_utf8_locale
     readability_files=$(mktemp "$WORK_DIR/readability-files.XXXXXX") || fail 'Cannot create readability file list.'
     readability_warnings=$(mktemp "$WORK_DIR/readability-warnings.XXXXXX") || fail 'Cannot create readability warning file.'
+    readability_paragraphs=$(mktemp "$WORK_DIR/readability-paragraphs.XXXXXX") || fail 'Cannot create paragraph review file.'
     readability_file_count=0
 
     if [ -f "$readability_path" ]; then
@@ -392,14 +449,15 @@ run_readability() {
     while IFS= read -r readability_file; do
         [ -n "$readability_file" ] || continue
         readability_file_count=$((readability_file_count + 1))
-        scan_readability_file "$readability_file" "$readability_warnings"
+        scan_readability_file "$readability_file" "$readability_warnings" "$readability_paragraphs"
     done < "$readability_files"
 
     readability_json "$readability_warnings"
-    if [ "$READABILITY_COUNT" -gt 0 ]; then review_required=true; else review_required=false; fi
+    paragraphs_json "$readability_paragraphs"
+    if [ "$READABILITY_COUNT" -gt 0 ] || [ "$PARAGRAPHS_COUNT" -gt 0 ]; then review_required=true; else review_required=false; fi
     path_json=$(json_escape "$readability_path")
-    printf '{"ok":true,"command":"readability","path":"%s","files_checked":%s,"review_required":%s,"warnings":[%s]}\n' \
-        "$path_json" "$readability_file_count" "$review_required" "$READABILITY_JSON"
+    printf '{"ok":true,"command":"readability","path":"%s","files_checked":%s,"review_required":%s,"warnings":[%s],"paragraph_reviews":[%s]}\n' \
+        "$path_json" "$readability_file_count" "$review_required" "$READABILITY_JSON" "$PARAGRAPHS_JSON"
 }
 
 append_literal() {
@@ -568,8 +626,16 @@ self_test() {
         printf '%s\n' '---'
         printf '%s\n' 'description: "This intentionally long frontmatter value must not become a readability warning candidate."'
         printf '%s\n\n' '---'
+        printf '# 标题第一句。标题第二句。\n\n'
+        printf '普通单行第一句。普通单行第二句。\n\n'
+        printf '跨行第一句。\n跨行第二句。\n\n'
+        printf '单句段落。\n\n'
+        printf '%s\n\n' '- 列表第一句。列表第二句。'
+        printf '| 表格第一句。表格第二句。 |\n\n'
+        printf '> 引用第一句。引用第二句。\n\n'
+        printf '%s\n' '```text' '代码第一句。代码第二句。' '```'
+        printf '\n'
         printf '对象满足条件时，执行动作一，执行动作二；出现异常时，执行联动结果。\n\n'
-        printf '| 很长的表格行，包含多个逗号，仍然不进入正文句子告警。 |\n'
     } > "$self_root/readability.md"
     readability_json=$(sh "$SCRIPT_PATH" readability --path "$self_root/readability.md") ||
         fail 'Self-test failed: readability warnings.'
@@ -577,14 +643,28 @@ self_test() {
         printf '%s' "$readability_json" | grep -q '"separators":4' ||
         fail 'Self-test failed: readability warnings.'
 
+    paragraph_count=$(printf '%s' "$readability_json" | grep -o '"sentence_count":2' | wc -l | tr -d ' ')
+    [ "$paragraph_count" -eq 2 ] &&
+        printf '%s' "$readability_json" | grep -q '"line":7,"sentence_count":2,"text":"普通单行第一句。普通单行第二句。"' &&
+        printf '%s' "$readability_json" | grep -q '"line":9,"sentence_count":2,"text":"跨行第一句。 跨行第二句。"' ||
+        fail 'Self-test failed: paragraph review candidates.'
+
+    printf '第一项规则已经确认。第二项规则等待单独维护。\n' > "$self_root/paragraph-only.md"
+    paragraph_only_json=$(sh "$SCRIPT_PATH" readability --path "$self_root/paragraph-only.md") ||
+        fail 'Self-test failed: paragraph-only review.'
+    printf '%s' "$paragraph_only_json" | grep -q '"review_required":true' &&
+        printf '%s' "$paragraph_only_json" | grep -q '"warnings":\[\]' &&
+        printf '%s' "$paragraph_only_json" | grep -q '"sentence_count":2' ||
+        fail 'Self-test failed: paragraph review candidates.'
+
     recursive_code=0
     recursive_json=$(sh "$SCRIPT_PATH" check --path "$self_root") || recursive_code=$?
-    [ "$recursive_code" -eq 1 ] && printf '%s' "$recursive_json" | grep -q '"files_checked":8' ||
+    [ "$recursive_code" -eq 1 ] && printf '%s' "$recursive_json" | grep -q '"files_checked":9' ||
         fail 'Self-test failed: unicode directory recursion.'
 
     runtime=$(uname -s 2>/dev/null || printf unknown)
     runtime_json=$(json_escape "$runtime")
-    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":7,"checks":[{"name":"valid file","passed":true},{"name":"missing local link","passed":true},{"name":"unclosed fence","passed":true},{"name":"duplicate todo","passed":true},{"name":"literal comparison","passed":true},{"name":"readability warnings","passed":true},{"name":"unicode directory recursion","passed":true}]}\n' "$runtime_json"
+    printf '{"ok":true,"command":"self-test","adapter":"posix-sh","runtime":"%s","checks_passed":8,"checks":[{"name":"valid file","passed":true},{"name":"missing local link","passed":true},{"name":"unclosed fence","passed":true},{"name":"duplicate todo","passed":true},{"name":"literal comparison","passed":true},{"name":"readability warnings","passed":true},{"name":"paragraph review candidates","passed":true},{"name":"unicode directory recursion","passed":true}]}\n' "$runtime_json"
 }
 
 if [ "$COMMAND" = self-test ]; then

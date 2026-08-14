@@ -228,6 +228,34 @@ function New-ReadabilityWarning(
     }
 }
 
+function Get-ReadabilityVisibleText([string]$Text) {
+    $visible = [regex]::Replace($Text, '!?\[([^\]]*)\]\((?:<[^>]+>|[^)\s]+)\)', '$1')
+    $visible = [regex]::Replace($visible, '\[([^\]]+)\]\[[^\]]*\]', '$1')
+    $visible = [regex]::Replace($visible, '`([^`]+)`', '$1')
+    return ($visible -replace '[*_~]', '')
+}
+
+function New-ParagraphReview(
+    [string]$File,
+    [int]$Line,
+    [string[]]$Lines
+) {
+    if ($Lines.Count -eq 0) {
+        return $null
+    }
+    $text = (($Lines | ForEach-Object { $_.Trim() }) -join ' ').Trim()
+    $sentenceCount = [regex]::Matches((Get-ReadabilityVisibleText $text), '[。！？!?]+').Count
+    if ($sentenceCount -lt 2) {
+        return $null
+    }
+    return @{
+        file = $File
+        line = $Line
+        sentence_count = $sentenceCount
+        text = $text
+    }
+}
+
 function Test-ReadabilityFile([string]$File) {
     try {
         $content = [IO.File]::ReadAllText($File)
@@ -237,6 +265,9 @@ function Test-ReadabilityFile([string]$File) {
     }
 
     $warnings = @()
+    $paragraphReviews = @()
+    $paragraphLines = @()
+    $paragraphStart = 0
     $lines = $content -split "`r?`n"
     $fenceCharacter = $null
     $fenceLength = 0
@@ -257,6 +288,10 @@ function Test-ReadabilityFile([string]$File) {
         }
         $fenceMatch = [regex]::Match($line, '^\s*(?<marker>`{3,}|~{3,})')
         if ($fenceMatch.Success) {
+            $review = New-ParagraphReview $File $paragraphStart @($paragraphLines)
+            if ($null -ne $review) { $paragraphReviews += $review }
+            $paragraphLines = @()
+            $paragraphStart = 0
             $marker = $fenceMatch.Groups['marker'].Value
             $character = $marker.Substring(0, 1)
             if ($null -eq $fenceCharacter) {
@@ -270,14 +305,15 @@ function Test-ReadabilityFile([string]$File) {
             continue
         }
         if ($null -ne $fenceCharacter -or -not $trimmed -or $trimmed.StartsWith('#') -or $trimmed.StartsWith('|')) {
+            $review = New-ParagraphReview $File $paragraphStart @($paragraphLines)
+            if ($null -ne $review) { $paragraphReviews += $review }
+            $paragraphLines = @()
+            $paragraphStart = 0
             continue
         }
 
-        $visible = [regex]::Replace($line, '!?\[([^\]]*)\]\((?:<[^>]+>|[^)\s]+)\)', '$1')
-        $visible = [regex]::Replace($visible, '\[([^\]]+)\]\[[^\]]*\]', '$1')
-        $visible = [regex]::Replace($visible, '`([^`]+)`', '$1')
+        $visible = Get-ReadabilityVisibleText $line
         $visible = [regex]::Replace($visible, '^\s*(?:[-*+]|\d+[.)])\s+', '')
-        $visible = $visible -replace '[*_~]', ''
 
         foreach ($match in [regex]::Matches($visible, '[^。！？!?]+[。！？!?]?')) {
             $sentence = $match.Value.Trim()
@@ -290,23 +326,41 @@ function Test-ReadabilityFile([string]$File) {
                 $warnings += New-ReadabilityWarning $File ($index + 1) $characters $separators $sentence
             }
         }
+
+        if ($trimmed.StartsWith('>') -or $trimmed -match '^(?:[-*+]|\d+[.)])\s+') {
+            $review = New-ParagraphReview $File $paragraphStart @($paragraphLines)
+            if ($null -ne $review) { $paragraphReviews += $review }
+            $paragraphLines = @()
+            $paragraphStart = 0
+            continue
+        }
+        if ($paragraphLines.Count -eq 0) {
+            $paragraphStart = $index + 1
+        }
+        $paragraphLines += $line
     }
-    return $warnings
+    $review = New-ParagraphReview $File $paragraphStart @($paragraphLines)
+    if ($null -ne $review) { $paragraphReviews += $review }
+    return @{ warnings = $warnings; paragraph_reviews = $paragraphReviews }
 }
 
 function Test-ReadabilityPath([string]$Path) {
     $files = @(Get-MarkdownFiles $Path)
     $warnings = @()
+    $paragraphReviews = @()
     foreach ($file in $files) {
-        $warnings += @(Test-ReadabilityFile $file)
+        $fileResult = Test-ReadabilityFile $file
+        $warnings += @($fileResult.warnings)
+        $paragraphReviews += @($fileResult.paragraph_reviews)
     }
     return @{
         ok = $true
         command = 'readability'
         path = $Path
         files_checked = $files.Count
-        review_required = ($warnings.Count -gt 0)
+        review_required = ($warnings.Count -gt 0 -or $paragraphReviews.Count -gt 0)
         warnings = $warnings
+        paragraph_reviews = $paragraphReviews
     }
 }
 
@@ -444,15 +498,51 @@ function Invoke-SelfTest {
             'description: "This intentionally long frontmatter value must not become a readability warning candidate."',
             '---',
             '',
-            '对象满足条件时，执行动作一，执行动作二；出现异常时，执行联动结果。',
+            '# 标题第一句。标题第二句。',
             '',
-            '| 很长的表格行，包含多个逗号，仍然不进入正文句子告警。 |'
+            '普通单行第一句。普通单行第二句。',
+            '',
+            '跨行第一句。',
+            '跨行第二句。',
+            '',
+            '单句段落。',
+            '',
+            '- 列表第一句。列表第二句。',
+            '',
+            '| 表格第一句。表格第二句。 |',
+            '',
+            '> 引用第一句。引用第二句。',
+            '',
+            '```text',
+            '代码第一句。代码第二句。',
+            '```',
+            '',
+            '对象满足条件时，执行动作一，执行动作二；出现异常时，执行联动结果。',
+            ''
         ) -join "`n")
         $readabilityResult = Test-ReadabilityPath $readability
-        $checks += @{ name = 'readability warnings'; passed = ($readabilityResult.ok -and $readabilityResult.review_required -and $readabilityResult.warnings.Count -eq 1) }
+        $checks += @{ name = 'readability warnings'; passed = ($readabilityResult.ok -and $readabilityResult.review_required -and $readabilityResult.warnings.Count -eq 1 -and $readabilityResult.warnings[0].separators -eq 4) }
+
+        $paragraphReviews = @($readabilityResult.paragraph_reviews)
+        $paragraphOnly = Join-Path $base 'paragraph-only.md'
+        Write-TestFile $paragraphOnly '第一项规则已经确认。第二项规则等待单独维护。'
+        $paragraphOnlyResult = Test-ReadabilityPath $paragraphOnly
+        $paragraphReviewPassed = (
+            $paragraphReviews.Count -eq 2 -and
+            $paragraphReviews[0].line -eq 7 -and
+            $paragraphReviews[0].sentence_count -eq 2 -and
+            $paragraphReviews[0].text -eq '普通单行第一句。普通单行第二句。' -and
+            $paragraphReviews[1].line -eq 9 -and
+            $paragraphReviews[1].sentence_count -eq 2 -and
+            $paragraphReviews[1].text -eq '跨行第一句。 跨行第二句。' -and
+            $paragraphOnlyResult.review_required -and
+            $paragraphOnlyResult.warnings.Count -eq 0 -and
+            $paragraphOnlyResult.paragraph_reviews.Count -eq 1
+        )
+        $checks += @{ name = 'paragraph review candidates'; passed = $paragraphReviewPassed }
 
         $directoryResult = Test-MarkdownPath $base
-        $checks += @{ name = 'unicode directory recursion'; passed = ($directoryResult.files_checked -eq 8) }
+        $checks += @{ name = 'unicode directory recursion'; passed = ($directoryResult.files_checked -eq 9) }
 
         $failed = @($checks | Where-Object { -not $_.passed })
         if ($failed.Count -gt 0) {

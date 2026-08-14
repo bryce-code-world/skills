@@ -7,10 +7,11 @@
 - 未闭合的反引号或波浪线代码围栏；
 - 指向不存在文件或目录的本地 Markdown 链接；
 - 重复定义的 `TODO-NN`；
-- 原文与成稿之间需要人工复核的高风险字面量差异。
-- 需要人工复核的高负载正文句子。
+- 原文与成稿之间需要人工复核的高风险字面量差异；
+- 需要人工复核的高负载正文句子；
+- 包含两个及以上完整句、需要人工判断是否拆分的普通正文段落。
 
-高负载句子只是复核候选，不是机械错误。检查器不能证明事实完整、语义正确、结构合理或文档易懂。脚本通过后，仍要执行 `lightning` 的来源账本核对和全文自检。
+高负载句子和多完整句段落都只是非阻断复核候选，不是机械错误。检查器不自动分段，也不根据标点数量判定段落质量。脚本通过后，仍要执行 `lightning` 的来源账本核对和全文自检。
 
 ## 适配器
 
@@ -32,12 +33,16 @@ self-test
 
 `check` 对目录递归检查所有 `.md` 文件。
 
-`readability` 排除 YAML frontmatter、标题、表格行、代码围栏和 Markdown 链接目标后，筛选满足任一条件的正文句子：
+`readability` 保留已有 `warnings`，排除 YAML frontmatter、标题、表格行、代码围栏和 Markdown 链接目标后，筛选满足任一条件的正文句子：
 
 - 不少于 55 个可见字符；
 - 包含至少 3 个逗号、分号或冒号。
 
-结果中的 `review_required` 表示存在候选。Agent 必须判断候选是否包含多个规则单元，不能按字符数或标点数自动拆句。
+`paragraph_reviews` 聚合由空行或结构块分隔的普通正文段落。YAML frontmatter、标题、列表、表格、代码围栏和引用块不进入段落候选；跨 Markdown 行但没有空行的普通正文仍属于同一段落。
+
+每个段落候选至少包含 `file`、起始 `line`、`sentence_count` 和合并为单行的 `text`。句末终止符组只用于发现候选，不代表必须拆分。
+
+现有顶层字段 `ok`、`command`、`path`、`files_checked`、`review_required` 和 `warnings` 保持不变，并新增 `paragraph_reviews`。`warnings` 或 `paragraph_reviews` 任一非空时，`review_required` 为 `true`。
 
 `compare` 同时检查成稿的机械完整性，并比较以下精确字面量：
 
@@ -68,4 +73,4 @@ self-test
 
 `compare` 只有在成稿的机械检查失败时返回 `1`。字面量存在差异时返回 `0`，并设置 `review_required: true`。
 
-`readability` 在成功完成扫描时始终返回 `0`，并通过 `review_required` 和 `warnings` 输出人工复核线索。参数、路径或读取失败时返回 `2`。
+`readability` 在成功完成扫描时始终返回 `0`，并通过 `warnings`、`paragraph_reviews` 和 `review_required` 输出人工复核线索。参数、路径或读取失败时返回 `2`。
