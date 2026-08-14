@@ -18,6 +18,8 @@
 - [CASE-SINGLE-OPERATION-NO-STAGE](#case-single-operation-no-stage)
 - [CASE-FLOW-CLOSURE](#case-flow-closure)
 - [CASE-FLOW-CLOSURE-BOUNDARY](#case-flow-closure-boundary)
+- [CASE-DIAGRAM-KEY-OBJECTS](#case-diagram-key-objects)
+- [CASE-DIAGRAM-KEY-OBJECTS-BOUNDARY](#case-diagram-key-objects-boundary)
 - [CASE-CURRENT-DESIGN-CLEANUP](#case-current-design-cleanup)
 - [CASE-HISTORY-PRESERVATION](#case-history-preservation)
 
@@ -202,6 +204,56 @@
   - 不要求异步单向事件返回确认。
 - 禁止行为：为让图看起来闭环，自行补画消息确认、失败重试、离线投递、多设备同步或下游刷新动作。
 - 通过标准：流程在已声明范围内有明确交接，同时没有把未知后续补成来源事实。
+
+## CASE-DIAGRAM-KEY-OBJECTS
+
+- 用户请求：
+  - 把权限保存与前端刷新过程整理成能够指导开发的 Mermaid 图。
+  - 管理员前端调用 `POST /v1/access-rules/save`。
+  - 对应 Proto 方法是 `AccessRuleService.SaveRules`。
+  - 后端写入 `st_access_rule`。
+  - 后端删除 `access:snapshot:{tenant_id}:{user_id}`。
+  - 后端调用 RPC `NoticeService.PublishRuleChanged`。
+  - 消息队列信息：
+    - topic 是 `access-rule.changed`；
+    - 消息 `title` 是 `ACCESS_RULE_CHANGED`；
+    - 消费者是 `access-refresh-worker`。
+  - WebSocket 外层事件类型是 `EVENT_BIZ_MESSAGE`。
+  - WebSocket 业务类型是 `ACCESS_RULE_CHANGED`。
+  - 受影响用户设备收到消息后调用 `GET /v1/access-rules/current`。
+- 预期触发：是。
+- 预期行为：
+  - 只把当前链路实际使用的接口、方法、表、缓存和消息信息放入对应节点或消息。
+  - 写明消息队列的 topic、消息 `title` 和消费者。
+  - 分别写明 WebSocket 事件类型与业务类型。
+  - 写明消息到达的用户设备范围，以及设备收到消息后的接口或动作。
+- 禁止行为：
+  - 只写“调用 RPC”“更新数据库”“清理缓存”“发送队列消息”或“发送 WS”等泛称。
+  - 为凑齐技术清单增加当前链路没有使用的表、缓存或内部函数。
+  - 把完整字段、SQL 和协议清单全部塞入图中。
+- 通过标准：
+  - 图中准确保留材料给出的名称和动作。
+  - 开发者只依据图和明确的图下入口，即可定位入口、契约、状态载体、异步路由和接收动作。
+
+## CASE-DIAGRAM-KEY-OBJECTS-BOUNDARY
+
+- 用户请求：
+  - 材料已经确认主刷新链路和一个条件触发的 IM 附加链路。
+  - RPC 职责已经确认，但方法名尚未设计。
+  - WebSocket 外层事件类型已确认，业务类型尚未设计。
+- 预期触发：是。
+- 预期行为：
+  - 分离主刷新链路与条件性 IM 链路，避免接收方和连线交叉。
+  - 将未知 RPC 方法和 WebSocket 业务类型标记为“待设计”或带编号 TODO。
+  - 保留已经确认的事件类型和其他关键对象。
+- 禁止行为：
+  - 为使图显得完整而自行命名 RPC 方法或 WebSocket 业务类型。
+  - 把拆图错误表达为新增业务阶段。
+  - 因为信息较多而删除当前链路实施所需的准确对象。
+- 通过标准：
+  - 两张图各自能够连续阅读。
+  - 已知对象准确，未知名称显式保留。
+  - 没有把阅读拆分伪装成业务阶段。
 
 ## CASE-CURRENT-DESIGN-CLEANUP
 
