@@ -21,7 +21,7 @@
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
-| [学习教练（learn-everything-cn）](./learn-everything-cn/SKILL.md) | 以 `learn-everything` 为核心，把主题或材料转成自然中文的渐进课程、练习和续学状态。 |
+| [学习教练（learn-everything-cn）](./learn-everything-cn/SKILL.md) | 按终点、阶段、证据与知识时效，把主题或材料组织成自然中文的自适应课程。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼和应用个人风格，正向建立作者—读者关系并清理机械 AI 痕迹。 |
 | [广播（broadcast）](./broadcast/SKILL.md) | 识别内容任务、拓扑、深度和平台原型，再设计完整传播工程，把内部底稿转写为四平台长图文。 |
 | [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，核验最终状态并登记渠道对象和公开链接。 |
@@ -60,7 +60,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 架构图只对其 `dependencies.md` 声明的白名单依赖执行按需自动安装，不再询问。未知来源、来源变化、版本无法核验和依赖更新不自动执行。
 
-学习教练首次使用时校验 `learn-everything`。依赖缺失时，从固定提交自动安装到用户级 Skill 目录；冲突、哈希失败或权限失败时停止，不覆盖或自动更新。
+学习教练独立运行，不安装或依赖其他教学 Skill、Python、插件或 MCP。高变化主题只有在目标依赖当前主流时才要求联网核验。
 
 广播、声纹和分发不在运行时执行 24 小时更新检查。
 
@@ -168,16 +168,18 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 - 把一个主题整理成有课程地图的渐进学习路径。
 - 根据 PDF、论文、书籍章节、网页、本地文档或代码逐节教学。
-- 通过回忆、练习、提示、纠错和教回来形成掌握证据。
-- 暂停后保存检查点，并在后续会话继续学习。
+- 按认识、理解、掌握、熟练或创造终点选择必要阶段与证据。
+- 根据主题规模建立微型、标准或深度中文学习工作区。
+- 通过回忆、练习、提示、纠错、迁移和真实实践形成分级证据。
+- 对 AI 等高变化主题建立知识快照，并在续学时重排失效路径。
 - 在中文环境中保留准确术语，同时避免翻译腔和连续问题轰炸。
 
-它以固定版本的 Xiaomi MiMo `learn-everything` 为核心依赖。依赖缺失时自动安装并校验，安装成功后在同一会话继续；未指定学习工作区时不会把进度写进当前项目。
+每个正式主题必须由用户指定学习内容父目录。Skill 在该目录下创建中文主题子目录，并按实际复杂度渐进扩展。未指定目录时只澄清目标，不创建学习资产。
 
 使用示例：
 
 ```text
-使用 $learn-everything-cn 先测试我的基础，再分章节带我学习 Go 并发；一次只问一个问题，并保存可续学检查点。
+使用 $learn-everything-cn 先测试我的基础，再带我掌握 Go 并发；学习内容放在 E:\学习资料，一次只问一个问题。
 ```
 
 ## 声纹

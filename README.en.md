@@ -21,7 +21,7 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
-| [Learning Coach](./learn-everything-cn/SKILL.md) | Use `learn-everything` as the core to turn a topic or source into a natural Chinese course with practice and resumable state. |
+| [Learning Coach](./learn-everything-cn/SKILL.md) | Build adaptive Chinese courses from goals, stages, evidence, and knowledge freshness. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Identify the content task, material boundaries, and platform archetypes before turning an internal source into four platform-native articles. |
 | [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
@@ -60,7 +60,7 @@ The ten skills can be installed independently. Except for the allowlisted depend
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
-Learning Coach validates `learn-everything` on first use. If missing, it installs a pinned commit into the user-level skills directory; conflicts, hash failures, or permission failures stop the workflow without overwriting or updating anything.
+Learning Coach runs independently without another teaching skill, Python, plugin, or MCP. Fast-changing topics require web verification only when the goal depends on current practice.
 
 Broadcast, Writing Style, and Distribution do not perform 24-hour update checks at runtime.
 
@@ -168,16 +168,18 @@ Use it for:
 
 - Turning a topic into a progressive learning path with a course map.
 - Teaching from a PDF, paper, book chapter, URL, local document, or codebase one lesson at a time.
-- Building mastery evidence through recall, practice, hints, correction, and teach-back.
-- Saving checkpoints and resuming the course in a later session.
+- Routing to recognition, understanding, mastery, fluency, or creation outcomes.
+- Building micro, standard, or deep Chinese learning workspaces based on real scope.
+- Building graded evidence through recall, practice, hints, correction, transfer, and real work.
+- Revalidating fast-changing topics and reshaping stale learning paths when resuming.
 - Teaching naturally in Chinese while preserving precise source terms.
 
-It uses a pinned Xiaomi MiMo `learn-everything` as its core dependency. A missing dependency is installed and verified automatically, then the current session continues. Without an explicit learning workspace, course progress is not written into the current project.
+Every formal topic requires a user-selected parent directory. The skill creates a Chinese topic subdirectory beneath it and expands the workspace only when needed. Without that directory, it may clarify the goal but does not create course assets.
 
 Example:
 
 ```text
-Use $learn-everything-cn to assess my baseline and teach me Go concurrency chapter by chapter, one question at a time, with a resumable checkpoint.
+Use $learn-everything-cn to assess my baseline and help me master Go concurrency. Store the course under E:\Learning and ask one question at a time.
 ```
 
 ## Writing Style
