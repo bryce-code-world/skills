@@ -326,7 +326,7 @@ TODO-01：确认失败重试次数。
 
 图示能够独立表达且目标环境支持 Mermaid 时，直接使用 Mermaid，不再用大段文字复述。
 
-生成 Mermaid 图时，读取 [阶段](references/diagram-stage-coverage.md)、[闭环](references/diagram-flow-closure.md) 与 [落地对象](references/diagram-key-objects.md) 规则，依次检查结构、路径和实现信息。
+生成 Mermaid 图时，按 [结构](references/diagram-role-node-layering.md) → [阶段](references/diagram-stage-coverage.md) → [闭环](references/diagram-flow-closure.md) → [落地对象](references/diagram-key-objects.md) 检查图示、路径和实现信息。
 
 不支持 Mermaid 时，先考虑表格，再考虑紧凑 ASCII 图。
 
@@ -463,8 +463,8 @@ compare --source <source-file> --output <markdown-file>
 14. 读者能否一次复述核心结论和例外，未知是否仍保持独立状态。
 15. 是否先满足文档所有者的理解和阅读；AI 能否把文档作为背景信息准确理解，且相关优化没有破坏第一读者体验。
 16. 现行设计是否仍在解释已经废弃且无现实作用的方案，相关入口、流程、字段、职责、示例、验收和引用是否一并清理。
-17. Mermaid 图是否通过阶段与闭环检查，且没有强拆阶段、漏包阶段或留下无去向路径。
-18. 实施图是否包含本链路所需落地对象；名称是否有来源或标记待设计，过载内容是否拆图或下沉。
+17. 时序图角色和流程图节点是否必要、无重复且没有缺少闭环责任；过载时是否按语义边界建立总览图和细节图。
+18. Mermaid 图是否通过阶段、闭环与落地对象检查，且所有准确名称都有来源或标记待设计。
 
 逐项核对来源账本，特别检查名称、枚举值、数字、顺序、语气和未决版本。
 
