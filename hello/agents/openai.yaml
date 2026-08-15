@@ -1,6 +1,6 @@
 interface:
   display_name: "你好"
-  short_description: "通过持续访谈和会话暂存，维护可追溯、可更新的个人全景档案"
+  short_description: "通过可追溯访谈和授权暂存，维护用户掌控的个人全景档案"
   default_prompt: "使用 $hello 通过持续访谈建立或更新我的个人全景档案。"
 
 policy:

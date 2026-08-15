@@ -71,7 +71,7 @@ Every skill release must also bump the semantic version in its `references/relea
 Use it for:
 
 - Building a personal context baseline through phased interviews.
-- Staging durable personal experiences and real-life changes discovered in ordinary conversations.
+- Detecting durable personal experiences and real-life changes in ordinary conversations, prompting before staging by default with explicit opt-in for automatic staging.
 - Reviewing candidates and updating a traceable personal context profile.
 - Generating the minimum necessary background for a new AI or a specific task.
 
