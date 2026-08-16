@@ -7,6 +7,10 @@ script=$script_dir/prepare_article.sh
 caption_prefix=$(printf '\345\233\276\346\263\250\357\274\232')
 legacy_caption_prefix=$(printf '\345\233\276\357\274\232')
 caption='The deterministic system verifies AI candidates.'
+reading_prefix=$(printf '\345\205\250\346\226\207\347\272\246')
+reading_middle=$(printf '\345\255\227\357\274\214\351\242\204\350\256\241\351\230\205\350\257\273')
+reading_suffix=$(printf '\345\210\206\351\222\237')
+reading_notice="$reading_prefix 5200 $reading_middle 11 $reading_suffix"
 
 cleanup() {
     rm -rf -- "$root"
@@ -23,6 +27,7 @@ for platform in wechat zhihu csdn juejin; do
         printf '%s\n' '---'
         printf 'platform: %s\n' "$platform"
         printf '%s\n' 'title: "Native payload test"' 'cover: "cover.png"' '---' ''
+        printf '%s\n\n' "$reading_notice"
         printf '%s\n\n' '![Testing loop diagram](body.png)'
         if [ "$platform" = zhihu ]; then source_caption_prefix=$legacy_caption_prefix; else source_caption_prefix=$caption_prefix; fi
         printf '%s%s\n' "$source_caption_prefix" "$caption"
@@ -34,16 +39,24 @@ for platform in wechat zhihu csdn juejin; do
     grep -q '"caption": "The deterministic system verifies AI candidates."' "$output/manifest.json"
     grep -q '"role": "informative"' "$output/manifest.json"
     [ "$(grep -Fc "$caption" "$output/body.html")" -eq 1 ]
+    [ "$(grep -Fc "$reading_notice" "$output/body.html")" -eq 1 ]
+    [ "$(grep -Fc 'data-reading-notice="true"' "$output/body.html")" -eq 1 ]
 
     if [ "$platform" = wechat ]; then
         grep -q 'data-image-caption="true"' "$output/body.html"
         grep -q 'font-size:13px' "$output/body.html"
+        grep -q 'background:#f8f4ec' "$output/body.html"
     else
         grep -q '<figcaption>' "$output/body.html"
+        grep -q 'font-size:14px' "$output/body.html"
+        grep -q 'background:#f7f7f7' "$output/body.html"
     fi
 
     if [ "$platform" = csdn ] || [ "$platform" = juejin ]; then
         grep -Fq "*$caption_prefix$caption*" "$output/body.md"
+        grep -Fq "*$reading_notice*" "$output/body.md"
+    else
+        grep -Fxq "$reading_notice" "$output/body.md"
     fi
 done
 
@@ -121,4 +134,4 @@ $caption_prefix$caption
 EOF
 sh "$script" --platform csdn --input "$root/caption-inside-code.md" --output "$root/caption-inside-code-output" >/dev/null
 
-printf '%s\n' '{"ok":true,"checks":21}'
+printf '%s\n' '{"ok":true,"checks":27}'

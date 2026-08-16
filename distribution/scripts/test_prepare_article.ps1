@@ -13,6 +13,10 @@ $png = [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC
 $captionPrefix = ([string][char]0x56FE) + ([char]0x6CE8) + ([char]0xFF1A)
 $legacyCaptionPrefix = ([string][char]0x56FE) + ([char]0xFF1A)
 $captionText = 'The deterministic system verifies AI candidates.'
+$readingPrefix = ([string][char]0x5168) + ([char]0x6587) + ([char]0x7EA6)
+$readingMiddle = ([string][char]0x5B57) + ([char]0xFF0C) + ([char]0x9884) + ([char]0x8BA1) + ([char]0x9605) + ([char]0x8BFB)
+$readingSuffix = ([string][char]0x5206) + ([char]0x949F)
+$readingNotice = $readingPrefix + ' 5200 ' + $readingMiddle + ' 11 ' + $readingSuffix
 
 try {
     [System.IO.Directory]::CreateDirectory($root) | Out-Null
@@ -28,6 +32,8 @@ title: "Native payload test"
 summary: "Stable conversion"
 cover: "cover.png"
 ---
+
+$readingNotice
 
 Opening paragraph with a **real emphasis**.
 
@@ -55,6 +61,8 @@ $sourceCaptionPrefix$captionText
             $manifest.images[0].caption -ne $captionText -or
             $manifest.images[0].role -ne 'informative' -or
             ([regex]::Matches($html, [regex]::Escape($captionText))).Count -ne 1 -or
+            ([regex]::Matches($html, [regex]::Escape($readingNotice))).Count -ne 1 -or
+            ([regex]::Matches($html, 'data-reading-notice="true"')).Count -ne 1 -or
             $html -notmatch 'alt="Testing loop diagram"' -or
             $markdown -match '^---') {
             throw "Generated image contract is incomplete for $platform."
@@ -63,17 +71,27 @@ $sourceCaptionPrefix$captionText
         if ($platform -eq 'wechat') {
             if ($html -notmatch 'data-image-caption="true"' -or
                 $html -notmatch 'font-size:13px' -or
+                $html -notmatch 'background:#f8f4ec' -or
                 $html -notmatch '<strong style=' -or
                 ([regex]::Matches($html, 'data-list-item="ordered"')).Count -ne 2 -or
                 $html -notmatch 'font-size:16px;line-height:1.85') {
                 throw 'Wechat caption style is missing.'
             }
         } else {
-            if ($html -notmatch '<figcaption>') { throw "$platform semantic caption is missing." }
+            if ($html -notmatch '<figcaption>' -or $html -notmatch 'font-size:14px' -or $html -notmatch 'background:#f7f7f7') {
+                throw "$platform semantic caption or reading notice style is missing."
+            }
         }
 
         if ($platform -in @('csdn', 'juejin') -and $markdown -notmatch ('\*' + [regex]::Escape($captionPrefix + $captionText) + '\*')) {
             throw "$platform Markdown caption style is missing."
+        }
+        if ($platform -in @('csdn', 'juejin')) {
+            if ($markdown -notmatch ('\*' + [regex]::Escape($readingNotice) + '\*')) {
+                throw "$platform Markdown reading notice style is missing."
+            }
+        } elseif ($markdown -notmatch ('(?m)^' + [regex]::Escape($readingNotice) + '$')) {
+            throw "$platform Markdown reading notice semantics changed."
         }
     }
 
@@ -166,7 +184,7 @@ $captionPrefix$captionText
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Platform csdn -InputPath $article -OutputDirectory (Join-Path $root 'caption-inside-code') | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Caption-like text inside a code block was parsed as a caption.' }
 
-    Write-Output '{"ok":true,"checks":21}'
+    Write-Output '{"ok":true,"checks":27}'
 } finally {
     if (Test-Path -LiteralPath $root) {
         Remove-Item -LiteralPath $root -Recurse -Force

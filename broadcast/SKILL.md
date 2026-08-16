@@ -90,7 +90,7 @@ description: "把一篇事实、观点和结论已经收敛的内部底稿，识
 11. 调用 `$writing-style` 对每篇完整平台稿执行一次关系与声音检查、结构与语言去模板化，修复匿名说明书、机械结构、假洞察、清单堆叠、均匀节奏、伪口语和身份问题，不抹平平台差异。
 12. 对全部平台稿执行跨平台一致性检查，核对事实、观点、边界、全局内容任务、材料画像、主要目标效果、作者身份和来源，没有平台临时补造内容。
 13. 按 [orchestration.md](references/orchestration.md) 和 [cover-engineering.md](references/cover-engineering.md) 根据最终文章校准标题和封面，生成并渲染平台封面，在目标尺寸与缩略尺寸联合验收；正文视觉只在增加理解、记忆或调用价值时生成，并按 [body-visual-engineering.md](references/body-visual-engineering.md) 完成信息压缩、层级设计、替代文字、可见图注和最窄阅读宽度门禁。
-14. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理，运行当前系统的原生标题检查器和长度检查器。最终可见正文超过 3000 字时生成与脚本一致的长文阅读提示。
+14. 读取 [platform-markdown-contract.md](references/platform-markdown-contract.md) 和 [platform-format-contract.md](references/platform-format-contract.md)，完成平台格式处理，运行当前系统的原生标题检查器和长度检查器。最终可见正文超过 3000 字时生成与脚本一致的长文阅读提示；Markdown 只保存普通文本语义，不写死平台样式，投递样式交给 `$distribution` 确定性映射。
 15. 再调用 `$writing-style` 执行平台终检，只修正格式或视觉处理重新引入的语言、节奏、身份和人格漂移问题，不推翻内容主线。
 16. 以 [communication-effects.md](references/communication-effects.md) 作为五道门禁问题、失败条件和通过状态的唯一权威源；[opening-engineering.md](references/opening-engineering.md)、[body-engineering.md](references/body-engineering.md) 和 [ending-engineering.md](references/ending-engineering.md) 只提供设计与失败修正方法，[reader-continuity.md](references/reader-continuity.md) 只补充概念和主线连续性证据。执行独立冷读与陌生场景迁移题，修正后复测并写入 `06-读者测试.md`。
 17. 执行内容路由、深度路由、底稿、平台、跨平台、事实、传播、风格、视觉和格式验收，写入 `05-验收报告.md`。

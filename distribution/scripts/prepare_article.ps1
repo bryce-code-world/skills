@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $CaptionLinePattern = '^(?:\u56FE\u6CE8|\u56FE)\uFF1A\s*(.*)$'
 $CanonicalCaptionPrefix = ([string][char]0x56FE) + ([char]0x6CE8) + ([char]0xFF1A)
+$ReadingNoticePattern = '^\u5168\u6587\u7EA6\s+[0-9]+\s+\u5B57\uFF0C\u9884\u8BA1\u9605\u8BFB\s+[0-9]+\s+\u5206\u949F$'
 
 function Write-Utf8Lf {
     param([string]$Path, [string]$Text)
@@ -75,6 +76,7 @@ function Test-SpecialLine {
         $trimmed -match '^```' -or
         $trimmed -match '^-\s+' -or
         $trimmed -match '^\d+\.\s+' -or
+        $trimmed -match $ReadingNoticePattern -or
         $trimmed -match $CaptionLinePattern -or
         $trimmed -match '^!\[[^\]]*\]\([^)]+\)$'
     )
@@ -174,6 +176,11 @@ $captionStyle = if ($Platform -eq 'wechat') {
 } else {
     ''
 }
+$readingNoticeStyle = if ($Platform -eq 'wechat') {
+    'font-size:13px;line-height:1.6;color:#766f64;margin:0 0 24px;padding:10px 12px;background:#f8f4ec;border-left:3px solid #c58a45;border-radius:4px;text-align:left;'
+} else {
+    'font-size:14px;line-height:1.6;color:#777777;margin:0 0 24px;padding:8px 12px;background:#f7f7f7;border-radius:4px;text-align:left;'
+}
 
 $captionByImageLine = @{}
 $boundCaptionLines = @{}
@@ -242,7 +249,10 @@ while ($index -lt $bodyLines.Count) {
         continue
     }
 
-    if ($line -match '^##\s+(.+)$') {
+    if ($line -match $ReadingNoticePattern) {
+        $content = Convert-Inline $line $Platform
+        $blocks.Add('<p data-reading-notice="true" style="' + $readingNoticeStyle + '">' + $content + '</p>')
+    } elseif ($line -match '^##\s+(.+)$') {
         $content = Convert-Inline $matches[1].Trim() $Platform
         $blocks.Add('<h2 style="' + $heading2Style + '">' + $content + '</h2>')
     } elseif ($line -match '^###\s+(.+)$') {
@@ -347,6 +357,8 @@ for ($lineIndex = 0; $lineIndex -lt $bodyLines.Count; $lineIndex++) {
             $captionLine = '*' + $captionLine + '*'
         }
         $normalizedBodyLines.Add($captionLine)
+    } elseif ($Platform -in @('csdn', 'juejin') -and $bodyLines[$lineIndex].Trim() -match $ReadingNoticePattern) {
+        $normalizedBodyLines.Add('*' + $bodyLines[$lineIndex].Trim() + '*')
     } else {
         $normalizedBodyLines.Add($bodyLines[$lineIndex])
     }

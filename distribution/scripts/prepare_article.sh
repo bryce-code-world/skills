@@ -35,6 +35,9 @@ images_json=$(mktemp "${TMPDIR:-/tmp}/distribution-images-json.XXXXXX")
 trap 'rm -f -- "$body_raw" "$image_meta" "$images_json"' EXIT HUP INT TERM
 caption_prefix=$(printf '\345\233\276\346\263\250\357\274\232')
 legacy_caption_prefix=$(printf '\345\233\276\357\274\232')
+reading_prefix=$(printf '\345\205\250\346\226\207\347\272\246')
+reading_middle=$(printf '\345\255\227\357\274\214\351\242\204\350\256\241\351\230\205\350\257\273')
+reading_suffix=$(printf '\345\210\206\351\222\237')
 
 first_line=$(LC_ALL=C sed -n '1p' "$input")
 [ "$first_line" = '---' ] || { printf '%s\n' 'Article must start with YAML front matter.' >&2; exit 1; }
@@ -168,7 +171,15 @@ END {
 }
 ' "$body_raw" > "$image_meta"
 
-awk -F '\034' -v platform="$platform" -v caption_prefix="$caption_prefix" -v metadata="$image_meta" '
+awk -F '\034' -v platform="$platform" -v caption_prefix="$caption_prefix" -v reading_prefix="$reading_prefix" -v reading_middle="$reading_middle" -v reading_suffix="$reading_suffix" -v metadata="$image_meta" '
+function trim(s) {
+    sub(/^[[:space:]]+/, "", s)
+    sub(/[[:space:]]+$/, "", s)
+    return s
+}
+function is_reading_notice(s) {
+    return trim(s) ~ ("^" reading_prefix " [0-9]+ " reading_middle " [0-9]+ " reading_suffix "$")
+}
 BEGIN {
     while ((getline record < metadata) > 0) {
         split(record, fields, "\034")
@@ -181,13 +192,15 @@ BEGIN {
         line=caption_prefix caption_by_line[NR]
         if (platform == "csdn" || platform == "juejin") line="*" line "*"
         print line
+    } else if ((platform == "csdn" || platform == "juejin") && is_reading_notice($0)) {
+        print "*" trim($0) "*"
     } else {
         print
     }
 }
 ' "$body_raw" > "$body_md"
 
-awk -F '\034' -v platform="$platform" -v metadata="$image_meta" '
+awk -F '\034' -v platform="$platform" -v reading_prefix="$reading_prefix" -v reading_middle="$reading_middle" -v reading_suffix="$reading_suffix" -v metadata="$image_meta" '
 function esc(s) {
     gsub(/&/, "\\&amp;", s)
     gsub(/</, "\\&lt;", s)
@@ -211,6 +224,9 @@ function inline(s,    strong, code) {
     s=pair(s,"**",strong,"</strong>")
     s=pair(s,"`",code,"</code>")
     return s
+}
+function is_reading_notice(s) {
+    return s ~ ("^" reading_prefix " [0-9]+ " reading_middle " [0-9]+ " reading_suffix "$")
 }
 function flush_paragraph() {
     if (paragraph != "") {
@@ -238,6 +254,7 @@ BEGIN {
     istyle=(platform=="wechat" ? "display:block;width:100%;height:auto;margin:28px auto 8px;" : "max-width:100%;height:auto;")
     image_container_style=(platform=="wechat" ? "margin:0;" : "")
     caption_style=(platform=="wechat" ? "font-size:13px;line-height:1.6;color:#888888;margin:0 0 24px;text-align:center;" : "")
+    reading_notice_style=(platform=="wechat" ? "font-size:13px;line-height:1.6;color:#766f64;margin:0 0 24px;padding:10px 12px;background:#f8f4ec;border-left:3px solid #c58a45;border-radius:4px;text-align:left;" : "font-size:14px;line-height:1.6;color:#777777;margin:0 0 24px;padding:8px 12px;background:#f7f7f7;border-radius:4px;text-align:left;")
     image_count=0
     print "<section data-distribution-platform=\"" platform "\">"
 }
@@ -260,6 +277,9 @@ BEGIN {
         next
     }
     if (trimmed == "") { flush_all(); next }
+    if (is_reading_notice(trimmed)) {
+        flush_all(); print "<p data-reading-notice=\"true\" style=\"" reading_notice_style "\">" inline(trimmed) "</p>"; next
+    }
     if (substr(trimmed,1,3) == "## ") {
         flush_all(); print "<h2 style=\"" h2style "\">" inline(substr(trimmed,4)) "</h2>"; next
     }
