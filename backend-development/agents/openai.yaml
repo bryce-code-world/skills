@@ -1,0 +1,7 @@
+interface:
+  display_name: "后端开发"
+  short_description: "以业务域文档为控制面，贯通后端设计、AI开发、Review与交付"
+  default_prompt: "使用 $backend-development 从当前业务域控制入口判断研发位置，并继续完成下一项后端研发工作。"
+
+policy:
+  allow_implicit_invocation: true

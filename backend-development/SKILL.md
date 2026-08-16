@@ -1,0 +1,116 @@
+---
+name: backend-development
+description: "以业务域目录为人的研发控制面，从产品评审后的 PRD 和原型开始，依次推进需求事实、需求确认、业务模型、数据模型、端到端流程、前端与其他调用方流程、交互目的、项目计划、多端共识、工作包实现设计、协议冻结、AI 执行计划、开发、独立 Review、验收和 Bug 反馈。用于梳理或设计后端业务域、建立或恢复业务域文档体系、规划和执行 AI 后端开发、审查实现是否符合业务设计，或继续中断的后端研发任务。先读取目标项目规则和现有目录；不替代人的业务决策，不为稳定事实查询、简单代码解释或纯文案任务启动完整流程，也不把文档当成代码和运行正确的证明。"
+---
+
+# 后端开发
+
+以业务域目录为人的研发控制面，把产品输入推进为可验证、可追溯的后端实现。
+
+## 守住边界
+
+按以下优先级执行：
+
+1. 读取目标项目及更近一级目录的权威规则。规则无法读取时停止，不猜测项目约束。
+2. 保留人对业务目标、业务取舍、风险接受、协议冻结和流程步骤放行的决定权。
+3. 先恢复需求、现有代码、协议、数据和运行事实，再形成设计或实现结论。
+4. 默认采用满足需求、正确性、安全和可验证性的最低总成本方案。增加成本前写明长期收益和增量成本。
+5. 不因启用本 Skill 自动迁移、重命名或重写稳定业务域目录。
+6. 不把文档完整、测试通过或提交说明当成实现正确的单独证明。
+7. 不扩大用户授权的文件、仓库、环境、Git 和外部沟通范围。
+
+用户只查询稳定事实、解释代码、修改纯文案或查看状态时，直接完成该任务，不建立完整研发控制面。
+
+## 使用统一执行对象
+
+| 执行对象 | 标识 | 职责 |
+| --- | --- | --- |
+| 研发大阶段 | `P1`～`P6` | 供人理解全局，并作为新建或确认重构业务域的一级目录 |
+| 流程步骤 | `S1`～`S16` | 固定输入、动作、交付物和退出条件 |
+| 开发工作包 | `WP-XX` | S8 从整体流程、模块和依赖拆出的粗粒度开发单元 |
+| AI 执行任务 | `TASK-XX` | S12 拆出的单个可验证业务行为 |
+
+不要单独使用含义不明的“阶段”。记录状态时同时写明执行对象和标识。
+
+## 开始任务
+
+1. 读取项目规则，确认目标仓库、环境、写入范围、Git 授权和验证边界。
+2. 定位业务域唯一控制入口。读取 [domain-control-plane.md](references/domain-control-plane.md)。
+3. 恢复当前迭代、研发大阶段、流程步骤、开发工作包、AI 执行任务、阻塞项和唯一下一步。
+4. 控制入口不存在或存量目录没有六阶段映射时，进入 `initialize`。读取 [business-domain-classification.md](references/business-domain-classification.md) 和 [documentation-topology.md](references/documentation-topology.md)。
+5. 选择一个主要模式，只加载该模式需要的参考文件。
+6. 开始写入前检查目标工作区和已有未提交内容。不得覆盖、清理或提交他人改动。
+
+## 选择模式和参考
+
+| 模式 | 对应步骤 | 必读参考 |
+| --- | --- | --- |
+| `initialize` | 启动准备 | [domain-control-plane.md](references/domain-control-plane.md)、[business-domain-classification.md](references/business-domain-classification.md)、[documentation-topology.md](references/documentation-topology.md) |
+| `design` | S1～S10 | [stage-machine.md](references/stage-machine.md) 和当前步骤对应参考 |
+| `contract` | S11 | [interface-and-contracts.md](references/interface-and-contracts.md) |
+| `plan` | S12 | [ai-execution-plan.md](references/ai-execution-plan.md)、[review-standard.md](references/review-standard.md) |
+| `implement` | S13 | AI 执行计划、当前项目规则和任务引用的权威设计 |
+| `review` | S14 | [review-standard.md](references/review-standard.md)、[review-and-evidence.md](references/review-and-evidence.md) |
+| `repair` | S14 | 原 Review 报告、[review-and-evidence.md](references/review-and-evidence.md) |
+| `deliver` | S15 | [review-and-evidence.md](references/review-and-evidence.md) 和项目交付规则 |
+| `bug` | S16 | [bug-feedback.md](references/bug-feedback.md) 和项目 Bug 规则 |
+| `resume` | 任意步骤 | [domain-control-plane.md](references/domain-control-plane.md)、[iteration-lifecycle.md](references/iteration-lifecycle.md)、[stage-machine.md](references/stage-machine.md) |
+
+`design` 模式按当前步骤继续加载：
+
+- S1～S2：[requirements-facts-and-confirmation.md](references/requirements-facts-and-confirmation.md)
+- S3：[business-modeling.md](references/business-modeling.md)
+- S4：[data-modeling.md](references/data-modeling.md)
+- S5～S7：[flow-and-consumer-adaptation.md](references/flow-and-consumer-adaptation.md)
+- S8：[project-development-plan.md](references/project-development-plan.md)
+- S9：[solution-consensus-and-plan-communication.md](references/solution-consensus-and-plan-communication.md)
+- S10：[implementation-design.md](references/implementation-design.md)
+
+使用真实案例校验触发和失败处理时读取 [behavior-cases.md](references/behavior-cases.md)。不要一次读取全部参考文件。
+
+## 按六个研发大阶段推进
+
+| 研发大阶段 | 流程步骤 | 完成门禁 |
+| --- | --- | --- |
+| P1 需求事实与确认 | S1～S2 | 产品输入已转成可追溯需求事实，阻塞疑问已确认 |
+| P2 业务建模与流程设计 | S3～S5 | 业务模型、数据模型和端到端流程互相追溯 |
+| P3 多端协同与方案共识 | S6～S9 | S6、S7 达成多端共识，S8 计划已与项目负责人对齐 |
+| P4 详细技术设计与 AI 执行计划 | S10～S12 | 每个 `WP-XX` 有实现设计，协议已冻结，任务已拆为可验证的 `TASK-XX` |
+| P5 AI 执行、Review 与交付 | S13～S15 | 任务实现、三级 Review、联调和验收证据闭环 |
+| P6 持续反馈与演进 | S16 | Bug 和迭代发现已反馈到测试、Review 或权威设计 |
+
+上游未达到退出条件时，不制造高精度下游产物。下游发现上游缺口时，记录变化原因和影响清单，回退对应流程步骤重新放行。
+
+## 执行当前流程步骤
+
+每次只推进一个流程步骤或一个 `TASK-XX`：
+
+1. 确认前置条件、权威输入、事实、未知、冲突和待决策项。
+2. 只完成当前对象的职责，不提前替下游作决定。
+3. 更新当前对象的唯一权威交付物。默认路径和模板见 [documentation-topology.md](references/documentation-topology.md)。
+4. 冷读产物，回对代码、协议、数据或运行证据，并执行项目要求的验证。
+5. 满足退出条件后标记 `REVIEW_READY`。需要人放行的设计和协议只有在人确认后才能标记 `FROZEN`。
+6. 更新控制入口中的位置、状态、阻塞、证据和唯一下一步。
+
+流程步骤的完整输入、交付物、门禁和回退规则见 [stage-machine.md](references/stage-machine.md)。
+
+## 维护迭代与权威文档
+
+长期有效的需求、模型、流程和协议只保留当前结论。迭代专属的计划、沟通、任务、Review 和验收记录带迭代标识，关闭后不覆盖。
+
+并行迭代必须分别维护位置、文件和下一步。关闭和归档规则见 [iteration-lifecycle.md](references/iteration-lifecycle.md)。
+
+同一结论只保留一个权威位置。其他文档只写完成当前阅读任务所需的最小摘要和链接。
+
+## 交付与续跑
+
+每次结束时说明：
+
+- 当前模式、迭代、研发大阶段、流程步骤、`WP-XX` 和 `TASK-XX`；
+- 本次形成或更新的权威文档与实现差异；
+- 已执行的验证和可定位证据；
+- 阻塞、未验证项、接受风险和范围外发现；
+- 当前对象是否满足退出条件；
+- 唯一下一步以及是否等待人放行。
+
+存在内容变更时，继续遵守目标项目的日志、差异检查、提交和交付规则。
