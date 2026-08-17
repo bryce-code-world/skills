@@ -26,6 +26,7 @@
 - 每类结论的唯一权威路径；
 - 阻塞编号、影响对象、决策人和所需事实；
 - 当前最小任务、验证证据和唯一下一步；
+- 当前工作切片、已完成切片和剩余切片；
 - 最近一次事实核对时间和更新原因。
 
 使用 [domain-control.md](../assets/templates/domain-control.md) 初始化入口，使用 [business-domain-profile.md](../assets/templates/business-domain-profile.md) 记录画像。

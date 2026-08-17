@@ -1,7 +1,7 @@
 interface:
   display_name: "后端开发"
   short_description: "以业务域文档为控制面，贯通后端设计、AI开发、Review与交付"
-  default_prompt: "使用 $backend-development 从根控制入口恢复任务，只推进一个流程步骤，并在完成后留下新会话续跑检查点。"
+  default_prompt: "使用 $backend-development 从根控制入口恢复任务，只推进一个工作切片，并在完成后输出 THREAD_ROLLOVER_REQUIRED 续跑检查点。"
 
 policy:
   allow_implicit_invocation: true
