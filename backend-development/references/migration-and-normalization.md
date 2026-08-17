@@ -34,7 +34,7 @@
 6. 每批核对来源与目标数量、无需语义变化文件的哈希、TODO 数量、本地链接、UTF-8、LF 和实际 Git 差异。
 7. 全部批次达到 `MIGRATION_VERIFIED` 后，再从 P1 开始执行语义审查和阶段放行。
 
-使用 [migration-plan.md](../assets/templates/migration-plan.md) 记录范围、批次和证据。
+复杂迁移可以使用 [migration-plan.md](../assets/templates/migration-plan.md) 组织范围、批次和证据。计划默认放在对话或任务临时目录；只有它需要跨会话长期执行时才进入业务域控制入口。
 
 ## 控制人工门禁
 
