@@ -93,10 +93,98 @@ function Test-Structure {
             Name = $parsedName
         }
     }
+    $skillRoot = (Split-Path -Parent $SkillFile)
+    $referenceCheck = Test-LocalReferences $SkillFile $skillRoot
+    if ($referenceCheck.status -ne 'PASS') {
+        return [pscustomobject]@{
+            Layer = $referenceCheck
+            Name = $parsedName
+        }
+    }
+    $openAI = Test-OpenAIYaml $skillRoot
+    if ($openAI.status -ne 'PASS') {
+        return [pscustomobject]@{
+            Layer = $openAI
+            Name = $parsedName
+        }
+    }
     return [pscustomobject]@{
         Layer = New-Layer 'PASS' 'SRA-STRUCT-005' 'frontmatter matches the portable two-field subset'
         Name = $parsedName
     }
+}
+
+function Test-LocalReferences {
+    param([string]$SkillFile, [string]$SkillRoot)
+
+    $content = [IO.File]::ReadAllText($SkillFile)
+    $links = [regex]::Matches($content, '\[[^\]]+\]\(([^)\s]+)')
+    $root = [IO.Path]::GetFullPath($SkillRoot).TrimEnd('\') + '\'
+    foreach ($link in $links) {
+        $target = $link.Groups[1].Value.Trim('<', '>') -replace '[?#].*$', ''
+        if ([string]::IsNullOrWhiteSpace($target) -or $target.StartsWith('#')) {
+            continue
+        }
+        if ($target -match '^(?:[a-z][a-z0-9+.-]*://|mailto:)') {
+            continue
+        }
+        $normalized = $target.Replace('/', [IO.Path]::DirectorySeparatorChar)
+        try {
+            $resolved = [IO.Path]::GetFullPath((Join-Path $SkillRoot $normalized))
+        } catch {
+            return New-Layer 'FAIL' 'SRA-STRUCT-007' "local reference path is invalid: $target"
+        }
+        if (-not $resolved.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+            return New-Layer 'FAIL' 'SRA-STRUCT-007' "local reference leaves the Skill directory: $target"
+        }
+        if (-not (Test-Path -LiteralPath $resolved)) {
+            return New-Layer 'FAIL' 'SRA-STRUCT-007' "local reference is missing: $target"
+        }
+    }
+    return New-Layer 'PASS' 'SRA-STRUCT-007' 'local Markdown references stay inside the Skill directory and exist'
+}
+
+function Test-OpenAIYaml {
+    param([string]$SkillRoot)
+
+    $path = Join-Path $SkillRoot 'agents\openai.yaml'
+    if (-not (Test-Path -LiteralPath $path)) {
+        return New-Layer 'PASS' 'SRA-STRUCT-008' 'optional agents/openai.yaml is absent'
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        return New-Layer 'FAIL' 'SRA-STRUCT-008' 'agents/openai.yaml is not a file'
+    }
+
+    $section = $null
+    $fields = @{}
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.TrimStart().StartsWith('#')) {
+            continue
+        }
+        if ($line -match '^(interface|policy):\s*$') {
+            $section = $Matches[1]
+            continue
+        }
+        if ($line -match '^  ([a-z][a-z0-9_-]*):\s*(.*)$') {
+            if ($null -eq $section -or [string]::IsNullOrWhiteSpace($Matches[2])) {
+                return New-Layer 'FAIL' 'SRA-STRUCT-008' 'agents/openai.yaml has an invalid nested field'
+            }
+            $key = $Matches[1]
+            $value = $Matches[2].Trim()
+            if ($section -eq 'policy' -and $key -eq 'allow_implicit_invocation' -and $value -notmatch '^(true|false)$') {
+                return New-Layer 'FAIL' 'SRA-STRUCT-008' 'allow_implicit_invocation must be true or false'
+            }
+            $fields["$section.$key"] = $value
+            continue
+        }
+        return New-Layer 'FAIL' 'SRA-STRUCT-008' 'agents/openai.yaml is outside the supported scalar subset'
+    }
+    foreach ($key in @('interface.display_name', 'interface.short_description', 'interface.default_prompt')) {
+        if (-not $fields.ContainsKey($key)) {
+            return New-Layer 'FAIL' 'SRA-STRUCT-008' "agents/openai.yaml is missing $key"
+        }
+    }
+    return New-Layer 'PASS' 'SRA-STRUCT-008' 'agents/openai.yaml matches the supported scalar subset'
 }
 
 function Test-Release {
@@ -223,7 +311,7 @@ function Invoke-Audit {
 }
 
 function Invoke-AuditFixture {
-    param([ValidateSet('missing-skill', 'valid', 'duplicate-name', 'complex-yaml')][string]$Kind)
+    param([ValidateSet('missing-skill', 'valid', 'duplicate-name', 'complex-yaml', 'missing-reference', 'invalid-openai')][string]$Kind)
     $root = Join-Path ([IO.Path]::GetTempPath()) ('skill-release-auditor-test-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($root) | Out-Null
     try {
@@ -235,6 +323,15 @@ function Invoke-AuditFixture {
         }
         if ($Kind -eq 'complex-yaml') {
             [IO.File]::WriteAllText((Join-Path $root 'SKILL.md'), "---`nname: sample-skill`ndescription: >`n  Multiline descriptions are outside the portable subset.`n---`n", (New-Object Text.UTF8Encoding($false)))
+        }
+        if ($Kind -eq 'missing-reference') {
+            [IO.File]::WriteAllText((Join-Path $root 'SKILL.md'), "---`nname: sample-skill`ndescription: Sample skill for tests.`n---`n`n[Missing reference](references/missing.md)`n", (New-Object Text.UTF8Encoding($false)))
+        }
+        if ($Kind -eq 'invalid-openai') {
+            [IO.File]::WriteAllText((Join-Path $root 'SKILL.md'), "---`nname: sample-skill`ndescription: Sample skill for tests.`n---`n", (New-Object Text.UTF8Encoding($false)))
+            $agents = Join-Path $root 'agents'
+            [IO.Directory]::CreateDirectory($agents) | Out-Null
+            [IO.File]::WriteAllText((Join-Path $agents 'openai.yaml'), "interface:`n  display_name: `n", (New-Object Text.UTF8Encoding($false)))
         }
         Invoke-Audit @('--source', $root, '--scope', 'static')
     } finally {
@@ -260,6 +357,14 @@ function Invoke-SelfTest {
     $case = Invoke-AuditFixture -Kind 'complex-yaml'
     Assert-Equal 'complex-yaml exit' $case.ExitCode 1
     Assert-Equal 'complex-yaml structure' $case.Result.layers.structure.status 'FAIL'
+
+    $case = Invoke-AuditFixture -Kind 'missing-reference'
+    Assert-Equal 'missing-reference exit' $case.ExitCode 1
+    Assert-Equal 'missing-reference structure' $case.Result.layers.structure.status 'FAIL'
+
+    $case = Invoke-AuditFixture -Kind 'invalid-openai'
+    Assert-Equal 'invalid-openai exit' $case.ExitCode 1
+    Assert-Equal 'invalid-openai structure' $case.Result.layers.structure.status 'FAIL'
 
     $root = Join-Path ([IO.Path]::GetTempPath()) ('skill-release-auditor-contract-' + [Guid]::NewGuid().ToString('N'))
     $skillRoot = Join-Path $root 'sample-skill'

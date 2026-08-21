@@ -26,6 +26,8 @@
 
 多行字符串、数组、对象、锚点、引用、标签和其他复杂 YAML 直接判为 `FAIL`。检查器不下载解析器，不申请安装授权，也不因 PATH 中存在某个工具而改变判定。
 
+结构检查还会核对 Skill 入口中的 Markdown 相对链接：链接目标必须位于 Skill 目录内且实际存在；锚点和外部 URL 不参与本地文件检查。若存在 `agents/openai.yaml`，当前无依赖检查器接受以下最小标量结构：`interface.display_name`、`interface.short_description`、`interface.default_prompt` 必须是非空值，`policy.allow_implicit_invocation`（如存在）只能是 `true` 或 `false`；不符合该子集时判为 `FAIL`。
+
 ## 三、直接安装
 
 原生脚本的 `--installer direct` 把固定 Skill 目录复制到本次临时目录。
