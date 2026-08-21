@@ -20,8 +20,10 @@
 | [鹰眼（eagle-eye）](./eagle-eye/SKILL.md) | 面向目标读者发现、核验并交付值得写且具有独特角度的 AI 选题。 |
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
 | [架构图（architecture）](./architecture/SKILL.md) | 把已确认的架构事实转译成可信、清晰、可离线打开的单文件 HTML 架构图。 |
+| [后端研发（backend-development）](./backend-development/SKILL.md) | 以业务域为控制面，推进后端需求、建模、协议、实现、Review 和验收。 |
 | [可视化认知学习（visual-cognitive-learning）](./visual-cognitive-learning/SKILL.md) | 把已梳理清楚的主题文档转译成先逐步理解、再查看全貌的离线单文件 HTML。 |
 | [学习教练（learn-everything-cn）](./learn-everything-cn/SKILL.md) | 按终点、阶段、证据与知识时效，把主题或材料组织成自然中文的自适应课程。 |
+| [人生方向探索器（life-direction-explorer）](./life-direction-explorer/SKILL.md) | 帮助个人探索、比较、验证和复盘值得长期积累的人生方向，兼顾复利、所有权、健康和系统化。 |
 | [声纹（writing-style）](./writing-style/SKILL.md) | 提炼和应用个人风格，正向建立作者—读者关系并清理机械 AI 痕迹。 |
 | [广播（broadcast）](./broadcast/SKILL.md) | 识别内容任务、拓扑、深度和平台原型，再设计完整传播工程，把内部底稿转写为四平台长图文。 |
 | [分发（distribution）](./distribution/SKILL.md) | 把验收通过的平台稿保存为草稿或公开发布，核验最终状态并登记渠道对象和公开链接。 |
@@ -44,9 +46,13 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装架构图时，将链接或目录名替换为 `architecture`。
 
+安装后端研发时，将链接或目录名替换为 `backend-development`。
+
 安装可视化认知学习时，将链接或目录名替换为 `visual-cognitive-learning`。
 
 安装学习教练时，将链接或目录名替换为 `learn-everything-cn`。
+
+安装人生方向探索器时，将链接或目录名替换为 `life-direction-explorer`。
 
 安装声纹时，将链接或目录名替换为 `writing-style`。
 
@@ -56,7 +62,7 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装 Skill 发布后校验时，将链接或目录名替换为 `skill-release-auditor`。
 
-十个 Skill 可以独立安装。除下述白名单依赖外，业务 Skill 不在运行过程中安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
+十二个 Skill 可以独立安装。除下述白名单依赖外，业务 Skill 不在运行过程中安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
 
 架构图只对其 `dependencies.md` 声明的白名单依赖执行按需自动安装，不再询问。未知来源、来源变化、版本无法核验和依赖更新不自动执行。
 
@@ -160,6 +166,41 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 ```text
 使用 $visual-cognitive-learning 把这份软件开发 SOP 转成可逐步理解、完成后能查看全局流程的离线单文件 HTML。
+```
+
+## 后端研发
+
+适用于：
+
+- 从需求材料、现有代码、数据、协议和业务背景建立业务模型初识；
+- 推进需求事实、需求确认、业务模型、数据模型、端到端流程和多端共识；
+- 规划和执行 AI 辅助的后端开发、独立 Review、验收和 Bug 反馈；
+- 迁移或规范化存量业务域文档，建立可持续的业务域控制面。
+
+它不替代人的业务决策，也不把文档存在或迁移完成当作业务设计与代码正确的证明。
+
+使用示例：
+
+```text
+使用 $backend-development 继续推进这个后端业务域，从需求事实开始，直到完成实现设计和验收准备。
+```
+
+## 人生方向探索器
+
+适用于：
+
+- 探索未来较长时期值得投入的领域与人生方向；
+- 先从外部需求、支付、价值链和所有权建立候选池，再做个人匹配；
+- 通过证据、反方论证和低成本实验验证方向，而不是只追逐短期风口；
+- 同时检查复利资产、健康与心力边界、价值密度、系统化潜力和个人脱身能力；
+- 区分验证机会、阶段性现金流和真正值得长期积累的方向。
+
+它要求用户指定持续研究工作目录，并按研究进度按需沉淀资料；不用于企业情报平台、自动投资或替用户作出辞职、借贷和重仓决定。
+
+使用示例：
+
+```text
+使用 $life-direction-explorer，先扫描未来十年值得长期积累的外部方向，再结合我的健康边界和可持续工作方式做匹配。
 ```
 
 ## 学习教练

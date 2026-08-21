@@ -20,8 +20,10 @@ This repository follows the standard `SKILL.md` directory structure.
 | [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
+| [Backend Development](./backend-development/SKILL.md) | Use the business domain as the control plane for backend requirements, modeling, protocols, implementation, review, and acceptance. |
 | [Visual Cognitive Learning](./visual-cognitive-learning/SKILL.md) | Translate a clear source document into a guided, offline single-file HTML learning model that ends with the whole picture. |
 | [Learning Coach](./learn-everything-cn/SKILL.md) | Build adaptive Chinese courses from goals, stages, evidence, and knowledge freshness. |
+| [Life Direction Explorer](./life-direction-explorer/SKILL.md) | Help individuals explore, compare, validate, and review long-term directions with compounding, ownership, health, and systemization in view. |
 | [Writing Style](./writing-style/SKILL.md) | Extract, manage, select, and apply a stable, recognizable writing voice. |
 | [Broadcast](./broadcast/SKILL.md) | Identify the content task, material boundaries, and platform archetypes before turning an internal source into four platform-native articles. |
 | [Distribution](./distribution/SKILL.md) | Deliver accepted articles, verify the final state, and register channel objects and public URLs. |
@@ -44,9 +46,13 @@ For Eagle Eye, replace the link or directory name with `eagle-eye`.
 
 For Architecture, replace the link or directory name with `architecture`.
 
+For Backend Development, replace the link or directory name with `backend-development`.
+
 For Visual Cognitive Learning, replace the link or directory name with `visual-cognitive-learning`.
 
 For Learning Coach, replace the link or directory name with `learn-everything-cn`.
+
+For Life Direction Explorer, replace the link or directory name with `life-direction-explorer`.
 
 For Writing Style, replace the link or directory name with `writing-style`.
 
@@ -56,7 +62,7 @@ For Distribution, replace the link or directory name with `distribution`.
 
 For Skill Release Auditor, replace the link or directory name with `skill-release-auditor`.
 
-The ten skills can be installed independently. Except for the allowlisted dependencies below, business skills do not install missing capabilities at runtime; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
+The twelve skills can be installed independently. Except for the allowlisted dependencies below, business skills do not install missing capabilities at runtime; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
@@ -160,6 +166,41 @@ Example:
 
 ```text
 Use $visual-cognitive-learning to turn this software development SOP into an offline single-file HTML that teaches the flow step by step and reveals the whole process at the end.
+```
+
+## Backend Development
+
+Use it for:
+
+- Establishing an initial business model from requirements, code, data, protocols, and business context;
+- Driving requirement facts, confirmation, business and data models, end-to-end flows, and cross-client alignment;
+- Planning and executing AI-assisted backend development, independent review, acceptance, and bug feedback;
+- Migrating or normalizing existing business-domain documentation into a durable control plane.
+
+It does not replace human business decisions, and it does not treat document existence or migration completion as proof that the business design or code is correct.
+
+Example:
+
+```text
+Use $backend-development to continue this backend domain from requirement facts through implementation design and acceptance preparation.
+```
+
+## Life Direction Explorer
+
+Use it for:
+
+- Exploring fields and life directions worth investing in over a long horizon;
+- Building an external candidate pool from demand, payment, value chains, and ownership before personal matching;
+- Validating directions with evidence, counter-arguments, and low-cost experiments instead of chasing short-term hype;
+- Checking compounding assets, health and energy boundaries, value density, systemization, and the ability to step away from repetitive delivery;
+- Separating a validation opportunity or cash-flow stage from a direction worth long-term accumulation.
+
+It requires a user-selected persistent research workspace and grows that workspace only as the research advances. It is not an enterprise intelligence platform, an automatic investment tool, or a substitute for decisions about quitting, borrowing, or concentrated risk.
+
+Example:
+
+```text
+Use $life-direction-explorer to scan external directions worth accumulating over the next decade, then match them against my health boundaries and sustainable way of working.
 ```
 
 ## Learning Coach
