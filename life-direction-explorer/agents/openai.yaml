@@ -1,0 +1,7 @@
+interface:
+  display_name: "人生方向探索器"
+  short_description: "个人长期人生方向、复利积累、所有权机会与阶段复盘支持"
+  default_prompt: "使用 $life-direction-explorer 从指定工作目录恢复或建立个人长期方向研究，并只推进当前一个决策点。"
+
+policy:
+  allow_implicit_invocation: true

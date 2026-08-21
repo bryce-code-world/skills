@@ -1,7 +1,0 @@
-interface:
-  display_name: "产业机会雷达"
-  short_description: "个人产业方向判断、验证与复盘"
-  default_prompt: "使用 $industry-opportunity-radar 从指定工作目录恢复或建立个人方向研究，并只推进当前一个决策点。"
-
-policy:
-  allow_implicit_invocation: true
