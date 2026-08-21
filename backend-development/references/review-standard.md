@@ -10,7 +10,7 @@
 
 业务域不复制项目通用规范正文，只保存引用、业务清单、报告和证据。
 
-项目没有独立通用 Review 规范时，继续业务符合性、风险和证据 Review，将项目规范 Review 标记 `PROJECT_PROFILE_MISSING`，不得判为整体 `PASS`。
+项目没有独立通用 Review 规范时，继续业务符合性、风险和证据 Review，明确记录“缺少项目 Review 规范”，不得判为“整体通过”。
 
 用户要求建立项目通用规范时，使用 [project-review-profile.md](../assets/templates/project-review-profile.md) 形成候选。路径、适用范围和放行人由项目规则或人确认。
 

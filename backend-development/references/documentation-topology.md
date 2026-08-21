@@ -36,7 +36,7 @@ P6-持续反馈与演进/
 
 只有权威冲突、查找困难或重复维护持续发生，并且重构收益高于迁移与引用修复成本时，才提出目录调整。
 
-人确认物理迁移后读取 [migration-and-normalization.md](migration-and-normalization.md)。迁移材料状态与 S1～S12 设计门禁分别记录。
+人确认物理迁移后读取 [migration-and-normalization.md](migration-and-normalization.md)。迁移事实与 S1～S12 的流程依据分别记录，不互相推导状态。
 
 ## 编号进入物理导航
 
