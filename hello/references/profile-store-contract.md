@@ -39,6 +39,7 @@ updated_at=<ISO 8601 UTC>
 last_confirmed_at=<empty or ISO 8601 UTC>
 next_review_at=<empty or ISO 8601 UTC>
 review_stage=baseline|first-review|stable
+last_interview_at=<empty or ISO 8601 UTC>
 last_session_id=<empty or session id>
 last_turn_id=<empty or turn id>
 ```
@@ -90,7 +91,7 @@ last_turn_id=<empty or turn id>
 
 ## 六、事务与恢复
 
-`apply` 和 `record-turn` 在写正式文件前创建 `.hello-transaction`，并在 `.backups/transactions/` 保存恢复所需副本。任何中途错误应先自动回滚；无法完成时保留事务标记，下一次写入必须停止并要求 `recover`。`recover` 只按标记恢复已知目标，恢复后再次校验。
+`apply` 和 `record-turn` 在写正式文件前创建 `.hello-transaction`，并在 `.backups/transactions/` 保存恢复所需副本。任何中途错误应先自动回滚；无法完成时保留事务标记，下一次写入必须停止并要求 `recover`。成功提交并通过写后校验后删除本次事务副本；`recover` 也在恢复并校验成功后清理本次副本。`recover` 只按标记恢复已知目标，恢复后再次校验。
 
 初始化和临时文件使用最小权限：POSIX 新目录 `0700`、新文件 `0600`；Windows 依赖当前用户 ACL，不擅自扩大继承权限。`init` 不覆盖已有文件。
 
