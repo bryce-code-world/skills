@@ -24,10 +24,6 @@ EXPECTED_PROGRESS_VERSION=
 CONFIRMED=false
 SIMULATE_FAILURE=false
 
-json_escape_legacy() {
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s//\\r/g; s/	/\\t/g'
-}
-
 json_escape() {
   printf '%s' "$1" | awk 'BEGIN { first=1 } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\r/, "\\r"); gsub(/\t/, "\\t"); if (!first) printf "\\n"; printf "%s", $0; first=0 }'
 }
@@ -104,9 +100,10 @@ write_state() {
   state_review=$8
   state_stage=$9
   shift 9
-  state_progress=${1-1}
-  state_session=${2-}
-  state_turn=${3-}
+  state_interview=${1-}
+  state_progress=${2-1}
+  state_session=${3-}
+  state_turn=${4-}
   state_temp=$state_path.tmp.$$
   {
     printf 'schema_version=%s\n' "$state_schema"
@@ -117,11 +114,12 @@ write_state() {
     printf 'last_confirmed_at=%s\n' "$state_confirmed"
     printf 'next_review_at=%s\n' "$state_review"
     printf 'review_stage=%s\n' "$state_stage"
+    printf 'last_interview_at=%s\n' "$state_interview"
     printf 'progress_version=%s\n' "$state_progress"
     printf 'last_session_id=%s\n' "$state_session"
     printf 'last_turn_id=%s\n' "$state_turn"
     if [ -f "$state_path" ]; then
-      awk -F= '!/^(schema_version|profile_version|capture_mode|created_at|updated_at|last_confirmed_at|next_review_at|review_stage|progress_version|last_session_id|last_turn_id)=/' "$state_path"
+      awk -F= '!/^(schema_version|profile_version|capture_mode|created_at|updated_at|last_confirmed_at|next_review_at|review_stage|last_interview_at|progress_version|last_session_id|last_turn_id)=/' "$state_path"
     fi
   } > "$state_temp" || fail "Cannot write state file: $state_path"
   mv -f "$state_temp" "$state_path" || fail "Cannot replace state file: $state_path"
@@ -137,6 +135,7 @@ read_state() {
   STATE_CONFIRMED=$(state_value "$state_path" last_confirmed_at) || return 1
   STATE_REVIEW=$(state_value "$state_path" next_review_at) || STATE_REVIEW=
   STATE_STAGE=$(state_value "$state_path" review_stage) || return 1
+  STATE_INTERVIEW=$(state_value "$state_path" last_interview_at) || STATE_INTERVIEW=
   STATE_PROGRESS_PRESENT=true; STATE_PROGRESS=$(state_value "$state_path" progress_version) || { STATE_PROGRESS_PRESENT=false; STATE_PROGRESS=1; }
   STATE_SESSION_PRESENT=true; STATE_SESSION=$(state_value "$state_path" last_session_id) || { STATE_SESSION_PRESENT=false; STATE_SESSION=; }
   STATE_TURN_PRESENT=true; STATE_TURN=$(state_value "$state_path" last_turn_id) || { STATE_TURN_PRESENT=false; STATE_TURN=; }
@@ -172,6 +171,7 @@ validate_space() {
       case $STATE_CAPTURE in auto-stage|prompt|explicit) ;; *) add_issue 'invalid capture_mode' ;; esac
       case $STATE_STAGE in baseline|first-review|stable) ;; *) add_issue 'invalid review_stage' ;; esac
       [ "$STATE_STAGE" != first-review ] || [ -n "$STATE_REVIEW" ] || add_issue 'first-review requires next_review_at'
+      case $STATE_INTERVIEW in ''|????-??-??T??:??:??Z) ;; *) add_issue 'last_interview_at must be empty or ISO 8601 UTC' ;; esac
       profile=$ROOT/个人全景档案.md
       progress=$ROOT/访谈进度.md
       pending=$ROOT/待确认信息.md
@@ -239,7 +239,7 @@ init_space() {
   done
   if [ ! -f "$ROOT/.hello-state" ]; then
     current=$(utc_now)
-    write_state "$ROOT/.hello-state" 2 1 prompt "$current" "$current" '' '' baseline 1 '' ''
+    write_state "$ROOT/.hello-state" 2 1 prompt "$current" "$current" '' '' baseline '' 1 '' ''
     add_created .hello-state
   fi
   printf '{"ok":true,"command":"init","root":"%s","created":[%s]}\n' "$(json_escape "$ROOT")" "$created_json"
@@ -251,9 +251,16 @@ status_space() {
     exit 1
   fi
   pending=$(grep -c '^## C-[0-9TZ-][0-9TZ-]*[[:space:]]*$' "$ROOT/待确认信息.md" 2>/dev/null || true)
-  printf '{"ok":true,"command":"status","root":"%s","profile_version":%s,"progress_version":%s,"capture_mode":"%s","review_stage":"%s","last_confirmed_at":"%s","next_review_at":"%s","last_session_id":"%s","last_turn_id":"%s","pending_candidates":%s}\n' \
+  progress_stage=$(tr -d '\r' < "$ROOT/访谈进度.md" | sed -n 's/^- 当前阶段：//p' | head -n 1)
+  progress_last=$(tr -d '\r' < "$ROOT/访谈进度.md" | sed -n 's/^- 最近正式访谈时间：//p' | head -n 1)
+  progress_next=$(tr -d '\r' < "$ROOT/访谈进度.md" | awk 'BEGIN{inside=0} /^## 下次问题[[:space:]]*$/{inside=1; next} /^## /{if(inside) exit} inside && NF{print; exit}')
+  [ -n "$progress_stage" ] || case $STATE_STAGE in baseline) progress_stage=基线访谈 ;; first-review) progress_stage=首次回访 ;; stable) progress_stage=稳定维护 ;; esac
+  [ -n "$progress_last" ] || progress_last=$STATE_INTERVIEW
+  [ -n "$progress_last" ] || [ -z "$STATE_TURN" ] || progress_last=$STATE_UPDATED
+  printf '{"ok":true,"command":"status","root":"%s","profile_version":%s,"progress_version":%s,"capture_mode":"%s","review_stage":"%s","last_confirmed_at":"%s","next_review_at":"%s","last_session_id":"%s","last_turn_id":"%s","pending_candidates":%s,"progress":{"current_stage":"%s","last_interview_at":"%s","next_question":"%s"}}\n' \
     "$(json_escape "$ROOT")" "$STATE_VERSION" "$STATE_PROGRESS" "$(json_escape "$STATE_CAPTURE")" "$(json_escape "$STATE_STAGE")" \
-    "$(json_escape "$STATE_CONFIRMED")" "$(json_escape "$STATE_REVIEW")" "$(json_escape "$STATE_SESSION")" "$(json_escape "$STATE_TURN")" "$pending"
+    "$(json_escape "$STATE_CONFIRMED")" "$(json_escape "$STATE_REVIEW")" "$(json_escape "$STATE_SESSION")" "$(json_escape "$STATE_TURN")" "$pending" \
+    "$(json_escape "$progress_stage")" "$(json_escape "$progress_last")" "$(json_escape "$progress_next")"
 }
 
 configure_space() {
@@ -281,7 +288,7 @@ configure_space() {
     fail 'first-review requires --next-review-at.'
   fi
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$new_capture" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$new_review" "$new_stage" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$new_capture" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$new_review" "$new_stage" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
   printf '{"ok":true,"command":"configure","root":"%s","capture_mode":"%s","review_stage":"%s","next_review_at":"%s"}\n' \
     "$(json_escape "$ROOT")" "$new_capture" "$new_stage" "$(json_escape "$new_review")"
 }
@@ -314,7 +321,7 @@ stage_candidate() {
     printf '\n'
   } >> "$temp" || fail 'Cannot append candidate.'
   mv -f "$temp" "$pending" || fail 'Cannot replace pending file.'
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
   printf '{"ok":true,"command":"stage","root":"%s","candidate_id":"%s"}\n' "$(json_escape "$ROOT")" "$candidate_id"
 }
 
@@ -364,7 +371,18 @@ restore_from_marker() {
   record_value=$(state_value "$marker" record_path) || record_value=
   case $record_value in /*|../*|*/../*|*/..) return 1 ;; esac
   [ -z "$record_value" ] || rm -f "$ROOT/$record_value" || return 1
+  cleanup_transaction_backups || return 1
   rm -f "$marker" || return 1
+  return 0
+}
+
+cleanup_transaction_backups() {
+  for backup_key in profile_backup log_backup state_backup progress_backup; do
+    backup_value=$(state_value "$ROOT/.hello-transaction" "$backup_key") || backup_value=
+    [ -n "$backup_value" ] || continue
+    case $backup_value in /*|../*|*/../*|*/..) return 1 ;; esac
+    rm -f "$ROOT/$backup_value" || return 1
+  done
   return 0
 }
 
@@ -444,8 +462,9 @@ apply_profile() {
     printf '\n'
   } >> "$log_temp" || rollback_fail 'Cannot append log.'
   mv -f "$log_temp" "$log" || rollback_fail 'Cannot replace log.'
-  write_state "$ROOT/.hello-state" 2 "$new_version" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$current" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
+  write_state "$ROOT/.hello-state" 2 "$new_version" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$current" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
   if ! validate_space true; then rollback_fail "Post-write validation failed: $VALIDATION_ISSUES"; fi
+  cleanup_transaction_backups || rollback_fail 'Cannot clear transaction backups.'
   rm -f "$ROOT/.hello-transaction" || rollback_fail 'Cannot clear transaction marker.'
   printf '{"ok":true,"command":"apply","root":"%s","old_version":%s,"profile_version":%s,"history":"%s","backup":"%s"}\n' \
     "$(json_escape "$ROOT")" "$STATE_VERSION" "$new_version" "$(json_escape "$history")" "$(json_escape "$backup")"
@@ -498,8 +517,9 @@ record_turn() {
   fi
   mv -f "$progress_temp" "$ROOT/访谈进度.md" || rollback_fail 'Cannot replace progress.'
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" 2 "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$new_progress" "$SESSION_ID" "$TURN_ID"
+  write_state "$ROOT/.hello-state" 2 "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$current" "$new_progress" "$SESSION_ID" "$TURN_ID"
   if ! validate_space true; then rollback_fail "Post-write validation failed: $VALIDATION_ISSUES"; fi
+  cleanup_transaction_backups || rollback_fail 'Cannot clear transaction backups.'
   rm -f "$ROOT/.hello-transaction" || rollback_fail 'Cannot clear transaction marker.'
   printf '{"ok":true,"command":"record-turn","root":"%s","idempotent":false,"progress_version":%s,"record":"%s"}\n' "$(json_escape "$ROOT")" "$new_progress" "$(json_escape "$record_path")"
 }
@@ -529,7 +549,7 @@ withdraw_candidate() {
   fi
   mv -f "$temp" "$pending" || fail 'Cannot replace pending file.'
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
   printf '{"ok":true,"command":"withdraw","root":"%s","candidate_id":"%s","trash":"%s"}\n' \
     "$(json_escape "$ROOT")" "$CANDIDATE_ID" "$(json_escape "$trash")"
 }
@@ -567,12 +587,14 @@ self_test() {
   if sh "$0" apply --root "$root" --input "$profile" --summary-input "$summary" --expected-version 1 --confirmed --simulate-failure >/dev/null 2>&1; then fail 'Simulated apply failure did not fail.'; fi
   validation=$(sh "$0" validate --root "$root" 2>&1) || fail "Self-test rollback validation failed: $validation"
   applied=$(sh "$0" apply --root "$root" --input "$profile" --summary-input "$summary" --expected-version 1 --confirmed 2>&1) || fail "Self-test apply failed: $applied"
+  [ -z "$(find "$root/.backups/transactions" -type f -print -quit)" ] || fail 'Transaction backups were not cleaned after apply.'
   if sh "$0" apply --root "$root" --input "$profile" --summary-input "$summary" --expected-version 1 --confirmed >/dev/null 2>&1; then
     fail 'Version conflict did not fail.'
   fi
   cp "$root/访谈进度.md" "$progress"
   printf '%s\n' '# 自测访谈轮次' '' '- 仅使用临时数据。' > "$turn"
   sh "$0" record-turn --root "$root" --session-id 2030-01-01-self-test --turn-id Q001 --input "$turn" --progress-input "$progress" --expected-progress-version 1 --confirmed >/dev/null || fail 'Self-test record-turn failed.'
+  [ -z "$(find "$root/.backups/transactions" -type f -print -quit)" ] || fail 'Transaction backups were not cleaned after record-turn.'
   idempotent=$(sh "$0" record-turn --root "$root" --session-id 2030-01-01-self-test --turn-id Q001 --input "$turn" --progress-input "$progress" --expected-progress-version 1 --confirmed) || fail 'Self-test idempotent record-turn failed.'
   printf '%s' "$idempotent" | grep -q '"idempotent":true' || fail 'Self-test record-turn was not idempotent.'
   sh "$0" configure --root "$root" --review-stage first-review --next-review-at 2030-02-01T00:00:00Z --confirmed >/dev/null || fail 'Self-test explicit baseline completion failed.'

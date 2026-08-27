@@ -72,8 +72,15 @@ def stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def serialize_json(payload: dict) -> str:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+
+
 def emit(payload: dict) -> None:
-    print(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
+    # Keep the adapter contract UTF-8 even when Windows uses a legacy console code page.
+    text = serialize_json(payload)
+    sys.stdout.buffer.write(text.encode("utf-8"))
+    sys.stdout.buffer.flush()
 
 
 def resolve_root(value: str | None) -> Path:
@@ -152,6 +159,7 @@ def write_state(path: Path, state: Dict[str, str]) -> None:
         "last_confirmed_at",
         "next_review_at",
         "review_stage",
+        "last_interview_at",
         "last_session_id",
         "last_turn_id",
     )
@@ -209,7 +217,7 @@ def validate_state(state: Dict[str, str]) -> list[str]:
     for key in ("created_at", "updated_at"):
         if key in state and not valid_iso8601(state[key], allow_empty=False):
             issues.append(f"{key} must be ISO 8601")
-    for key in ("last_confirmed_at", "next_review_at"):
+    for key in ("last_confirmed_at", "next_review_at", "last_interview_at"):
         if key in state and not valid_iso8601(state[key]):
             issues.append(f"{key} must be empty or ISO 8601")
     return issues
@@ -332,6 +340,7 @@ def init_space(root: Path, confirmed: bool) -> dict:
                 "last_confirmed_at": "",
                 "next_review_at": "",
                 "review_stage": "baseline",
+                "last_interview_at": "",
                 "last_session_id": "",
                 "last_turn_id": "",
             },
@@ -407,6 +416,23 @@ def progress_summary(content: str) -> dict:
     }
 
 
+def cleanup_transaction_backups(root: Path, values: Dict[str, str]) -> None:
+    for key in ("profile_backup", "log_backup", "state_backup", "progress_backup"):
+        relative = values.get(key)
+        if not relative:
+            continue
+        backup = transaction_target(root, relative)
+        if backup.is_file():
+            backup.unlink()
+
+
+def finish_transaction(root: Path) -> None:
+    marker = root / TRANSACTION_FILE
+    values = parse_key_values(marker)
+    cleanup_transaction_backups(root, values)
+    marker.unlink()
+
+
 def status(root: Path) -> Tuple[dict, int]:
     payload, code = validate_space(root)
     if code:
@@ -414,6 +440,17 @@ def status(root: Path) -> Tuple[dict, int]:
         return payload, code
     state = parse_state(root / STATE_FILE)
     pending = len(re.findall(r"(?m)^## C-[0-9TZ-]+\s*$", read_text(root / "待确认信息.md")))
+    progress = progress_summary(read_text(root / "访谈进度.md"))
+    progress["current_stage"] = progress["current_stage"] or {
+        "baseline": "基线访谈",
+        "first-review": "首次回访",
+        "stable": "稳定维护",
+    }[state["review_stage"]]
+    progress["last_interview_at"] = (
+        progress["last_interview_at"]
+        or state.get("last_interview_at", "")
+        or (state.get("updated_at", "") if state.get("last_turn_id") else "")
+    )
     return {
         "ok": True,
         "command": "status",
@@ -427,7 +464,7 @@ def status(root: Path) -> Tuple[dict, int]:
         "last_session_id": state.get("last_session_id", ""),
         "last_turn_id": state.get("last_turn_id", ""),
         "pending_candidates": pending,
-        "progress": progress_summary(read_text(root / "访谈进度.md")),
+        "progress": progress,
     }, 0
 
 
@@ -592,6 +629,7 @@ def recover_transaction(root: Path, confirmed: bool) -> dict:
         target = transaction_target(root, record_path)
         if target.is_file():
             target.unlink()
+    cleanup_transaction_backups(root, values)
     marker.unlink()
     payload, code = validate_space(root)
     if code:
@@ -697,7 +735,7 @@ def apply_profile(
             raise StoreError("Post-write validation failed: " + "; ".join(payload["issues"]))
     except Exception as exc:
         rollback_after_failure(root, exc)
-    (root / TRANSACTION_FILE).unlink()
+    finish_transaction(root)
     return {
         "ok": True,
         "command": "apply",
@@ -781,14 +819,16 @@ def record_turn(
         state["progress_version"] = str(new_progress_version)
         state["last_session_id"] = session_id
         state["last_turn_id"] = turn_id
-        state["updated_at"] = now_utc()
+        current = now_utc()
+        state["updated_at"] = current
+        state["last_interview_at"] = current
         write_state(state_path, state)
         payload, code = validate_space(root, ignore_transaction=True)
         if code:
             raise StoreError("Post-write validation failed: " + "; ".join(payload["issues"]))
     except Exception as exc:
         rollback_after_failure(root, exc)
-    (root / TRANSACTION_FILE).unlink()
+    finish_transaction(root)
     return {
         "ok": True,
         "command": "record-turn",
@@ -849,6 +889,7 @@ def test_summary() -> str:
 
 
 def self_test() -> dict:
+    assert serialize_json({"中文": "自测"}).encode("utf-8").decode("utf-8").startswith("{\"中文\"")
     with tempfile.TemporaryDirectory(prefix="hello-self-test-") as temporary:
         root = Path(temporary) / "中文 空格"
         try:
@@ -881,6 +922,7 @@ def self_test() -> dict:
         assert not (root / TRANSACTION_FILE).exists()
         applied = apply_profile(root, profile_candidate, summary, 1, True)
         assert applied["profile_version"] == 2
+        assert not list((root / ".backups" / "transactions").iterdir())
         assert parse_state(root / STATE_FILE)["review_stage"] == "baseline"
         turn_input = root.parent / "turn.md"
         turn_input.write_text("# 单轮记录\n\n- 已确认：自测。\n", encoding="utf-8")
@@ -888,6 +930,7 @@ def self_test() -> dict:
         progress_input.write_text(read_text(root / "访谈进度.md").replace("尚未开始。", "下一项自测。"), encoding="utf-8")
         recorded = record_turn(root, turn_input, progress_input, "2030-01-01-session-1", "turn-1", 1, True)
         assert recorded["progress_version"] == 2
+        assert not list((root / ".backups" / "transactions").iterdir())
         retried = record_turn(root, turn_input, progress_input, "2030-01-01-session-1", "turn-1", 1, True)
         assert retried["idempotent"] is True
         try:
