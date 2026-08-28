@@ -78,7 +78,7 @@ CRLF、BOM、排版、历史状态词和与当前阅读路径无关的链接属�
 | `initialize` | 启动准备 | [domain-control-plane.md](references/domain-control-plane.md)、[business-domain-classification.md](references/business-domain-classification.md)、[documentation-topology.md](references/documentation-topology.md) |
 | `migrate` | 存量文档迁移与规范化 | [migration-and-normalization.md](references/migration-and-normalization.md)、[documentation-topology.md](references/documentation-topology.md)、[domain-control-plane.md](references/domain-control-plane.md) |
 | `design` | S1～S10 | [stage-machine.md](references/stage-machine.md) 和当前步骤对应参考 |
-| `contract` | S11 | [interface-and-contracts.md](references/interface-and-contracts.md) |
+| `contract` | S11 | [interface-and-contracts.md](references/interface-and-contracts.md)；存在共享缓存或运行时缓存契约时同时读取 [cache-contract.md](assets/templates/cache-contract.md) |
 | `plan` | S12 | [ai-execution-plan.md](references/ai-execution-plan.md)、[review-standard.md](references/review-standard.md) |
 | `implement` | S13 | AI 执行计划、当前项目规则和任务引用的权威设计 |
 | `review` | S14 | [review-standard.md](references/review-standard.md)、[review-and-evidence.md](references/review-and-evidence.md) |
@@ -146,6 +146,8 @@ S13 关闭每个 `TASK-XX` 前必须完成任务自检：
 - 核对生成物和项目要求的验证证据；
 - 已确认的问题先自动修复并重新验证，再向人报告任务完成。
 
+代码任务默认采用“一个 TASK 一次停点”：完成实现和自 Review 后，将任务标记为“待人 Review”并停止；收到用户或项目指定 Reviewer 对该 TASK 的明确通过后，才提交该任务并开始下一 TASK。不得先连续开发多个 TASK，再合并 Review、提交或等待确认。用户明确授权连续执行时，也必须逐 TASK 保持独立范围、验证和记录，不得合并验收。
+
 生成器、Wire 或依赖装配失败若阻塞当前任务目标，必须先定位并修复当前授权范围内缺失的 provider、注册或生成同步，再重新生成和验证；不能把必需装配错误只记录为“无关阻塞”。
 
 任务自检不替代 S14 的独立 Review。
@@ -182,7 +184,7 @@ P3 的顺序固定为：先由 S6 从 S5 子业务流程和 S4 协作数据模�
 2. 用户明确要求留在当前长线程继续时，先说明历史上下文 Token 无法在同一线程中消除，再把本次继续视为显式覆盖。
 3. 默认由单个 Agent 完成阶段梳理。只有用户或宿主规则允许，且存在互不依赖的证据方向时才使用子任务；只传目标文件和问题，不传完整长会话历史。
 4. 已核验事实的来源文件和提交没有变化时直接复用，不重复扫描同一代码、协议和文档。
-5. S1～S9 只核对会改变当前业务结论的现状事实。事务、RPC、缓存、补偿和代码落点等完整实现审查集中在 S10。
+5. S1～S9 只核对会改变当前业务结论的现状事实。事务、RPC、缓存实现、补偿和代码落点等完整实现审查集中在 S10；共享或影响正确性的缓存契约在 S11 冻结。
 6. 技术选择只有改变用户可观察行为、产品范围或验收口径时才回退需求步骤；其余保留在 S4、S10 或 S11。
 7. 日常验证只覆盖本次修改文件和受影响引用。物理迁移、目录重构、最终阶段验收或项目规则明确要求时才执行全业务域扫描。
 8. 人工决策阶段先只读收敛决定，再一次性写入。
