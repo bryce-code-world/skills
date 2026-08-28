@@ -88,13 +88,14 @@ description: "只处理已经提供内容的表达风格：提炼、管理、选
 - 选择新闻联播参照入口时，读取 [style-news-broadcast.md](references/style-news-broadcast.md)。
 - 选择刘润参照入口时，读取 [style-liu-run.md](references/style-liu-run.md)。
 - 选择卡兹克参照入口时，读取 [style-khazix.md](references/style-khazix.md)。
+- 用户指定孙学、sun-style-writing、冷叙事或克制白描叙事时，读取 [style-sun-style-writing.md](references/style-sun-style-writing.md)。
 - 选择阮一峰参照入口时，读取 [style-ruanyifeng.md](references/style-ruanyifeng.md)。
 - 用户指定九边时，读取 [style-jiubian.md](references/style-jiubian.md) 并按候选状态降级。
 - 需要判断场景语气时，读取 [tone-resolution.md](references/tone-resolution.md)。
 - 用户要求去 AI 味、改得自然或由 `broadcast` 执行公开长文门禁时，读取 [anti-template-editing.md](references/anti-template-editing.md)。
 - 用户要求更像人写的、接地气、拉近读者关系，或由 `broadcast` 提供关系契约时，读取 [relationship-and-voice.md](references/relationship-and-voice.md)。
 
-四个可用具名参照在第一版属于“可试用候选”。应用时遵守其来源和禁止项；独立前向测试通过后才能改为正式内置状态。
+五个可用具名参照在第一版属于“可试用候选”。应用时遵守其来源和禁止项；独立前向测试通过后才能改为正式内置状态。
 
 ## 解析用户空间
 
