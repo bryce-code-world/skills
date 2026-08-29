@@ -1,7 +1,7 @@
 interface:
   display_name: "后端开发"
   short_description: "以业务域文档为控制面，贯通后端设计、AI开发、Review与交付"
-  default_prompt: "使用 $backend-development 从需求材料、现有事实和业务域根目录 README.md、Progress.md 开始；缺少任一文档时先初始化并从 S1 建立业务模型初识，存在文档时先恢复当前 P/S、工作对象和唯一下一步，再按当前步骤推进。S5 先按责任单元（服务、单体模块/组件或其他稳定边界）拆成子业务，明确范围、变更清单和验收，再进入计划与实现设计。每轮只推进一个确认点；代码 TASK 完成自 Review 后停在待人 Review，收到明确通过后才进入下一 TASK。"
+  default_prompt: "使用 $backend-development 从需求材料、现有事实和业务域根目录 README.md、Progress.md 开始；缺少任一文档时先初始化并从 S1 建立业务模型初识，存在文档时先恢复当前 P/S、工作对象和唯一下一步，再按当前步骤推进。S5 先按责任单元（服务、单体模块/组件或其他稳定边界）拆成子业务，明确范围、变更清单和验收，再进入计划与实现设计；S12 在责任单元内继续按单个接口、RPC、消息入口或独立闭环拆 TASK。每轮只推进一个确认点；代码 TASK 完成自 Review 后停在待人 Review，收到明确通过后才进入下一 TASK。"
 
 policy:
   allow_implicit_invocation: true
