@@ -26,6 +26,6 @@
 
 ## 迭代反馈
 
-Bug 属于当前迭代时链接对应 `TASK-XX`、Review 和验收记录。跨迭代长期问题进入明确后续迭代或观察清单。
+Bug 属于当前迭代时链接对应完整的 `WP-XX-TASK-YY`、Review 和验收记录；历史任务可同时记录旧 `TASK-XX` 映射。跨迭代长期问题进入明确后续迭代或观察清单。
 
 迭代完成后按 [iteration-lifecycle.md](iteration-lifecycle.md) 关闭并建立历史索引。
