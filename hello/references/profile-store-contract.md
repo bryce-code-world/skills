@@ -4,7 +4,7 @@
 
 三个适配器必须遵守同一行为契约：Windows PowerShell 5.1+ 使用 `scripts/profile_store.ps1`，POSIX 系统使用 `scripts/profile_store.sh`，后备使用 Python 3.8+ 的 `scripts/profile_store.py`。PowerShell 和 Shell 不得调用 Python 或 Node.js。
 
-根目录按 `--root <path>`、`HELLO_HOME` 的顺序解析；两者都没有时失败。`--root` 一旦显式出现，空字符串值即为参数错误并应失败关闭，不得回退到 `HELLO_HOME`。为避免探针或包装器漏掉参数后误写资料，所有会改变资料空间的命令（`init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw`、`recover`）必须显式传入 `--root`；只有只读的 `resolve-root`、`validate`、`status`、`diff` 可以在完全省略 `--root` 时使用 `HELLO_HOME`。测试和审查一律使用明确的隔离临时根，不依赖环境变量。所有文本使用 UTF-8，路径必须支持中文和空格。当前适配器维护兼容 schema 2 的根目录文件；目标目录的声明、事件、决策拆分见 [profile-architecture.md](profile-architecture.md)，在协议升级前不得假装已经支持物理拆分。
+根目录按 `--root <path>`、`HELLO_HOME` 的顺序解析；两者都没有时失败。`--root` 一旦显式出现，空字符串或全空白值即为参数错误并应失败关闭，不得回退到 `HELLO_HOME`。为避免探针或包装器漏掉参数后误写资料，所有会改变资料空间的命令（`init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw`、`recover`）必须显式传入 `--root`；只有只读的 `resolve-root`、`validate`、`status`、`diff` 可以在完全省略 `--root` 时使用 `HELLO_HOME`。测试和审查一律使用明确的隔离临时根，不依赖环境变量。所有文本使用 UTF-8，路径必须支持中文和空格。当前适配器维护兼容 schema 2 的根目录文件；目标目录的声明、事件、决策拆分见 [profile-architecture.md](profile-architecture.md)，在协议升级前不得假装已经支持物理拆分。
 
 状态文件和事务标记的键名按大小写不敏感规则判重；因此保留未知键时，只有不与保留键或其他未知键形成大小写变体的键才会被保留。这样可避免 PowerShell、Python 和 POSIX 适配器对同一份状态产生不同解释。
 

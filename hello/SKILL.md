@@ -67,7 +67,7 @@ description: "通过持续、可追溯的访谈建立和维护用户掌控的分
 2. 只读探针在没有显式目录时才可使用环境变量 `HELLO_HOME`。
 3. 都没有时，说明尚未配置并询问用户；不要自行选择目录。
 
-任何会改变资料空间的命令（包括 `init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw` 和 `recover`）都必须显式带 `--root <已授权目录>`；不能让它们回退到 `HELLO_HOME`。这样可防止审查探针、包装器或丢失参数时误写另一份资料。测试和审查命令必须始终传入隔离临时根。
+任何会改变资料空间的命令（包括 `init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw` 和 `recover`）都必须显式带 `--root <已授权目录>`；不能让它们回退到 `HELLO_HOME`。显式的空字符串或全空白 root 也必须失败关闭，不能解析为当前目录或空白命名目录。这样可防止审查探针、包装器或丢失参数时误写另一份资料。测试和审查命令必须始终传入隔离临时根。
 
 路径不存在时，先展示准确路径和将创建的结构，获得确认后再初始化。只读取用户授权的现有资料，不扫描其他目录。若根级 `.hello-state` 或 manifest 明确标记 `layout=target-draft|target`，Skill/宿主在调用适配器前只做只读说明并报告目标 P1/P3 协议尚未实现；当前三套 schema 2 适配器不会自动识别该布局，不能把这条说明当成脚本护栏，不得把目标根传给兼容 schema 2 的 `init`、`status`、`validate`、`diff` 或 `apply`。`assets/profile-templates/target-package/` 样板的 `target-draft` 文字仅是说明，不是运行时 marker，不能靠目录存在推断布局。
 

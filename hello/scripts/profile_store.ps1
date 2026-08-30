@@ -834,6 +834,7 @@ function Assert-CaseSensitiveInputs([string]$Root) {
     Assert-CliParserError @('resolve-root','--ROOT',$Root) 'resolve-root' 'Unknown option*'
     Assert-CliParserError @('status','--r',$Root) 'status' '*Unknown option*'
     Assert-CliParserError @('status','--root='+$Root) 'status' '*separate*'
+    Assert-CliParserError @('status','--root','   ') 'status' '*cannot be empty*'
     Assert-CliParserError @('status','--root',$Root,'--root',$Root) 'status' '*Duplicate option*'
     $statePath=Join-Path $Root $script:StateFile
     $before=Read-State $statePath

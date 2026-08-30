@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "skill": "hello",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "source": "https://github.com/bryce-code-world/skills",
   "ref": "main",
   "path": "hello"

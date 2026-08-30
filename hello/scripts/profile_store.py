@@ -120,7 +120,10 @@ def resolve_root(value: str | None) -> Path:
     # HELLO_HOME in that case can silently redirect a probe or mutation to a
     # different person's space when a wrapper drops an argument value.
     raw = value if value is not None else os.environ.get("HELLO_HOME")
-    if raw is None or raw == "":
+    # Treat an all-whitespace value like an omitted value.  A wrapper that
+    # loses the path but leaves spaces must fail closed rather than resolve
+    # the current directory (or a whitespace-named POSIX directory).
+    if raw is None or raw.strip() == "":
         raise StoreError("Personal profile root is not configured. Pass --root or set HELLO_HOME.")
     return Path(raw).expanduser().resolve(strict=False)
 
@@ -1333,11 +1336,12 @@ def self_test() -> dict:
     saved_hello_home = os.environ.get("HELLO_HOME")
     os.environ["HELLO_HOME"] = str(Path(tempfile.gettempdir()) / "must-not-be-used")
     try:
-        try:
-            resolve_root("")
-            raise AssertionError("an explicit empty --root fell back to HELLO_HOME")
-        except StoreError:
-            pass
+        for blank_root in ("", "   ", "\t\r\n", "\u00a0"):
+            try:
+                resolve_root(blank_root)
+                raise AssertionError("an explicit blank --root fell back to HELLO_HOME")
+            except StoreError:
+                pass
     finally:
         if saved_hello_home is None:
             os.environ.pop("HELLO_HOME", None)
@@ -1349,6 +1353,7 @@ def self_test() -> dict:
         (["not-a-command"], "not-a-command"),
         (["status", "--unknown-option"], "status"),
         (["status", "--root", "--confirmed"], "status"),
+        (["status", "--root", "   "], "status"),
         (["status", "--r", "C:/not-a-root"], "status"),
         (["status", "--root=C:/not-a-root"], "status"),
         (["status", "--root", "C:/one", "--root", "C:/two"], "status"),

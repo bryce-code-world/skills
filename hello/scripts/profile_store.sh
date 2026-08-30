@@ -260,7 +260,19 @@ trim_text_file() {
 
 resolve_root() {
   if [ "$ROOT_ARG_SET" = true ]; then raw=$ROOT_ARG; else raw=${HELLO_HOME-}; fi
-  [ -n "$raw" ] || fail 'Personal profile root is not configured. Pass --root or set HELLO_HOME.'
+  # An all-whitespace value is an omitted/invalid root, not a directory name.
+  # Reject it before normalization so a dropped argument can never resolve to
+  # the current directory or a whitespace-only path.
+  if ! printf '%s' "$raw" | awk '
+    {
+      gsub(/[[:space:]]/, "", $0)
+      gsub(/\302\240/, "", $0)
+      if (length($0) > 0) found = 1
+    }
+    END { exit(found ? 0 : 1) }
+  '; then
+    fail 'Personal profile root is not configured. Pass --root or set HELLO_HOME.'
+  fi
   # Match the native adapters for the common user-relative forms.  Do not
   # evaluate arbitrary shell text: only expand the current user's `~` prefix.
   case $raw in
@@ -512,8 +524,8 @@ write_state() {
         { key=tolower($1); if (!reserved[key]) print }
       '
     fi
-  } > "$state_temp" || fail "Cannot write state file: $state_path"
-  mv -f "$state_temp" "$state_path" || fail "Cannot replace state file: $state_path"
+  } > "$state_temp" || { rm -f "$state_temp"; return 1; }
+  mv -f "$state_temp" "$state_path" || { rm -f "$state_temp"; return 1; }
 }
 
 read_state() {
@@ -705,7 +717,7 @@ init_space() {
   if [ ! -f "$ROOT/.hello-state" ]; then
     current=$(utc_now)
     state_disclosed=
-    write_state "$ROOT/.hello-state" 2 1 prompt "$current" "$current" '' '' baseline '' 1 '' '' '' ''
+    write_state "$ROOT/.hello-state" 2 1 prompt "$current" "$current" '' '' baseline '' 1 '' '' '' '' || fail 'Cannot write state file.'
     add_created .hello-state
   fi
   printf '{"ok":true,"command":"init","root":"%s","created":[%s]}\n' "$(json_escape "$ROOT")" "$created_json"
@@ -766,7 +778,7 @@ configure_space() {
     fail 'first-review requires --next-review-at.'
   fi
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$new_capture" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$new_review" "$new_stage" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$new_capture" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$new_review" "$new_stage" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || fail 'Cannot write state file.'
   printf '{"ok":true,"command":"configure","root":"%s","capture_mode":"%s","review_stage":"%s","next_review_at":"%s"}\n' \
     "$(json_escape "$ROOT")" "$new_capture" "$new_stage" "$(json_escape "$new_review")"
 }
@@ -779,7 +791,7 @@ record_disclosure() {
     [ "$CAPTURE_MODE" = "$STATE_CAPTURE" ] || fail '--capture-mode does not match the current capture policy.'
   fi
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$current" "$STATE_CAPTURE"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$current" "$STATE_CAPTURE" || fail 'Cannot write state file.'
   case $STATE_CAPTURE in auto-stage) capture_strategy=自动暂存 ;; prompt) capture_strategy=提示确认 ;; explicit) capture_strategy=仅显式 ;; esac
   printf '{"ok":true,"command":"record-disclosure","root":"%s","capture_mode":"%s","capture_strategy":"%s","last_capture_disclosed_at":"%s","last_capture_disclosed_mode":"%s"}\n' \
     "$(json_escape "$ROOT")" "$(json_escape "$STATE_CAPTURE")" "$(json_escape "$capture_strategy")" "$(json_escape "$current")" "$(json_escape "$STATE_CAPTURE")"
@@ -831,7 +843,7 @@ stage_candidate() {
     printf '%s\n' "$candidate_body"
   } >> "$temp" || fail 'Cannot append candidate.'
   mv -f "$temp" "$pending" || fail 'Cannot replace pending file.'
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || fail 'Cannot write state file.'
   printf '{"ok":true,"command":"stage","root":"%s","candidate_id":"%s"}\n' "$(json_escape "$ROOT")" "$candidate_id"
 }
 
@@ -1180,7 +1192,7 @@ withdraw_candidate() {
   fi
   mv -f "$temp" "$pending" || fail 'Cannot replace pending file.'
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE"
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || fail 'Cannot write state file.'
   printf '{"ok":true,"command":"withdraw","root":"%s","candidate_id":"%s","trash":"%s"}\n' \
     "$(json_escape "$ROOT")" "$CANDIDATE_ID" "$(json_escape "$trash")"
 }
@@ -1237,6 +1249,7 @@ self_test() {
   second_init=$(sh "$0" init --root "$root" --confirmed) || fail 'Self-test second init failed.'
   printf '%s' "$second_init" | grep -q '"created":\[\]' || fail 'Self-test init overwrote existing space.'
   if HELLO_HOME="$root" sh "$0" status --root '' >/dev/null 2>&1; then fail 'Self-test explicit empty root fell back to HELLO_HOME.'; fi
+  if HELLO_HOME="$root" sh "$0" status --root '   ' >/dev/null 2>&1; then fail 'Self-test whitespace root fell back to HELLO_HOME.'; fi
   validation=$(sh "$0" validate --root "$root" 2>&1) || fail "Self-test validate failed: $validation"
   long_version=$(awk 'BEGIN { for (i = 1; i <= 40; i++) printf "9" }')
   long_zeros=$(awk 'BEGIN { for (i = 1; i <= 40; i++) printf "0" }')
