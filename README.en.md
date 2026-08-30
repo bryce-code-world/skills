@@ -16,7 +16,7 @@ This repository follows the standard `SKILL.md` directory structure.
 
 | Skill | Purpose |
 |---|---|
-| [Hello](./hello/SKILL.md) | Build and maintain a user-controlled personal context profile through ongoing interviews and staged discoveries. |
+| [Hello](./hello/SKILL.md) | Build and maintain a user-controlled, layered personal profile package through ongoing interviews and cross-session candidate discovery; the panorama file is an aggregate index in the target layout, while compatibility spaces still keep the legacy single-file body. |
 | [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
 | [Architecture](./architecture/SKILL.md) | Turn confirmed architecture facts into a trustworthy, clear, offline single-file HTML architecture diagram. |
@@ -78,10 +78,14 @@ Use it for:
 
 - Building a personal context baseline through phased interviews.
 - Detecting durable personal experiences and real-life changes in ordinary conversations, prompting before staging by default with explicit opt-in for automatic staging.
-- Reviewing candidates and updating a traceable personal context profile.
+- Reviewing candidates and updating a traceable profile package; the panorama file is an aggregate index in the target layout, while compatibility spaces retain the root legacy profile.
 - Generating the minimum necessary background for a new AI or a specific task.
 
 Candidates go only to a pending area by default. They cannot enter the authoritative profile without item-by-item review and confirmation.
+
+To prevent a probe or dropped argument from writing to the wrong personal space, every storage command that changes a profile must receive an explicit authorized `--root`; `HELLO_HOME` is only a fallback for read-only probes.
+
+Implicit discovery in ordinary conversations works only when the host invokes the skill through a per-turn Hook and allows implicit invocation; installing `hello` does not provide background scanning or cross-conversation access. The current release runs compatibility schema 2 (the three adapters maintain a root-level single-file space); `assets/profile-templates/target-package/` is a design template for the future directory protocol, not a runnable layout, and it does not migrate existing data automatically.
 
 Example:
 
