@@ -111,7 +111,7 @@ function Read-State([string]$Path) { return Read-KeyValues $Path }
 function Write-State([string]$Path, [System.Collections.IDictionary]$State) {
     $order = @(
         'schema_version', 'profile_version', 'progress_version', 'capture_mode', 'created_at', 'updated_at',
-        'last_confirmed_at', 'next_review_at', 'review_stage', 'last_interview_at', 'last_session_id', 'last_turn_id'
+        'last_confirmed_at', 'next_review_at', 'review_stage', 'last_interview_at', 'last_session_id', 'last_turn_id', 'last_capture_disclosed_at'
     )
     $builder = New-Object Text.StringBuilder
     foreach ($key in $order) { if ($State.Contains($key)) { [void]$builder.Append($key).Append('=').Append([string]$State[$key]).Append("`n") } }
@@ -148,7 +148,7 @@ function Test-State([System.Collections.IDictionary]$State) {
     if (@('baseline','first-review','stable') -notcontains $State['review_stage']) { $issues.Add('review_stage must be baseline, first-review, or stable') }
     if ($State['review_stage'] -eq 'first-review' -and [string]::IsNullOrWhiteSpace([string]$State['next_review_at'])) { $issues.Add('first-review requires next_review_at') }
     foreach ($key in @('created_at','updated_at')) { if ($State.Contains($key) -and -not (Test-Iso ([string]$State[$key]) $false)) { $issues.Add("$key must be ISO 8601") } }
-    foreach ($key in @('last_confirmed_at','next_review_at','last_interview_at')) { if ($State.Contains($key) -and -not (Test-Iso ([string]$State[$key]) $true)) { $issues.Add("$key must be empty or ISO 8601") } }
+    foreach ($key in @('last_confirmed_at','next_review_at','last_interview_at','last_capture_disclosed_at')) { if ($State.Contains($key) -and -not (Test-Iso ([string]$State[$key]) $true)) { $issues.Add("$key must be empty or ISO 8601") } }
     return $issues.ToArray()
 }
 
@@ -197,7 +197,7 @@ function Initialize-Space([string]$Root, [bool]$Confirmed) {
         $state = [ordered]@{
             schema_version='2'; profile_version='1'; progress_version='1'; capture_mode='prompt';
             created_at=$current; updated_at=$current; last_confirmed_at=''; next_review_at=''; review_stage='baseline';
-            last_interview_at=''; last_session_id=''; last_turn_id=''
+            last_interview_at=''; last_session_id=''; last_turn_id=''; last_capture_disclosed_at=''
         }
         Write-State $statePath $state; $created.Add($script:StateFile)
     }
@@ -241,6 +241,17 @@ function Get-ProgressSummary([string]$Content) {
     return @{'current_stage'=$stage;'last_interview_at'=$last;'next_question'=$next}
 }
 
+function Get-ProgressBacklog([string]$Content) {
+    $baseline = New-Object Collections.Generic.List[string]; $long = New-Object Collections.Generic.List[string]; $bucket = ''
+    foreach ($line in ($Content -split "`r?`n")) {
+        if ($line.Trim() -eq '### 基线必答（阻塞基线收口）') { $bucket = 'baseline' }
+        elseif ($line.Trim() -eq '### 可长期补充（不阻塞基线收口）') { $bucket = 'long' }
+        elseif ($line.StartsWith('### ') -or $line.StartsWith('## ')) { $bucket = '' }
+        elseif ($line.StartsWith('- ') -and $bucket) { if ($bucket -eq 'baseline') { $baseline.Add($line.Substring(2).Trim()) } else { $long.Add($line.Substring(2).Trim()) } }
+    }
+    return @{'baseline_required_remaining'=$baseline.ToArray();'long_term_backlog'=$long.ToArray()}
+}
+
 function Get-Status([string]$Root) {
     $valid = Validate-Space $Root
     if (-not $valid.ok) { return @{'payload'=@{'ok'=$false;'command'='status';'root'=$Root;'issues'=$valid.issues};'code'=1} }
@@ -249,10 +260,13 @@ function Get-Status([string]$Root) {
     $progressSummary = Get-ProgressSummary (Read-Text (Join-Path $Root '访谈进度.md'))
     if ([string]::IsNullOrWhiteSpace($progressSummary.current_stage)) { $progressSummary.current_stage = @{ baseline='基线访谈'; 'first-review'='首次回访'; stable='稳定维护' }[[string]$state['review_stage']] }
     if ([string]::IsNullOrWhiteSpace($progressSummary.last_interview_at)) { $progressSummary.last_interview_at = [string]$state['last_interview_at']; if ([string]::IsNullOrWhiteSpace($progressSummary.last_interview_at) -and -not [string]::IsNullOrWhiteSpace($state['last_turn_id'])) { $progressSummary.last_interview_at = [string]$state['updated_at'] } }
+    $backlog = Get-ProgressBacklog (Read-Text (Join-Path $Root '访谈进度.md'))
+    $strategy = @{ 'auto-stage'='自动暂存'; 'prompt'='提示确认'; 'explicit'='仅显式' }[[string]$state['capture_mode']]
     $payload = @{
         'ok'=$true;'command'='status';'root'=$Root;'profile_version'=[int]$state['profile_version'];
-        'progress_version'=(Get-ProgressVersion $state);'capture_mode'=$state['capture_mode'];'review_stage'=$state['review_stage'];
+        'progress_version'=(Get-ProgressVersion $state);'capture_mode'=$state['capture_mode'];'capture_strategy'=$strategy;'last_capture_disclosed_at'=$state['last_capture_disclosed_at'];'review_stage'=$state['review_stage'];
         'last_confirmed_at'=$state['last_confirmed_at'];'next_review_at'=$state['next_review_at'];'last_session_id'=$state['last_session_id'];'last_turn_id'=$state['last_turn_id'];'pending_candidates'=$pending;
+        'baseline_required_remaining'=$backlog.baseline_required_remaining;'baseline_closure_blocked'=($backlog.baseline_required_remaining.Count -gt 0);'long_term_backlog'=$backlog.long_term_backlog;
         'progress'=$progressSummary
     }
     return @{'payload'=$payload;'code'=0}
@@ -261,7 +275,7 @@ function Get-Status([string]$Root) {
 function Configure-Space([string]$Root,[string]$CaptureMode,[string]$NextReviewAt,[string]$ReviewStage,[bool]$Confirmed) {
     Require-Confirmed $Confirmed; $state = Require-Valid $Root
     if ([string]::IsNullOrWhiteSpace($CaptureMode) -and $null -eq $NextReviewAt -and [string]::IsNullOrWhiteSpace($ReviewStage)) { Fail 'configure requires at least one setting.' }
-    if (-not [string]::IsNullOrWhiteSpace($CaptureMode)) { if (@('auto-stage','prompt','explicit') -notcontains $CaptureMode) { Fail '--capture-mode must be auto-stage, prompt, or explicit.' }; $state['capture_mode']=$CaptureMode }
+    if (-not [string]::IsNullOrWhiteSpace($CaptureMode)) { if (@('auto-stage','prompt','explicit') -notcontains $CaptureMode) { Fail '--capture-mode must be auto-stage, prompt, or explicit.' }; $state['capture_mode']=$CaptureMode; $state['last_capture_disclosed_at']=Utc-Now }
     if (-not [string]::IsNullOrWhiteSpace($ReviewStage)) {
         if (@('baseline','first-review','stable') -notcontains $ReviewStage) { Fail '--review-stage must be baseline, first-review, or stable.' }
         if ($ReviewStage -eq 'first-review' -and ($null -eq $NextReviewAt -or $NextReviewAt -eq '' -or $NextReviewAt -eq 'none') -and [string]::IsNullOrWhiteSpace([string]$state['next_review_at'])) { Fail 'Entering first-review requires --next-review-at.' }
@@ -341,17 +355,25 @@ function Apply-Profile([string]$Root,[string]$InputPath,[string]$SummaryPath,[in
     Finish-Transaction $Root;return @{'ok'=$true;'command'='apply';'root'=$Root;'old_version'=$currentVersion;'profile_version'=$newVersion;'history'=$history;'backup'=$backup}
 }
 
+function Get-SessionTermination([string]$Root,[string]$SessionId) {
+    $reasons = New-Object Collections.Generic.List[string]
+    if ($SessionId.Substring(0,10) -ne (Utc-Now).Substring(0,10)) { $reasons.Add('cross-natural-day') }
+    $dir = Join-Path $Root ("原始访谈\" + $SessionId.Substring(0,4) + "\" + $SessionId)
+    if ([IO.Directory]::Exists($dir) -and @([IO.Directory]::GetFiles($dir,'*.md')).Count -gt 50) { $reasons.Add('over-50-turns') }
+    return @{'new_session_required'=($reasons.Count -gt 0);'session_termination_reasons'=$reasons.ToArray();'session_termination_notice'=($(if($reasons.Count){'请开启新会话'}else{''}))}
+}
+
 function Record-Turn([string]$Root,[string]$InputPath,[string]$ProgressInput,[string]$SessionId,[string]$TurnId,[int]$ExpectedProgressVersion,[bool]$Confirmed) {
     Require-Confirmed $Confirmed;$state=Require-Valid $Root
     if($SessionId-notmatch'^[0-9]{4}-[0-9]{2}-[0-9]{2}[A-Za-z0-9._-]{0,117}$'-or$TurnId-notmatch'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'){Fail 'session-id must start with YYYY-MM-DD; ids may only use ASCII letters, digits, dot, underscore, or hyphen.'}
     $body=(Read-Text $InputPath).Trim();if([string]::IsNullOrWhiteSpace($body)){Fail 'Turn input is empty.'};$year=$SessionId.Substring(0,4);$recordPath=Join-Path $Root "原始访谈\$year\$SessionId\$TurnId.md"
-    if($state['last_session_id']-eq$SessionId-and$state['last_turn_id']-eq$TurnId-and[IO.File]::Exists($recordPath)){if((Read-Text $recordPath).Trim()-cne$body){Fail 'Idempotent turn retry has different content.'};return @{'ok'=$true;'command'='record-turn';'root'=$Root;'session_id'=$SessionId;'turn_id'=$TurnId;'record'=$recordPath;'created'=$false;'idempotent'=$true;'progress_version'=(Get-ProgressVersion $state)}}
+    if($state['last_session_id']-eq$SessionId-and$state['last_turn_id']-eq$TurnId-and[IO.File]::Exists($recordPath)){if((Read-Text $recordPath).Trim()-cne$body){Fail 'Idempotent turn retry has different content.'};return (@{'ok'=$true;'command'='record-turn';'root'=$Root;'session_id'=$SessionId;'turn_id'=$TurnId;'record'=$recordPath;'created'=$false;'idempotent'=$true;'progress_version'=(Get-ProgressVersion $state)} + (Get-SessionTermination $Root $SessionId))}
     $currentVersion=Get-ProgressVersion $state;if($ExpectedProgressVersion-ne$currentVersion){Fail "Progress version conflict: expected $ExpectedProgressVersion, current $currentVersion."};if([IO.File]::Exists($recordPath)){Fail 'Turn id already exists but is not the current idempotency key.'}
     $progress=(Read-Text $ProgressInput).Trim()+"`n";$issues=Test-ProgressContent $progress $null $false;if($issues.Count){Fail ('Invalid progress input: '+($issues -join '; '))};$newVersion=$currentVersion+1;$progress=Update-ProgressHeader $progress $newVersion
     $transactionDir=Join-Path $Root '.backups\transactions';$progressPath=Join-Path $Root '访谈进度.md';$statePath=Join-Path $Root $script:StateFile;$tag=File-Stamp;$progressBackup=Copy-Unique $progressPath $transactionDir "$tag-p$currentVersion-访谈进度.md";$stateBackup=Copy-Unique $statePath $transactionDir "$tag-p$currentVersion-hello-state"
     Begin-Transaction $Root ([ordered]@{'kind'='record-turn';'progress_backup'=(Relative-ToRoot $Root $progressBackup);'state_backup'=(Relative-ToRoot $Root $stateBackup);'record_path'=(Relative-ToRoot $Root $recordPath);'record_created'='true'})
     try{$current=Utc-Now;Write-Atomic $recordPath ($body+"`n");Write-Atomic $progressPath $progress;$state['schema_version']='2';$state['progress_version']=[string]$newVersion;$state['last_session_id']=$SessionId;$state['last_turn_id']=$TurnId;$state['last_interview_at']=$current;$state['updated_at']=$current;Write-State $statePath $state;$valid=Validate-Space $Root $true;if(-not$valid.ok){Fail ('Post-write validation failed: '+($valid.issues -join '; '))}}catch{Rollback-Failure $Root $_.Exception}
-    Finish-Transaction $Root;return @{'ok'=$true;'command'='record-turn';'root'=$Root;'session_id'=$SessionId;'turn_id'=$TurnId;'record'=$recordPath;'created'=$true;'idempotent'=$false;'progress_version'=$newVersion}
+    Finish-Transaction $Root;return (@{'ok'=$true;'command'='record-turn';'root'=$Root;'session_id'=$SessionId;'turn_id'=$TurnId;'record'=$recordPath;'created'=$true;'idempotent'=$false;'progress_version'=$newVersion} + (Get-SessionTermination $Root $SessionId))
 }
 
 function Withdraw-Candidate([string]$Root,[string]$CandidateId,[bool]$Confirmed){Require-Confirmed $Confirmed;$state=Require-Valid $Root;if($CandidateId-notmatch'^C-[0-9TZ-]+$'){Fail 'Invalid candidate id.'};$pendingPath=Join-Path $Root '待确认信息.md';$content=Read-Text $pendingPath;$pattern='(?ms)^## '+[regex]::Escape($CandidateId)+'\s*\r?\n.*?(?=^## C-[0-9TZ-]+\s*$|\z)';$match=[regex]::Match($content,$pattern);if(-not$match.Success){Fail "Candidate not found: $CandidateId"};$trashDir=Join-Path $Root '.trash\candidates';[IO.Directory]::CreateDirectory($trashDir)|Out-Null;$trash=Join-Path $trashDir ($CandidateId+'.md');if([IO.File]::Exists($trash)){$trash=Join-Path $trashDir ($CandidateId+'-'+(File-Stamp)+'.md')};Write-Atomic $trash ($match.Value.TrimEnd()+"`n");$remaining=($content.Remove($match.Index,$match.Length)).TrimEnd()+"`n";if($remaining-notmatch'(?m)^## C-[0-9TZ-]+\s*$'){$remaining=$remaining.TrimEnd()+"`n`n当前没有待确认信息。`n"};Write-Atomic $pendingPath $remaining;$state['updated_at']=Utc-Now;Write-State (Join-Path $Root $script:StateFile) $state;return @{'ok'=$true;'command'='withdraw';'root'=$Root;'candidate_id'=$CandidateId;'trash'=$trash}}
@@ -360,11 +382,11 @@ function SelfTest-Summary{return "- 触发原因：自测。`n- 信息来源：�
 
 function Invoke-SelfTest {
     $temporary=Join-Path ([IO.Path]::GetTempPath()) ('hello-self-test-'+[Guid]::NewGuid().ToString('N'))
-    try{$root=Join-Path $temporary '中文 空格';try{[void](Initialize-Space $root $false);Fail 'Confirmation guard did not fail.'}catch{if($_.Exception.Message-notlike'Mutating commands require*'){throw}};[void](Initialize-Space $root $true);if((Initialize-Space $root $true).created.Count-ne0){Fail 'Self-test init overwrote existing space.'};$valid=Validate-Space $root;if(-not$valid.ok){Fail ('Self-test init failed: '+($valid.issues -join '; '))};$state=Read-State (Join-Path $root $script:StateFile);if($state['capture_mode']-ne'prompt'){Fail 'Self-test capture default failed.'}
+    try{$root=Join-Path $temporary '中文 空格';try{[void](Initialize-Space $root $false);Fail 'Confirmation guard did not fail.'}catch{if($_.Exception.Message-notlike'Mutating commands require*'){throw}};[void](Initialize-Space $root $true);if((Initialize-Space $root $true).created.Count-ne0){Fail 'Self-test init overwrote existing space.'};$valid=Validate-Space $root;if(-not$valid.ok){Fail ('Self-test init failed: '+($valid.issues -join '; '))};$state=Read-State (Join-Path $root $script:StateFile);if($state['capture_mode']-ne'prompt'){Fail 'Self-test capture default failed.'};$initialStatus=(Get-Status $root).payload;if($initialStatus.capture_strategy-ne'提示确认'-or$initialStatus.last_capture_disclosed_at-ne''-or-not$initialStatus.baseline_closure_blocked-or$initialStatus.baseline_required_remaining.Count-eq0-or$initialStatus.long_term_backlog.Count-eq0){Fail 'Self-test status fields failed.'}
         $note=Join-Path $temporary 'candidate.md';Write-Atomic $note "用户完成了一个重要项目。`n";$staged=Stage-Candidate $root $note '经历' '自测' $true;[void](Configure-Space $root 'auto-stage' $null $null $true)
         $candidate=Join-Path $temporary 'profile.md';Write-Atomic $candidate ((Read-Text (Join-Path $root '个人全景档案.md')).Replace('尚未访谈。','已完成一项自测。')) ;$summary=Join-Path $temporary 'summary.md';Write-Atomic $summary (SelfTest-Summary)
         try{[void](Apply-Profile $root $candidate $summary 1 $true $true);Fail 'Simulated failure did not fail.'}catch{if($_.Exception.Message-notlike'*rolled back*'){throw}};if((Read-State (Join-Path $root $script:StateFile))['profile_version']-ne'1'){Fail 'Rollback did not restore version.'};$applied=Apply-Profile $root $candidate $summary 1 $true;if($applied.profile_version-ne2){Fail 'Apply failed.'};if((Get-ChildItem -LiteralPath (Join-Path $root '.backups\transactions') -File).Count-ne0){Fail 'Transaction backups were not cleaned after apply.'};if((Read-State (Join-Path $root $script:StateFile))['review_stage']-ne'baseline'){Fail 'Apply changed review stage.'}
-        $turn=Join-Path $temporary 'turn.md';Write-Atomic $turn "# 单轮记录`n`n- 已确认：自测。`n";$progress=Join-Path $temporary 'progress.md';Write-Atomic $progress ((Read-Text (Join-Path $root '访谈进度.md')).Replace('尚未开始。','下一项自测。'));$recorded=Record-Turn $root $turn $progress '2030-01-01-session-1' 'turn-1' 1 $true;if($recorded.progress_version-ne2){Fail 'Record turn failed.'};if((Get-ChildItem -LiteralPath (Join-Path $root '.backups\transactions') -File).Count-ne0){Fail 'Transaction backups were not cleaned after record-turn.'};$retry=Record-Turn $root $turn $progress '2030-01-01-session-1' 'turn-1' 1 $true;if(-not$retry.idempotent){Fail 'Record turn retry was not idempotent.'}
+        $turn=Join-Path $temporary 'turn.md';Write-Atomic $turn "# 单轮记录`n`n- 已确认：自测。`n";$progress=Join-Path $temporary 'progress.md';Write-Atomic $progress ((Read-Text (Join-Path $root '访谈进度.md')).Replace('尚未开始。','下一项自测。'));$recorded=Record-Turn $root $turn $progress '2030-01-01-session-1' 'turn-1' 1 $true;if($recorded.progress_version-ne2-or-not$recorded.new_session_required-or-not($recorded.session_termination_reasons-contains'cross-natural-day')){Fail 'Session termination warning failed.'};if((Get-ChildItem -LiteralPath (Join-Path $root '.backups\transactions') -File).Count-ne0){Fail 'Transaction backups were not cleaned after record-turn.'};$retry=Record-Turn $root $turn $progress '2030-01-01-session-1' 'turn-1' 1 $true;if(-not$retry.idempotent){Fail 'Record turn retry was not idempotent.'}
         try{[void](Configure-Space $root $null $null 'first-review' $true);Fail 'First review guard did not fail.'}catch{if($_.Exception.Message-notlike'Entering first-review*'){throw}};[void](Configure-Space $root $null '2030-01-01T00:00:00Z' 'first-review' $true);[void](Withdraw-Candidate $root $staged.candidate_id $true);$final=Validate-Space $root;if(-not$final.ok){Fail ('Self-test final validation failed: '+($final.issues -join '; '))};return @{'ok'=$true;'command'='self-test'}
     }finally{if([IO.Directory]::Exists($temporary)){Remove-Item -LiteralPath $temporary -Recurse -Force}}
 }

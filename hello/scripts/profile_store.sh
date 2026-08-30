@@ -118,8 +118,9 @@ write_state() {
     printf 'progress_version=%s\n' "$state_progress"
     printf 'last_session_id=%s\n' "$state_session"
     printf 'last_turn_id=%s\n' "$state_turn"
+    printf 'last_capture_disclosed_at=%s\n' "${state_disclosed-}"
     if [ -f "$state_path" ]; then
-      awk -F= '!/^(schema_version|profile_version|capture_mode|created_at|updated_at|last_confirmed_at|next_review_at|review_stage|last_interview_at|progress_version|last_session_id|last_turn_id)=/' "$state_path"
+      awk -F= '!/^(schema_version|profile_version|capture_mode|created_at|updated_at|last_confirmed_at|next_review_at|review_stage|last_interview_at|progress_version|last_session_id|last_turn_id|last_capture_disclosed_at)=/' "$state_path"
     fi
   } > "$state_temp" || fail "Cannot write state file: $state_path"
   mv -f "$state_temp" "$state_path" || fail "Cannot replace state file: $state_path"
@@ -139,6 +140,7 @@ read_state() {
   STATE_PROGRESS_PRESENT=true; STATE_PROGRESS=$(state_value "$state_path" progress_version) || { STATE_PROGRESS_PRESENT=false; STATE_PROGRESS=1; }
   STATE_SESSION_PRESENT=true; STATE_SESSION=$(state_value "$state_path" last_session_id) || { STATE_SESSION_PRESENT=false; STATE_SESSION=; }
   STATE_TURN_PRESENT=true; STATE_TURN=$(state_value "$state_path" last_turn_id) || { STATE_TURN_PRESENT=false; STATE_TURN=; }
+  STATE_DISCLOSED=$(state_value "$state_path" last_capture_disclosed_at) || STATE_DISCLOSED=
   return 0
 }
 
@@ -239,6 +241,7 @@ init_space() {
   done
   if [ ! -f "$ROOT/.hello-state" ]; then
     current=$(utc_now)
+    state_disclosed=
     write_state "$ROOT/.hello-state" 2 1 prompt "$current" "$current" '' '' baseline '' 1 '' ''
     add_created .hello-state
   fi
@@ -254,12 +257,16 @@ status_space() {
   progress_stage=$(tr -d '\r' < "$ROOT/访谈进度.md" | sed -n 's/^- 当前阶段：//p' | head -n 1)
   progress_last=$(tr -d '\r' < "$ROOT/访谈进度.md" | sed -n 's/^- 最近正式访谈时间：//p' | head -n 1)
   progress_next=$(tr -d '\r' < "$ROOT/访谈进度.md" | awk 'BEGIN{inside=0} /^## 下次问题[[:space:]]*$/{inside=1; next} /^## /{if(inside) exit} inside && NF{print; exit}')
+  baseline_json=$(tr -d '\r' < "$ROOT/访谈进度.md" | awk 'BEGIN{b=0;first=1;out="["} /^### 基线必答（阻塞基线收口）/{b=1;next} /^### |^## /{if(b) exit} b && /^- /{v=substr($0,3); gsub(/\\/,"\\\\",v); gsub(/"/,"\\\"",v); if(!first) out=out ","; out=out "\"" v "\""; first=0} END{print out "]"}')
+  long_json=$(tr -d '\r' < "$ROOT/访谈进度.md" | awk 'BEGIN{b=0;first=1;out="["} /^### 可长期补充（不阻塞基线收口）/{b=1;next} /^### |^## /{if(b) exit} b && /^- /{v=substr($0,3); gsub(/\\/,"\\\\",v); gsub(/"/,"\\\"",v); if(!first) out=out ","; out=out "\"" v "\""; first=0} END{print out "]"}')
+  baseline_blocked=true; [ "$baseline_json" = '[]' ] && baseline_blocked=false
+  case $STATE_CAPTURE in auto-stage) capture_strategy=自动暂存 ;; prompt) capture_strategy=提示确认 ;; explicit) capture_strategy=仅显式 ;; esac
   [ -n "$progress_stage" ] || case $STATE_STAGE in baseline) progress_stage=基线访谈 ;; first-review) progress_stage=首次回访 ;; stable) progress_stage=稳定维护 ;; esac
   [ -n "$progress_last" ] || progress_last=$STATE_INTERVIEW
   [ -n "$progress_last" ] || [ -z "$STATE_TURN" ] || progress_last=$STATE_UPDATED
-  printf '{"ok":true,"command":"status","root":"%s","profile_version":%s,"progress_version":%s,"capture_mode":"%s","review_stage":"%s","last_confirmed_at":"%s","next_review_at":"%s","last_session_id":"%s","last_turn_id":"%s","pending_candidates":%s,"progress":{"current_stage":"%s","last_interview_at":"%s","next_question":"%s"}}\n' \
-    "$(json_escape "$ROOT")" "$STATE_VERSION" "$STATE_PROGRESS" "$(json_escape "$STATE_CAPTURE")" "$(json_escape "$STATE_STAGE")" \
-    "$(json_escape "$STATE_CONFIRMED")" "$(json_escape "$STATE_REVIEW")" "$(json_escape "$STATE_SESSION")" "$(json_escape "$STATE_TURN")" "$pending" \
+  printf '{"ok":true,"command":"status","root":"%s","profile_version":%s,"progress_version":%s,"capture_mode":"%s","capture_strategy":"%s","last_capture_disclosed_at":"%s","review_stage":"%s","last_confirmed_at":"%s","next_review_at":"%s","last_session_id":"%s","last_turn_id":"%s","pending_candidates":%s,"baseline_required_remaining":%s,"baseline_closure_blocked":%s,"long_term_backlog":%s,"progress":{"current_stage":"%s","last_interview_at":"%s","next_question":"%s"}}\n' \
+    "$(json_escape "$ROOT")" "$STATE_VERSION" "$STATE_PROGRESS" "$(json_escape "$STATE_CAPTURE")" "$(json_escape "$capture_strategy")" "$(json_escape "$STATE_DISCLOSED")" "$(json_escape "$STATE_STAGE")" \
+    "$(json_escape "$STATE_CONFIRMED")" "$(json_escape "$STATE_REVIEW")" "$(json_escape "$STATE_SESSION")" "$(json_escape "$STATE_TURN")" "$pending" "$baseline_json" "$baseline_blocked" "$long_json" \
     "$(json_escape "$progress_stage")" "$(json_escape "$progress_last")" "$(json_escape "$progress_next")"
 }
 
@@ -288,6 +295,8 @@ configure_space() {
     fail 'first-review requires --next-review-at.'
   fi
   current=$(utc_now)
+  state_disclosed=$STATE_DISCLOSED
+  [ -z "$CAPTURE_MODE" ] || state_disclosed=$current
   write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$new_capture" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$new_review" "$new_stage" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN"
   printf '{"ok":true,"command":"configure","root":"%s","capture_mode":"%s","review_stage":"%s","next_review_at":"%s"}\n' \
     "$(json_escape "$ROOT")" "$new_capture" "$new_stage" "$(json_escape "$new_review")"
@@ -297,7 +306,7 @@ clean_label() {
   value=$1
   fallback=$2
   [ -n "$value" ] || value=$fallback
-  printf '%s' "$value" | tr '\r\n\t' '   ' | cut -c 1-200
+  printf '%s' "$value" | tr '\n\t' '   ' | cut -c 1-200
 }
 
 stage_candidate() {
@@ -470,6 +479,24 @@ apply_profile() {
     "$(json_escape "$ROOT")" "$STATE_VERSION" "$new_version" "$(json_escape "$history")" "$(json_escape "$backup")"
 }
 
+session_termination_json() {
+  session_id=$1
+  reasons_json=[]
+  reason_count=0
+  today=$(date -u +%Y-%m-%d)
+  session_date=$(printf '%s' "$session_id" | cut -c1-10)
+  if [ "$session_date" != "$today" ]; then reasons_json='["cross-natural-day"]'; reason_count=1; fi
+  session_dir="$ROOT/原始访谈/$(printf '%s' "$session_id" | cut -c1-4)/$session_id"
+  turn_count=0
+  [ -d "$session_dir" ] && turn_count=$(find "$session_dir" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')
+  if [ "$turn_count" -gt 50 ]; then
+    [ "$reason_count" -eq 0 ] && reasons_json='["over-50-turns"]' || reasons_json='["cross-natural-day","over-50-turns"]'
+    reason_count=$((reason_count + 1))
+  fi
+  [ "$reason_count" -gt 0 ] && notice='请开启新会话' || notice=
+  printf '{"new_session_required":%s,"session_termination_reasons":%s,"session_termination_notice":"%s"}' "$([ "$reason_count" -gt 0 ] && echo true || echo false)" "$reasons_json" "$(json_escape "$notice")"
+}
+
 record_turn() {
   require_confirmed
   require_valid
@@ -491,7 +518,7 @@ record_turn() {
     sed 's/\r$//' "$INPUT" > "$retry_temp" || fail 'Cannot compare idempotent turn retry.'
     if ! cmp -s "$record_path" "$retry_temp"; then rm -f "$retry_temp"; fail 'Idempotent turn retry has different content.'; fi
     rm -f "$retry_temp"
-    printf '{"ok":true,"command":"record-turn","root":"%s","idempotent":true,"progress_version":%s,"record":"%s"}\n' "$(json_escape "$ROOT")" "$STATE_PROGRESS" "$(json_escape "$record_path")"
+    printf '{"ok":true,"command":"record-turn","root":"%s","idempotent":true,"progress_version":%s,"record":"%s",%s}\n' "$(json_escape "$ROOT")" "$STATE_PROGRESS" "$(json_escape "$record_path")" "$(session_termination_json "$SESSION_ID")"
     return
   fi
   [ "$EXPECTED_PROGRESS_VERSION" = "$STATE_PROGRESS" ] || fail "Progress version conflict: expected $EXPECTED_PROGRESS_VERSION, current $STATE_PROGRESS."
@@ -521,7 +548,7 @@ record_turn() {
   if ! validate_space true; then rollback_fail "Post-write validation failed: $VALIDATION_ISSUES"; fi
   cleanup_transaction_backups || rollback_fail 'Cannot clear transaction backups.'
   rm -f "$ROOT/.hello-transaction" || rollback_fail 'Cannot clear transaction marker.'
-  printf '{"ok":true,"command":"record-turn","root":"%s","idempotent":false,"progress_version":%s,"record":"%s"}\n' "$(json_escape "$ROOT")" "$new_progress" "$(json_escape "$record_path")"
+  printf '{"ok":true,"command":"record-turn","root":"%s","idempotent":false,"progress_version":%s,"record":"%s",%s}\n' "$(json_escape "$ROOT")" "$new_progress" "$(json_escape "$record_path")" "$(session_termination_json "$SESSION_ID")"
 }
 
 withdraw_candidate() {

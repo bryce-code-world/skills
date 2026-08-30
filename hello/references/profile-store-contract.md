@@ -42,6 +42,7 @@ review_stage=baseline|first-review|stable
 last_interview_at=<empty or ISO 8601 UTC>
 last_session_id=<empty or session id>
 last_turn_id=<empty or turn id>
+last_capture_disclosed_at=<empty or ISO 8601 UTC; last time the effective capture policy was disclosed to the user>
 ```
 
 新空间的 `capture_mode` 是 `prompt`。进入 `first-review` 时必须同时给出 `next_review_at`；`apply` 不自动改变维护阶段。
@@ -93,11 +94,22 @@ last_turn_id=<empty or turn id>
 
 `apply` 和 `record-turn` 在写正式文件前创建 `.hello-transaction`，并在 `.backups/transactions/` 保存恢复所需副本。任何中途错误应先自动回滚；无法完成时保留事务标记，下一次写入必须停止并要求 `recover`。成功提交并通过写后校验后删除本次事务副本；`recover` 也在恢复并校验成功后清理本次副本。`recover` 只按标记恢复已知目标，恢复后再次校验。
 
+### 会话终止
+
+一个 `session_id` 在以下任一条件命中时终止：跨自然日、跨设备、连续超过 50 轮，或用户明确表示结束本次访谈。适配器能确定的条件由 `record-turn` 检查；跨设备和用户显式结束由宿主传入或记录。命中后 `record-turn` 仍可保存当前轮次，但返回 `new_session_required: true`、原因列表和“请开启新会话”的提示；下一轮不得继续沿用已终止的会话编号。
+
 初始化和临时文件使用最小权限：POSIX 新目录 `0700`、新文件 `0600`；Windows 依赖当前用户 ACL，不擅自扩大继承权限。`init` 不覆盖已有文件。
 
 ## 七、输出与退出码
 
 除 `diff` 外，输出 UTF-8 JSON，至少包含 `ok`、`command`，涉及资料空间时包含 `root`。失败包含可行动的 `error`。
+
+`status` 成功输出除 `capture_mode` 外，还必须包含：
+
+- `capture_strategy`：当前采集策略的人类可读名称（仅显式 / 提示确认 / 自动暂存）；
+- `last_capture_disclosed_at`：上次向用户披露有效采集策略的时间；由用户确认策略时的 `configure --capture-mode` 记录，空值表示从未记录披露，不能被解释为用户已知情。
+
+基线收口字段也必须可核查：`baseline_required_remaining`（基线必答项数组）、`baseline_closure_blocked`（仍有必答项时为 `true`）和 `long_term_backlog`（可长期补充项数组）。
 
 | 退出码 | 含义 |
 |---:|---|

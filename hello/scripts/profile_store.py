@@ -28,6 +28,7 @@ DIRS = ("原始访谈", "历史版本", ".backups", ".trash")
 STATE_FILE = ".hello-state"
 TRANSACTION_FILE = ".hello-transaction"
 CAPTURE_MODES = {"auto-stage", "prompt", "explicit"}
+CAPTURE_STRATEGIES = {"auto-stage": "自动暂存", "prompt": "提示确认", "explicit": "仅显式"}
 REVIEW_STAGES = {"baseline", "first-review", "stable"}
 UPDATE_TYPES = {"新增", "状态变化", "事实纠正", "解释变化", "假设验证", "撤回隐藏"}
 CANDIDATE_ID = re.compile(r"^C-[0-9TZ-]+$")
@@ -162,6 +163,7 @@ def write_state(path: Path, state: Dict[str, str]) -> None:
         "last_interview_at",
         "last_session_id",
         "last_turn_id",
+        "last_capture_disclosed_at",
     )
     keys = [key for key in order if key in state] + sorted(key for key in state if key not in order)
     atomic_write(path, "".join(f"{key}={state.get(key, '')}\n" for key in keys))
@@ -217,7 +219,7 @@ def validate_state(state: Dict[str, str]) -> list[str]:
     for key in ("created_at", "updated_at"):
         if key in state and not valid_iso8601(state[key], allow_empty=False):
             issues.append(f"{key} must be ISO 8601")
-    for key in ("last_confirmed_at", "next_review_at", "last_interview_at"):
+    for key in ("last_confirmed_at", "next_review_at", "last_interview_at", "last_capture_disclosed_at"):
         if key in state and not valid_iso8601(state[key]):
             issues.append(f"{key} must be empty or ISO 8601")
     return issues
@@ -343,6 +345,7 @@ def init_space(root: Path, confirmed: bool) -> dict:
                 "last_interview_at": "",
                 "last_session_id": "",
                 "last_turn_id": "",
+                "last_capture_disclosed_at": "",
             },
         )
         created.append(STATE_FILE)
@@ -451,6 +454,7 @@ def status(root: Path) -> Tuple[dict, int]:
         or state.get("last_interview_at", "")
         or (state.get("updated_at", "") if state.get("last_turn_id") else "")
     )
+    baseline_remaining, long_term_backlog = progress_backlog(read_text(root / "访谈进度.md"))
     return {
         "ok": True,
         "command": "status",
@@ -458,14 +462,36 @@ def status(root: Path) -> Tuple[dict, int]:
         "profile_version": int(state["profile_version"]),
         "progress_version": effective_progress_version(state),
         "capture_mode": state["capture_mode"],
+        "capture_strategy": CAPTURE_STRATEGIES[state["capture_mode"]],
+        "last_capture_disclosed_at": state.get("last_capture_disclosed_at", ""),
         "review_stage": state["review_stage"],
         "last_confirmed_at": state["last_confirmed_at"],
         "next_review_at": state["next_review_at"],
         "last_session_id": state.get("last_session_id", ""),
         "last_turn_id": state.get("last_turn_id", ""),
         "pending_candidates": pending,
+        "baseline_required_remaining": baseline_remaining,
+        "baseline_closure_blocked": bool(baseline_remaining),
+        "long_term_backlog": long_term_backlog,
         "progress": progress,
     }, 0
+
+
+def progress_backlog(content: str) -> tuple[list[str], list[str]]:
+    buckets: dict[str, list[str]] = {"baseline": [], "long": []}
+    bucket: str | None = None
+    for line in content.splitlines():
+        if line.strip() == "### 基线必答（阻塞基线收口）":
+            bucket = "baseline"
+        elif line.strip() == "### 可长期补充（不阻塞基线收口）":
+            bucket = "long"
+        elif line.startswith("### ") or line.startswith("## "):
+            bucket = None
+        elif bucket and line.startswith("-"):
+            item = line[1:].strip()
+            if item:
+                buckets[bucket].append(item)
+    return buckets["baseline"], buckets["long"]
 
 
 def validate_review_time(value: str) -> str:
@@ -491,6 +517,7 @@ def configure_space(
         if capture_mode not in CAPTURE_MODES:
             raise StoreError("--capture-mode must be auto-stage, prompt, or explicit.")
         state["capture_mode"] = capture_mode
+        state["last_capture_disclosed_at"] = now_utc()
     if review_stage is not None:
         if review_stage not in REVIEW_STAGES:
             raise StoreError("--review-stage must be baseline, first-review, or stable.")
@@ -778,6 +805,7 @@ def record_turn(
             "created": False,
             "idempotent": True,
             "progress_version": effective_progress_version(state),
+            **session_termination(root, session_id),
         }
     current_progress_version = effective_progress_version(state)
     if expected_progress_version != current_progress_version:
@@ -839,6 +867,22 @@ def record_turn(
         "created": record_created,
         "idempotent": False,
         "progress_version": new_progress_version,
+        **session_termination(root, session_id),
+    }
+
+
+def session_termination(root: Path, session_id: str) -> dict:
+    reasons: list[str] = []
+    today = now_utc()[:10]
+    if session_id[:10] != today:
+        reasons.append("cross-natural-day")
+    session_dir = root / "原始访谈" / session_id[:4] / session_id
+    if session_dir.is_dir() and len(list(session_dir.glob("*.md"))) > 50:
+        reasons.append("over-50-turns")
+    return {
+        "new_session_required": bool(reasons),
+        "session_termination_reasons": reasons,
+        "session_termination_notice": "请开启新会话" if reasons else "",
     }
 
 
@@ -903,6 +947,13 @@ def self_test() -> dict:
         assert code == 0, payload
         state = parse_state(root / STATE_FILE)
         assert state["capture_mode"] == "prompt"
+        status_payload, status_code = status(root)
+        assert status_code == 0
+        assert status_payload["capture_strategy"] == "提示确认"
+        assert status_payload["last_capture_disclosed_at"] == ""
+        assert status_payload["baseline_closure_blocked"] is True
+        assert status_payload["baseline_required_remaining"]
+        assert status_payload["long_term_backlog"]
         candidate_note = root.parent / "candidate.md"
         candidate_note.write_text("用户完成了一个重要项目。\n", encoding="utf-8")
         staged = stage_candidate(root, candidate_note, "经历", "自测", True)
@@ -930,6 +981,8 @@ def self_test() -> dict:
         progress_input.write_text(read_text(root / "访谈进度.md").replace("尚未开始。", "下一项自测。"), encoding="utf-8")
         recorded = record_turn(root, turn_input, progress_input, "2030-01-01-session-1", "turn-1", 1, True)
         assert recorded["progress_version"] == 2
+        assert recorded["new_session_required"] is True
+        assert "cross-natural-day" in recorded["session_termination_reasons"]
         assert not list((root / ".backups" / "transactions").iterdir())
         retried = record_turn(root, turn_input, progress_input, "2030-01-01-session-1", "turn-1", 1, True)
         assert retried["idempotent"] is True
