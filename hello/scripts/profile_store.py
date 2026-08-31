@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -29,7 +30,19 @@ FILES = (
 DIRS = ("原始访谈", "历史版本", ".backups", ".trash")
 STATE_FILE = ".hello-state"
 TRANSACTION_FILE = ".hello-transaction"
+LAYOUT_TRANSACTION_FILE = ".hello-layout-transaction"
 LOCK_DIR = ".hello-lock"
+TARGET_LAYOUTS = {"target-draft", "target"}
+TARGET_FORMAL_SCHEMA = "3"
+TARGET_CORE_FILES = (
+    "README.md",
+    "个人全景档案.md",
+    "主题覆盖矩阵.md",
+    "manifest.json",
+)
+TARGET_COMPAT_FILES = ("待确认信息.md", "访谈进度.md", "资料索引.md", "迭代日志.md")
+TARGET_REQUIRED_DIRS = ("原始访谈", "来源", "权威", "派生", "历史版本", ".backups", ".trash")
+TARGET_METADATA_KEYS = ("layout", "layout_version", "schema_version", "migration_id", "package_id", "subject_id")
 CAPTURE_MODES = {"auto-stage", "prompt", "explicit"}
 CAPTURE_STRATEGIES = {"auto-stage": "自动暂存", "prompt": "提示确认", "explicit": "仅显式"}
 MUTATING_COMMANDS = {
@@ -41,6 +54,10 @@ MUTATING_COMMANDS = {
     "record-turn",
     "withdraw",
     "recover",
+    "migrate-apply",
+    "rebuild-index",
+    "switch-layout",
+    "rollback-layout",
 }
 REVIEW_STAGES = {"baseline", "first-review", "stable"}
 UPDATE_TYPES = {"新增", "状态变化", "事实纠正", "解释变化", "假设验证", "撤回隐藏"}
@@ -148,6 +165,9 @@ VALUE_OPTIONS = {
     "session-id",
     "turn-id",
     "expected-progress-version",
+    "destination",
+    "target",
+    "migration-id",
 }
 FLAG_OPTIONS = {"confirmed", "simulate-failure"}
 
@@ -517,6 +537,1384 @@ def permission_issues(root: Path) -> list[str]:
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Target-layout protocol (P1/P3)
+# ---------------------------------------------------------------------------
+#
+# The original adapter stores a schema-2 compatibility projection at the
+# profile root.  The target protocol deliberately lives beside it: a target
+# package has an explicit marker and a metadata-only manifest, and all
+# migration/switch operations are guarded by source hashes and version CAS.
+# These helpers never print document bodies.  They are intentionally small
+# and deterministic so the PowerShell and POSIX adapters can implement the
+# same contract without depending on Python.
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except (OSError, UnicodeError) as exc:
+        raise StoreError(f"Cannot hash {path}: {exc}") from exc
+    return digest.hexdigest()
+
+
+def read_json_object(path: Path) -> dict:
+    try:
+        value = json.loads(read_text(path))
+    except (json.JSONDecodeError, StoreError) as exc:
+        raise StoreError(f"Invalid JSON in {path.name}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise StoreError(f"JSON root in {path.name} must be an object.")
+    return value
+
+
+def _target_marker(root: Path) -> Dict[str, str]:
+    marker = root / STATE_FILE
+    if not marker.is_file():
+        raise StoreError(f"Missing target marker: {STATE_FILE}")
+    values = parse_key_values(marker)
+    layout = values.get("layout", "")
+    if layout not in TARGET_LAYOUTS:
+        raise StoreError("Target marker layout must be target-draft or target.")
+    for key in TARGET_METADATA_KEYS:
+        if not values.get(key):
+            raise StoreError(f"Missing target marker field: {key}")
+    if values.get("layout_version") != "1":
+        raise StoreError("Target marker layout_version must be 1.")
+    if not SAFE_ID.fullmatch(values["migration_id"]):
+        raise StoreError("Target marker migration_id is invalid.")
+    if not SAFE_ID.fullmatch(values["package_id"]):
+        raise StoreError("Target marker package_id is invalid.")
+    if not SAFE_ID.fullmatch(values["subject_id"]):
+        raise StoreError("Target marker subject_id is invalid.")
+    return values
+
+
+def _target_manifest(root: Path, marker: Dict[str, str]) -> dict:
+    manifest = read_json_object(root / "manifest.json")
+    for key in ("layout", "migration_id", "package_id", "subject_id", "owner", "audience"):
+        if not str(manifest.get(key, "")):
+            raise StoreError(f"Missing target manifest field: {key}")
+    if manifest.get("layout") != marker.get("layout"):
+        raise StoreError("Target marker and manifest layout do not match.")
+    if str(manifest.get("layout_version")) != str(marker.get("layout_version")):
+        raise StoreError("Target marker and manifest layout_version do not match.")
+    manifest_schema = str(manifest.get("schema_version", ""))
+    marker_schema = str(marker.get("schema_version", ""))
+    if manifest_schema != marker_schema:
+        # A draft created by an earlier hello release may use equivalent
+        # target-draft-x.y spellings; formal schema-3 markers must match
+        # exactly so a partial promotion cannot pass validation.
+        if not (manifest_schema.startswith("target-draft-") and marker_schema.startswith("target-draft-")):
+            raise StoreError("Target marker and manifest schema_version do not match.")
+    for key in ("migration_id", "package_id", "subject_id"):
+        if str(manifest.get(key)) != marker.get(key):
+            raise StoreError(f"Target marker and manifest {key} do not match.")
+    layout_version = str(manifest.get("layout_version", ""))
+    if layout_version != "1":
+        raise StoreError("Target manifest layout_version must be 1.")
+    return manifest
+
+
+def _target_path_is_safe(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return not path.is_symlink()
+
+
+def _target_source_metadata(manifest: dict, marker: Dict[str, str] | None = None) -> dict:
+    source = manifest.get("source")
+    if not isinstance(source, dict):
+        source = {}
+    # Older drafts put versions/hashes directly in the marker or migration
+    # manifest.  Normalize those shapes so switch/migrate-apply can fail
+    # closed rather than silently skipping a source CAS check.
+    profile = source.get("profile") if isinstance(source.get("profile"), dict) else {}
+    progress = source.get("progress") if isinstance(source.get("progress"), dict) else {}
+    pending = source.get("pending") if isinstance(source.get("pending"), dict) else {}
+    # The PowerShell/POSIX adapters also accept the first migration-manifest
+    # shape, which stores these five values as flat aliases.  Read that shape
+    # before consulting the marker so a formal package produced by another
+    # adapter remains switchable here even when its marker omits hashes.
+    profile.setdefault("version", source.get("profile_version", ""))
+    progress.setdefault("version", source.get("progress_version", ""))
+    profile.setdefault("sha256", source.get("profile_sha256", ""))
+    progress.setdefault("sha256", source.get("progress_sha256", ""))
+    pending.setdefault("sha256", source.get("pending_sha256", ""))
+    if marker:
+        profile.setdefault("version", marker.get("source_profile_version", ""))
+        progress.setdefault("version", marker.get("source_progress_version", ""))
+        profile.setdefault("sha256", marker.get("source_profile_sha256", ""))
+        progress.setdefault("sha256", marker.get("source_progress_sha256", ""))
+        pending.setdefault("sha256", marker.get("source_pending_sha256", ""))
+    return {"profile": profile, "progress": progress, "pending": pending}
+
+
+def _compat_source_snapshot(root: Path) -> dict:
+    state_path = root / STATE_FILE
+    if not root.is_dir() or not state_path.is_file():
+        raise StoreError("Source profile root is missing.")
+    state = parse_state(state_path)
+    if state.get("schema_version") not in {"1", "2"} or "layout" in state:
+        raise StoreError("Migration source must be a compatibility schema-1/2 root.")
+    required = ("个人全景档案.md", "访谈进度.md", "待确认信息.md")
+    missing = [name for name in required if not (root / name).is_file()]
+    if missing:
+        raise StoreError("Migration source is missing: " + ", ".join(missing))
+    return {
+        "profile": {
+            "path": "个人全景档案.md",
+            "version": str(state.get("profile_version", "")),
+            "sha256": sha256_file(root / "个人全景档案.md"),
+        },
+        "progress": {
+            "path": "访谈进度.md",
+            "version": str(effective_progress_version_for_root(root, state)),
+            "sha256": sha256_file(root / "访谈进度.md"),
+        },
+        "pending": {
+            "path": "待确认信息.md",
+            "sha256": sha256_file(root / "待确认信息.md"),
+        },
+    }
+
+
+def _source_matches_manifest(source_root: Path, manifest: dict, marker: Dict[str, str] | None = None,
+                             expected_version: str | None = None,
+                             expected_progress_version: str | None = None) -> dict:
+    snapshot = _compat_source_snapshot(source_root)
+    expected = _target_source_metadata(manifest, marker)
+    for name in ("profile", "progress", "pending"):
+        expected_hash = str(expected[name].get("sha256", ""))
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash):
+            raise StoreError(f"Target manifest is missing source {name} sha256.")
+        if expected_hash.lower() != snapshot[name]["sha256"].lower():
+            raise StoreError(f"Source {name} hash does not match target manifest.")
+    profile_version = str(snapshot["profile"]["version"])
+    progress_version = str(snapshot["progress"]["version"])
+    expected_profile = str(expected["profile"].get("version", ""))
+    expected_progress = str(expected["progress"].get("version", ""))
+    if expected_profile and expected_profile != profile_version:
+        raise StoreError("Source profile version does not match target manifest.")
+    if expected_progress and expected_progress != progress_version:
+        raise StoreError("Source progress version does not match target manifest.")
+    if expected_version is not None and expected_version != profile_version:
+        raise StoreError(f"Version conflict: expected {expected_version}, current {profile_version}.")
+    if expected_progress_version is not None and expected_progress_version != progress_version:
+        raise StoreError(
+            f"Progress version conflict: expected {expected_progress_version}, current {progress_version}."
+        )
+    return snapshot
+
+
+def _target_entry_count(root: Path) -> int:
+    count = 0
+    authority = root / "权威"
+    if authority.is_dir():
+        count = sum(1 for path in authority.rglob("*.md") if path.name != "README.md")
+    return count
+
+
+def _target_validate_unlocked(root: Path, expected_layout: str | None = None) -> Tuple[dict, int]:
+    issues: list[str] = []
+    marker: Dict[str, str] = {}
+    manifest: dict = {}
+    if not root.is_dir():
+        issues.append("Root directory does not exist")
+    else:
+        try:
+            marker = _target_marker(root)
+        except StoreError as exc:
+            issues.append(str(exc))
+        if marker:
+            if expected_layout and marker.get("layout") != expected_layout:
+                issues.append(f"Target layout must be {expected_layout}")
+            try:
+                manifest = _target_manifest(root, marker)
+            except StoreError as exc:
+                issues.append(str(exc))
+            if manifest:
+                for key in ("layout", "layout_version", "schema_version", "migration_id", "package_id", "subject_id"):
+                    marker_value = str(marker.get(key, ""))
+                    manifest_value = str(manifest.get(key, ""))
+                    if marker_value != manifest_value:
+                        issues.append(f"Target marker and manifest {key} do not match.")
+        for name in TARGET_CORE_FILES:
+            if not (root / name).is_file():
+                issues.append(f"Missing target file: {name}")
+        for name in TARGET_COMPAT_FILES:
+            if not (root / name).is_file():
+                issues.append(f"Missing target file: {name}")
+        for name in TARGET_REQUIRED_DIRS:
+            if not (root / name).is_dir():
+                issues.append(f"Missing target directory: {name}")
+        if marker.get("layout") == "target":
+            # A formal package must retain the compatibility cursor/state so
+            # existing record-turn/stage callers can continue safely.
+            for key in ("profile_version", "progress_version", "capture_mode", "created_at", "updated_at"):
+                if not marker.get(key):
+                    issues.append(f"Formal target marker is missing compatibility field: {key}")
+            for key in (
+                "last_confirmed_at",
+                "next_review_at",
+                "review_stage",
+                "last_interview_at",
+                "last_session_id",
+                "last_turn_id",
+                "last_capture_disclosed_at",
+                "last_capture_disclosed_mode",
+            ):
+                if key not in marker:
+                    issues.append(f"Formal target marker is missing compatibility field: {key}")
+            if marker.get("schema_version") != TARGET_FORMAL_SCHEMA:
+                issues.append("Formal target marker schema_version must be 3")
+        elif marker.get("layout") == "target-draft":
+            if not str(marker.get("schema_version", "")).startswith("target-draft"):
+                issues.append("Target draft marker schema_version must start with target-draft")
+        # Reject symlinks and path escapes before any migration operation.
+        try:
+            for child in root.rglob("*"):
+                if not _target_path_is_safe(root, child):
+                    issues.append(f"Unsafe target path: {child.name}")
+                    break
+                if child.is_file() and child.suffix.lower() in {".md", ".json", ".state", ".txt", ""}:
+                    try:
+                        raw = child.read_bytes()
+                        if b"\r" in raw:
+                            issues.append(f"CRLF is not allowed: {child.relative_to(root).as_posix()}")
+                        raw.decode("utf-8-sig")
+                    except (OSError, UnicodeError) as exc:
+                        issues.append(f"Invalid UTF-8 file: {child.relative_to(root).as_posix()}")
+        except OSError as exc:
+            issues.append(f"Cannot scan target tree: {exc}")
+        index_path = root / "权威" / "声明索引.json"
+        if index_path.is_file():
+            try:
+                index_value = json.loads(read_text(index_path))
+                if not isinstance(index_value, dict):
+                    issues.append("Authority index JSON must be an object.")
+            except (StoreError, json.JSONDecodeError):
+                issues.append("Invalid authority index JSON: 权威/声明索引.json")
+    pending = 0
+    if (root / "待确认信息.md").is_file():
+        try:
+            pending = len(re.findall(r"(?m)^## C-[0-9TZ-]+\s*$", read_text(root / "待确认信息.md")))
+        except StoreError:
+            pass
+    files = 0
+    if root.is_dir():
+        try:
+            files = sum(1 for path in root.rglob("*") if path.is_file())
+        except OSError:
+            pass
+    payload = {
+        "ok": not issues,
+        "command": "target-validate",
+        "root": str(root),
+        "layout": marker.get("layout", ""),
+        "layout_version": str(marker.get("layout_version", "")),
+        "schema_version": marker.get("schema_version", ""),
+        "migration_id": marker.get("migration_id", ""),
+        "package_id": marker.get("package_id", ""),
+        "subject_id": marker.get("subject_id", ""),
+        "authority_entry_count": str(_target_entry_count(root)) if root.is_dir() else "0",
+        "file_count": str(files),
+        "pending_candidates": str(pending),
+        "issues": issues,
+    }
+    return payload, 0 if not issues else 1
+
+
+@locked
+def target_validate(root: Path, expected_layout: str | None = None) -> Tuple[dict, int]:
+    """Validate a target package without returning any document body."""
+    return _target_validate_unlocked(root, expected_layout)
+
+
+def target_status(root: Path) -> Tuple[dict, int]:
+    payload, code = _target_validate_unlocked(root)
+    if code:
+        payload["command"] = "status"
+        return payload, code
+    marker = _target_marker(root)
+    manifest = _target_manifest(root, marker)
+    # A migration draft may not yet have the compatibility state projection.
+    # Keep the policy snapshot in the metadata-only status response so the
+    # host can disclose the effective capture mode before asking to persist a
+    # candidate.  Formal packages prefer the marker, which is the live cursor.
+    policy = manifest.get("capture_policy_snapshot")
+    if not isinstance(policy, dict):
+        policy = {}
+    capture_mode = marker.get("capture_mode") or str(policy.get("capture_mode", ""))
+    capture_strategy = marker.get("capture_strategy") or str(
+        policy.get("capture_strategy", CAPTURE_STRATEGIES.get(capture_mode, ""))
+    )
+    disclosed_at = marker.get("last_capture_disclosed_at") or str(
+        policy.get("last_capture_disclosed_at", "")
+    )
+    disclosed_mode = marker.get("last_capture_disclosed_mode") or str(
+        policy.get("last_capture_disclosed_mode", "")
+    )
+    # Status is metadata-only for target packages.  In particular, do not
+    # expose aggregate/profile text or the next question in JSON output.
+    baseline_remaining, long_term_backlog, split_unknown = target_progress_buckets(root)
+    # A draft/formal-but-not-activated package still has an owner-confirmation
+    # gate. Once canonical activation is confirmed, entity review is reported
+    # by each entry's status and must not masquerade as a second switch gate.
+    authority_status = str(marker.get("authority_status", manifest.get("authority_status", "")))
+    if authority_status in {"non-authoritative-needs-user-confirmation", "active-layout-needs-review"}:
+        baseline_remaining = list(baseline_remaining)
+        baseline_remaining.append("migration-review（需用户确认目录化切换）")
+    return {
+        "ok": True,
+        "command": "status",
+        "root": str(root),
+        "layout": marker["layout"],
+        "layout_version": marker["layout_version"],
+        "schema_version": marker["schema_version"],
+        "migration_id": marker["migration_id"],
+        "package_id": marker["package_id"],
+        "subject_id": marker["subject_id"],
+        "profile_version": str(marker.get("profile_version", marker.get("source_profile_version", ""))),
+        "progress_version": str(marker.get("progress_version", marker.get("source_progress_version", ""))),
+        "capture_mode": capture_mode,
+        "capture_strategy": capture_strategy,
+        "last_capture_disclosed_at": disclosed_at,
+        "last_capture_disclosed_mode": disclosed_mode,
+        "review_stage": marker.get("review_stage", "baseline"),
+        "last_confirmed_at": marker.get("last_confirmed_at", ""),
+        "next_review_at": marker.get("next_review_at", ""),
+        "last_session_id": marker.get("last_session_id", ""),
+        "last_turn_id": marker.get("last_turn_id", ""),
+        "pending_candidates": payload["pending_candidates"],
+        "authority_entry_count": payload["authority_entry_count"],
+        "file_count": payload["file_count"],
+        "baseline_required_remaining": baseline_remaining,
+        "baseline_closure_blocked": bool(baseline_remaining) or split_unknown,
+        "baseline_split_unknown": split_unknown,
+        "long_term_backlog": long_term_backlog,
+        "progress": {
+            "current_stage": "目标资料包",
+            "last_interview_at": marker.get("last_interview_at", ""),
+            "next_question": "",
+        },
+    }, 0
+
+
+def target_progress_buckets(root: Path) -> tuple[list[str], list[str], bool]:
+    """Read only topic labels/statuses from the target coverage matrix."""
+    matrix = root / "主题覆盖矩阵.md"
+    if not matrix.is_file():
+        return ["legacy-unclassified（缺少主题覆盖矩阵）"], [], True
+    try:
+        lines = read_text(matrix).splitlines()
+    except StoreError:
+        return ["legacy-unclassified（主题覆盖矩阵不可读）"], [], True
+    baseline: list[str] = []
+    long_term: list[str] = []
+    found_bucket = False
+    for raw in lines:
+        if not raw.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        # Migration drafts use Markdown code spans in table cells.  Remove
+        # presentation delimiters before comparing semantic values so status
+        # is stable across adapters and does not expose labels such as
+        # `` `situation`（`partial`） ``.
+        clean = lambda value: value.strip().strip("`").strip()
+        topic_id = clean(cells[0])
+        if topic_id.casefold() in {"topic_id", "主题", "---", "-", ""}:
+            continue
+        priority = " ".join(clean(cells[2]).split())
+        state = clean(cells[3].split()[0]) if cells[3] else ""
+        if priority in {"基线必答", "baseline", "基线"}:
+            found_bucket = True
+            if state not in {"confirmed_minimum", "deepened", "declined", "not_applicable"}:
+                baseline.append(f"{topic_id}（{state or 'unknown'}）")
+        elif priority in {"可长期补充", "long-term", "long"}:
+            found_bucket = True
+            if state not in {"confirmed_minimum", "deepened", "declined", "not_applicable"}:
+                long_term.append(f"{topic_id}（{state or 'unknown'}）")
+    if not found_bucket:
+        return ["legacy-unclassified（需先完成基线/长期分组）"], [], True
+    return baseline, long_term, False
+
+
+def _assert_independent_roots(left: Path, right: Path) -> None:
+    """Reject equal/ancestor roots so a migration cannot recurse into itself."""
+    left_resolved = left.resolve()
+    right_resolved = right.resolve()
+    if left_resolved == right_resolved:
+        raise StoreError("Source and target roots must be different.")
+    for ancestor, child in ((left_resolved, right_resolved), (right_resolved, left_resolved)):
+        try:
+            child.relative_to(ancestor)
+        except ValueError:
+            continue
+        raise StoreError("Source and target roots must be independent directories.")
+
+
+def _has_user_entries(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    return any(
+        child.name not in {LOCK_DIR, TRANSACTION_FILE, LAYOUT_TRANSACTION_FILE}
+        for child in path.iterdir()
+    )
+
+
+def _safe_migration_id(value: str | None) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        candidate = "migration-" + stamp()
+    if not SAFE_ID.fullmatch(candidate):
+        raise StoreError("migration-id may contain only ASCII letters, digits, dot, underscore, or hyphen.")
+    return candidate
+
+
+def _write_target_marker(root: Path, values: Dict[str, str]) -> None:
+    # Use the same key=value representation as the compatibility state so all
+    # adapters can inspect the layout without loading document bodies.
+    write_state(root / STATE_FILE, {str(k): str(v) for k, v in values.items()})
+
+
+def _minimal_target_text(name: str) -> str:
+    texts = {
+        "README.md": "# 个人资料包\n\n此目录由 hello 目标布局协议创建。\n",
+        "个人全景档案.md": "# 个人全景档案\n\n> 本文件是目录化资料包的聚合入口；详细内容以权威实体为准。\n",
+        "主题覆盖矩阵.md": "# 主题覆盖矩阵\n\n> 覆盖状态由权威条目和用户确认维护。\n",
+        "待确认信息.md": "# 待确认信息\n\n当前没有待确认信息。\n",
+        "访谈进度.md": "# 访谈进度\n\n- 进度版本：1\n\n## 已覆盖主题\n\n- 尚未开始。\n\n## 待补充主题\n\n### 基线必答（阻塞基线收口）\n\n- 尚未分组。\n\n### 可长期补充（不阻塞基线收口）\n\n- 尚未分组。\n\n## 暂不收集\n\n- 暂无。\n\n## 下次问题\n\n- 待定。\n",
+        "资料索引.md": "# 资料索引\n\n- 由目标协议维护。\n",
+        "迭代日志.md": "# 迭代日志\n\n当前没有正式迭代。\n",
+    }
+    return texts.get(name, "")
+
+
+def _write_bytes_atomic(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        secure_file(path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _copy_file_atomic(source: Path, target: Path) -> None:
+    try:
+        _write_bytes_atomic(target, source.read_bytes())
+    except OSError as exc:
+        raise StoreError(f"Cannot copy {source}: {exc}") from exc
+
+
+def _copy_tree_contents(source: Path, target: Path, skip: set[str] | None = None) -> int:
+    """Copy a target package without following symlinks; return file count."""
+    skip = set(skip or ()) | {LOCK_DIR, TRANSACTION_FILE, LAYOUT_TRANSACTION_FILE}
+    if not source.is_dir():
+        raise StoreError(f"Target source directory does not exist: {source}")
+    target.mkdir(parents=True, exist_ok=True)
+    secure_directory(target)
+    copied = 0
+    for child in sorted(source.iterdir(), key=lambda item: item.name.casefold()):
+        if child.name in skip:
+            continue
+        if child.is_symlink():
+            raise StoreError(f"Target source contains an unsafe symlink: {child.name}")
+        destination = target / child.name
+        if child.is_dir():
+            copied += _copy_tree_contents(child, destination)
+        elif child.is_file():
+            _copy_file_atomic(child, destination)
+            copied += 1
+        else:
+            raise StoreError(f"Target source contains unsupported path: {child.name}")
+    return copied
+
+
+def _snapshot_root(root: Path, migration_id: str, version: str | None = None) -> Path:
+    history = root / "历史版本"
+    history.mkdir(parents=True, exist_ok=True)
+    secure_directory(history)
+    prefix = f"compat-v{version}-{migration_id}" if version else f".hello-layout-{migration_id}"
+    snapshot = history / f"{prefix}-{stamp()}" if not version else history / prefix
+    counter = 1
+    while snapshot.exists():
+        snapshot = (
+            history / f"{prefix}-{stamp()}-{counter}"
+            if not version
+            else history / f"{prefix}-{counter}"
+        )
+        counter += 1
+    snapshot.mkdir()
+    secure_directory(snapshot)
+    for child in sorted(root.iterdir(), key=lambda item: item.name.casefold()):
+        if child.name in {"历史版本", LOCK_DIR, LAYOUT_TRANSACTION_FILE}:
+            continue
+        if child.is_symlink():
+            raise StoreError(f"Cannot snapshot unsafe symlink: {child.name}")
+        destination = snapshot / child.name
+        if child.is_dir():
+            _copy_tree_contents(child, destination)
+        elif child.is_file():
+            _copy_file_atomic(child, destination)
+    atomic_write(
+        snapshot / "snapshot.json",
+        serialize_json({"migration_id": migration_id, "created_at": now_utc(), "layout_snapshot": True}),
+    )
+    return snapshot
+
+
+def _remove_exact(path: Path) -> None:
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _restore_snapshot(root: Path, snapshot: Path) -> None:
+    if not snapshot.is_dir() or not _target_path_is_safe(root, snapshot):
+        raise StoreError("Layout snapshot is missing or escapes the profile root.")
+    try:
+        snapshot_meta = read_json_object(snapshot / "snapshot.json")
+    except StoreError as exc:
+        raise StoreError("Layout snapshot metadata is invalid.") from exc
+    if not snapshot_meta.get("layout_snapshot"):
+        raise StoreError("Layout snapshot metadata is invalid.")
+    for child in list(root.iterdir()):
+        if child.name in {"历史版本", LOCK_DIR, LAYOUT_TRANSACTION_FILE}:
+            continue
+        _remove_exact(child)
+    for child in sorted(snapshot.iterdir(), key=lambda item: item.name.casefold()):
+        if child.name == "snapshot.json":
+            continue
+        destination = root / child.name
+        if child.is_dir():
+            _copy_tree_contents(child, destination)
+        elif child.is_file():
+            _copy_file_atomic(child, destination)
+
+
+def _write_layout_transaction(root: Path, values: dict) -> None:
+    marker = root / LAYOUT_TRANSACTION_FILE
+    if marker.exists():
+        raise StoreError("Interrupted layout transaction exists; run rollback-layout first.")
+    try:
+        with marker.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(serialize_json(values))
+            handle.flush()
+            os.fsync(handle.fileno())
+        secure_file(marker)
+    except FileExistsError as exc:
+        raise StoreError("Interrupted layout transaction exists; run rollback-layout first.") from exc
+
+
+def _read_layout_transaction(root: Path) -> dict:
+    marker = root / LAYOUT_TRANSACTION_FILE
+    if not marker.is_file():
+        raise StoreError("No interrupted layout transaction exists.")
+    values = read_json_object(marker)
+    for key in ("migration_id", "snapshot"):
+        if not str(values.get(key, "")):
+            raise StoreError(f"Layout transaction is missing field: {key}")
+    snapshot = transaction_target(root, str(values["snapshot"]))
+    if not snapshot.is_dir():
+        raise StoreError("Layout transaction snapshot is missing.")
+    try:
+        snapshot_meta = read_json_object(snapshot / "snapshot.json")
+    except StoreError as exc:
+        raise StoreError("Layout transaction snapshot metadata is invalid.") from exc
+    if str(snapshot_meta.get("migration_id", "")) != str(values["migration_id"]):
+        raise StoreError("Layout transaction snapshot migration_id does not match.")
+    return values
+
+
+def _source_manifest_payload(source: dict) -> dict:
+    return {
+        "profile": dict(source["profile"]),
+        "progress": dict(source["progress"]),
+        "pending": dict(source["pending"]),
+    }
+
+
+def _merge_source_manifest(previous: object, source: dict) -> dict:
+    """Refresh source fingerprints without discarding migration metadata.
+
+    ``migration-manifest.json`` files produced by the migration tooling carry
+    mapping/copy-policy fields alongside the source snapshot.  Replacing the
+    whole ``source`` object during formalization used to silently discard
+    those fields.  Keep every existing key, refresh the canonical nested
+    snapshots, and update legacy flat aliases when they are present.
+    """
+    normalized = _source_manifest_payload(source)
+    if not isinstance(previous, dict):
+        return normalized
+    merged = dict(previous)
+    for section in ("profile", "progress", "pending"):
+        prior = previous.get(section)
+        if isinstance(prior, dict):
+            section_value = dict(prior)
+            section_value.update(normalized[section])
+            merged[section] = section_value
+        else:
+            merged[section] = dict(normalized[section])
+    # Some early migration manifests used flat aliases.  Preserve their
+    # shape and refresh values so source/hash validation remains truthful.
+    aliases = {
+        "profile_version": source["profile"]["version"],
+        "progress_version": source["progress"]["version"],
+        "profile_sha256": source["profile"]["sha256"],
+        "progress_sha256": source["progress"]["sha256"],
+        "pending_sha256": source["pending"]["sha256"],
+    }
+    for key, value in aliases.items():
+        if key in merged:
+            merged[key] = value
+    return merged
+
+
+def _update_migration_manifest(root: Path, source: dict, migration_id: str, layout: str) -> dict:
+    """Set the formalization fields while retaining all existing manifest data."""
+    path = root / "migration-manifest.json"
+    document = read_json_object(path) if path.is_file() else {}
+    document["migration_id"] = migration_id
+    document["layout"] = layout
+    document["source"] = _merge_source_manifest(document.get("source"), source)
+    atomic_write(path, serialize_json(document))
+    return document
+
+
+def _snapshot_belongs_to(snapshot: Path, migration_id: str) -> bool:
+    """Return true only for a snapshot whose metadata names this migration."""
+    try:
+        metadata = read_json_object(snapshot / "snapshot.json")
+    except StoreError:
+        return False
+    return bool(metadata.get("layout_snapshot")) and str(metadata.get("migration_id", "")) == migration_id
+
+
+def _create_target_draft(source_root: Path, destination: Path, migration_id: str, source: dict) -> dict:
+    if destination.exists() and _has_user_entries(destination):
+        raise StoreError(f"Destination already exists and is not empty: {destination}")
+    destination.mkdir(parents=True, exist_ok=True)
+    secure_directory(destination)
+    for directory in TARGET_REQUIRED_DIRS:
+        (destination / directory).mkdir(parents=True, exist_ok=True)
+        secure_directory(destination / directory)
+    marker = {
+        "layout": "target-draft",
+        "layout_version": "1",
+        "schema_version": "target-draft-0.1",
+        "migration_id": migration_id,
+        "package_id": f"pkg-{migration_id}",
+        "subject_id": "subject-local",
+        "source_profile_version": source["profile"]["version"],
+        "source_progress_version": source["progress"]["version"],
+        "source_profile_sha256": source["profile"]["sha256"],
+        "source_progress_sha256": source["progress"]["sha256"],
+        "source_pending_sha256": source["pending"]["sha256"],
+        "generated_at": now_utc(),
+        "authority_status": "non-authoritative-needs-user-confirmation",
+    }
+    manifest = {
+        "layout": "target-draft",
+        "layout_version": 1,
+        "schema_version": "target-draft-0.1",
+        "migration_id": migration_id,
+        "package_id": marker["package_id"],
+        "subject_id": marker["subject_id"],
+        "owner": "local-owner",
+        "audience": "owner-and-authorized-ai",
+        "generated_at": marker["generated_at"],
+        "authority_status": marker["authority_status"],
+        "source": _source_manifest_payload(source),
+    }
+    _write_target_marker(destination, marker)
+    atomic_write(destination / "manifest.json", serialize_json(manifest))
+    for name in TARGET_CORE_FILES:
+        if name == "manifest.json":
+            continue
+        atomic_write(destination / name, _minimal_target_text(name))
+    # Carry the compatibility projection into the isolated draft so a later
+    # promotion can resume the interview without silently replacing the
+    # source cursor with an empty template.  The projection remains
+    # non-authoritative; source fingerprints and the owner review gate still
+    # control activation.
+    for name in TARGET_COMPAT_FILES:
+        source_path = source_root / name
+        if source_path.is_file():
+            _copy_file_atomic(source_path, destination / name)
+        else:
+            atomic_write(destination / name, _minimal_target_text(name))
+    atomic_write(
+        destination / "迁移映射.md",
+        "# 迁移映射\n\n- 状态：待用户确认。\n- 详细来源映射由迁移工具维护。\n",
+    )
+    atomic_write(
+        destination / "migration-manifest.json",
+        serialize_json({"migration_id": migration_id, "layout": "target-draft", "source": _source_manifest_payload(source)}),
+    )
+    return marker
+
+
+def _formalize_target(
+    root: Path,
+    source: dict,
+    source_state: Dict[str, str],
+    migration_id: str,
+    source_root: Path,
+) -> dict:
+    marker = _target_marker(root)
+    if marker["migration_id"] != migration_id:
+        raise StoreError("Target migration_id does not match the requested migration.")
+    manifest = _target_manifest(root, marker)
+    # A formal package keeps a compatibility projection at the root.  Drafts
+    # generated by older versions may not have it; fill only missing files
+    # from the validated source, never overwrite a reviewed draft projection.
+    for name in TARGET_COMPAT_FILES:
+        target = root / name
+        if not target.is_file():
+            _copy_file_atomic(source_root / name, target)
+    formal_marker = dict(source_state)
+    formal_marker.pop("_root", None)
+    formal_marker.update(marker)
+    formal_marker.update(
+        {
+            "layout": "target",
+            "layout_version": marker.get("layout_version", "1"),
+            "schema_version": TARGET_FORMAL_SCHEMA,
+            "migration_id": migration_id,
+            "profile_version": source["profile"]["version"],
+            "progress_version": source["progress"]["version"],
+            "source_profile_version": source["profile"]["version"],
+            "source_progress_version": source["progress"]["version"],
+            "source_profile_sha256": source["profile"]["sha256"],
+            "source_progress_sha256": source["progress"]["sha256"],
+            "source_pending_sha256": source["pending"]["sha256"],
+            # The formal package can still contain draft entities; keep that
+            # review state separate from the physical activation gate.
+            "authority_status": "active-layout-needs-review",
+            "updated_at": now_utc(),
+        }
+    )
+    _write_target_marker(root, formal_marker)
+    manifest["layout"] = "target"
+    manifest["schema_version"] = TARGET_FORMAL_SCHEMA
+    manifest["layout_version"] = int(marker.get("layout_version", "1"))
+    manifest["authority_status"] = "active-layout-needs-review"
+    manifest["activated_at"] = now_utc()
+    manifest["source"] = _merge_source_manifest(manifest.get("source"), source)
+    atomic_write(root / "manifest.json", serialize_json(manifest))
+    _update_migration_manifest(root, source, migration_id, "target")
+    return formal_marker
+
+
+@contextmanager
+def _lock_roots(*roots: Path):
+    """Acquire multiple profile locks in a deterministic order."""
+    unique = sorted({str(path.resolve()): path.resolve() for path in roots}.values(), key=str)
+    if not unique:
+        yield
+        return
+    with store_lock(unique[0]):
+        with _lock_roots(*unique[1:]):
+            yield
+
+
+def _target_plan_result(source_root: Path, root: Path, source: dict, migration_id: str, created: bool) -> dict:
+    target_exists = root.exists()
+    payload, code = _target_validate_unlocked(root) if target_exists else ({"layout": "", "authority_entry_count": "0", "issues": []}, 0)
+    if code and target_exists:
+        raise StoreError("Target plan is invalid: " + "; ".join(payload["issues"]))
+    return {
+        "ok": True,
+        "command": "migrate-plan",
+        "root": str(source_root),
+        "destination": str(root),
+        "source_root": str(source_root),
+        "target_root": str(root),
+        "migration_id": migration_id,
+        "created": created,
+        "target_exists": target_exists,
+        "layout": payload["layout"],
+        "target_layout": payload["layout"],
+        "mapping_ready": bool(target_exists and not code),
+        "target_issues": payload.get("issues", []),
+        "source_profile_version": str(source["profile"]["version"]),
+        "source_progress_version": str(source["progress"]["version"]),
+        "source_profile_sha256": source["profile"]["sha256"],
+        "source_progress_sha256": source["progress"]["sha256"],
+        "source_pending_sha256": source["pending"]["sha256"],
+        "authority_entry_count": payload["authority_entry_count"],
+    }
+
+
+def migrate_plan(
+    source_root: Path,
+    destination: Path,
+    migration_id: str | None,
+    confirmed: bool,
+) -> dict:
+    """Create or verify a read-only migration plan in an independent root."""
+    migration_id = _safe_migration_id(migration_id)
+    _assert_independent_roots(source_root, destination)
+    # A lock cannot be materialized for a path that does not yet exist.  Claim
+    # the caller's confirmation before creating an empty destination, then
+    # acquire the normal inter-process lock for the actual plan write.
+    destination_precreated = False
+    if not destination.exists() and confirmed:
+        require_confirmed(confirmed)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.mkdir()
+        secure_directory(destination)
+        destination_precreated = True
+    with _lock_roots(source_root, destination):
+        source_payload, source_code = validate_space(source_root)
+        if source_code:
+            raise StoreError("Migration source is invalid: " + "; ".join(source_payload["issues"]))
+        source = _compat_source_snapshot(source_root)
+        source_state = parse_state(source_root / STATE_FILE)
+        if destination.exists() and not destination.is_dir():
+            raise StoreError("Migration destination must be a directory.")
+        created = False
+        if destination.exists() and _has_user_entries(destination):
+            target_payload, target_code = _target_validate_unlocked(destination, "target-draft")
+            if target_code:
+                raise StoreError("Existing migration destination is invalid: " + "; ".join(target_payload["issues"]))
+            marker = _target_marker(destination)
+            if marker["migration_id"] != migration_id:
+                raise StoreError("Existing migration destination has a different migration_id.")
+            manifest = _target_manifest(destination, marker)
+            _source_matches_manifest(source_root, manifest, marker)
+        else:
+            if not destination_precreated:
+                # Planning is intentionally read-only when the target does
+                # not exist.  A confirmed direct function call may opt into
+                # the convenience skeleton creation used by self-test and
+                # local migration tooling; the CLI does not expose that
+                # mutating flag.
+                if not confirmed:
+                    return _target_plan_result(source_root, destination, source, migration_id, False)
+                require_confirmed(confirmed)
+            _create_target_draft(source_root, destination, migration_id, source)
+            created = True
+        return _target_plan_result(source_root, destination, source, migration_id, created)
+
+
+def _promote_existing_target(
+    source_root: Path,
+    draft_root: Path,
+    target_root: Path,
+    source: dict,
+    source_state: Dict[str, str],
+    migration_id: str,
+    simulate_failure: bool = False,
+) -> tuple[dict, Path | None]:
+    """Promote a draft in place or copy it to a new formal target root."""
+    source_state = dict(source_state)
+    if target_root.resolve() != draft_root.resolve():
+        if target_root.exists():
+            if not target_root.is_dir() or _has_user_entries(target_root):
+                # Idempotent retry is allowed only for the same formal package.
+                try:
+                    existing_marker = _target_marker(target_root)
+                except StoreError:
+                    existing_marker = {}
+                if existing_marker.get("layout") == "target" and existing_marker.get("migration_id") == migration_id:
+                    return _target_marker(target_root), None
+                raise StoreError("Formal target already exists and is not empty.")
+        target_root.parent.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(prefix=f".{target_root.name}.", dir=str(target_root.parent)))
+        try:
+            _copy_tree_contents(draft_root, temporary)
+            _formalize_target(temporary, source, source_state, migration_id, source_root)
+            if simulate_failure:
+                raise StoreError("simulated failure before target promotion")
+            os.replace(str(temporary), str(target_root))
+            temporary = Path("__already_moved__")
+        except Exception:
+            if temporary.exists() and temporary.name != "__already_moved__":
+                shutil.rmtree(temporary)
+            raise
+        return _target_marker(target_root), None
+
+    # In-place promotion is protected by a snapshot and a durable marker so a
+    # process interruption can be recovered with rollback-layout.
+    if (target_root / LAYOUT_TRANSACTION_FILE).exists():
+        raise StoreError("Interrupted layout transaction exists; run rollback-layout first.")
+    snapshot = _snapshot_root(target_root, migration_id)
+    _write_layout_transaction(
+        target_root,
+        {
+            "migration_id": migration_id,
+            "snapshot": relative_to_root(target_root, snapshot),
+            "operation": "migrate-apply",
+            "created_at": now_utc(),
+        },
+    )
+    try:
+        _formalize_target(target_root, source, source_state, migration_id, source_root)
+        if simulate_failure:
+            raise StoreError("simulated failure after target promotion")
+        payload, code = _target_validate_unlocked(target_root, "target")
+        if code:
+            raise StoreError("Post-promotion target validation failed: " + "; ".join(payload["issues"]))
+        (target_root / LAYOUT_TRANSACTION_FILE).unlink()
+        return _target_marker(target_root), snapshot
+    except Exception as exc:
+        try:
+            _restore_snapshot(target_root, snapshot)
+            (target_root / LAYOUT_TRANSACTION_FILE).unlink(missing_ok=True)
+        except Exception as rollback_error:
+            raise StoreError(
+                f"Target promotion failed: {exc}. Rollback failed: {rollback_error}; run rollback-layout."
+            ) from exc
+        raise StoreError(f"Target promotion failed and was rolled back: {exc}") from exc
+
+
+def migrate_apply(
+    source_root: Path,
+    draft_root: Path,
+    target_root: Path | None,
+    migration_id: str | None,
+    expected_version: str | None,
+    expected_progress_version: str | None,
+    confirmed: bool,
+    simulate_failure: bool = False,
+) -> dict:
+    """Promote a validated target draft without changing the source root."""
+    require_confirmed(confirmed)
+    migration_id = _safe_migration_id(migration_id)
+    target_root = target_root or draft_root
+    _assert_independent_roots(source_root, draft_root)
+    if target_root.resolve() != draft_root.resolve():
+        _assert_independent_roots(source_root, target_root)
+    with _lock_roots(source_root, draft_root, target_root):
+        source_payload, source_code = validate_space(source_root)
+        if source_code:
+            raise StoreError("Migration source is invalid: " + "; ".join(source_payload["issues"]))
+        source = _compat_source_snapshot(source_root)
+        source_state = parse_state(source_root / STATE_FILE)
+        draft_payload, draft_code = _target_validate_unlocked(draft_root, "target-draft")
+        if draft_code:
+            raise StoreError("Target draft is invalid: " + "; ".join(draft_payload["issues"]))
+        marker = _target_marker(draft_root)
+        if marker["migration_id"] != migration_id:
+            raise StoreError("Target draft migration_id does not match the requested migration.")
+        manifest = _target_manifest(draft_root, marker)
+        _source_matches_manifest(
+            source_root,
+            manifest,
+            marker,
+            expected_version=expected_version,
+            expected_progress_version=expected_progress_version,
+        )
+        formal_marker, snapshot = _promote_existing_target(
+            source_root,
+            draft_root,
+            target_root,
+            source,
+            source_state,
+            migration_id,
+            simulate_failure,
+        )
+        return {
+            "ok": True,
+            "command": "migrate-apply",
+            "root": str(source_root),
+            "draft": str(draft_root),
+            "target": str(target_root),
+            "migration_id": migration_id,
+            "layout": formal_marker.get("layout", "target"),
+            "profile_version": str(formal_marker.get("profile_version", source["profile"]["version"])),
+            "progress_version": str(formal_marker.get("progress_version", source["progress"]["version"])),
+            # The source compatibility root is never modified by
+            # migrate-apply, including the in-place promotion of the draft.
+            "source_unchanged": True,
+            "snapshot": str(snapshot) if snapshot else "",
+        }
+
+
+def _frontmatter_fields(content: str) -> dict[str, str]:
+    """Read the small YAML-like header used by target entity files.
+
+    Migration entries use plain ``key: value`` lines, while early fixtures
+    used Markdown-list ``- key: value`` lines.  Accept both forms, but only
+    between the first pair of ``---`` delimiters so body text cannot become
+    index metadata.
+    """
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    try:
+        end = next(index for index, line in enumerate(lines[1:], 1) if line.strip() == "---")
+    except StopIteration:
+        return {}
+    fields: dict[str, str] = {}
+    for line in lines[1:end]:
+        match = re.match(r"^\s*-?\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*?)\s*$", line)
+        if match:
+            fields[match.group(1)] = match.group(2).strip()
+    return fields
+
+
+def _frontmatter_value(content: str, key: str) -> str:
+    value = _frontmatter_fields(content).get(key, "")
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        return value[1:-1]
+    return value.strip("`")
+
+
+def _frontmatter_list(content: str, key: str) -> list[str]:
+    """Return a scalar or bracket-list frontmatter value as strings."""
+    value = _frontmatter_value(content, key).strip()
+    if not value:
+        return []
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1].strip()
+    if not value:
+        return []
+    values = []
+    for item in re.split(r"\s*,\s*", value):
+        item = item.strip().strip("`")
+        if len(item) >= 2 and item[0] == item[-1] and item[0] in {'\"', "'"}:
+            item = item[1:-1]
+        if item:
+            values.append(item)
+    return values
+
+
+def rebuild_index(target_root: Path, confirmed: bool) -> dict:
+    """Rebuild the deterministic target entity index from authoritative files."""
+    require_confirmed(confirmed)
+    with store_lock(target_root):
+        payload, code = _target_validate_unlocked(target_root)
+        if code:
+            raise StoreError("Target package is invalid: " + "; ".join(payload["issues"]))
+        marker = _target_marker(target_root)
+        entries: list[dict] = []
+        authority = target_root / "权威"
+        source_hash_parts: list[str] = []
+        if authority.is_dir():
+            for path in sorted(authority.rglob("*.md"), key=lambda item: item.relative_to(target_root).as_posix()):
+                if path.name == "README.md":
+                    continue
+                rel = path.relative_to(target_root).as_posix()
+                content = read_text(path)
+                digest = sha256_file(path)
+                source_hash_parts.append(f"{rel}:{digest}")
+                parent_name = path.parent.name
+                kind = {"声明": "Claim", "事件": "Event", "决策": "Decision"}.get(path.parent.parent.name, "")
+                if not kind:
+                    kind = {"声明": "Claim", "事件": "Event", "决策": "Decision"}.get(parent_name, "Claim")
+                item_id = (
+                    _frontmatter_value(content, "claim_id")
+                    or _frontmatter_value(content, "event_id")
+                    or _frontmatter_value(content, "decision_id")
+                    or _frontmatter_value(content, "draft_id")
+                    or _frontmatter_value(content, "id")
+                    or path.stem
+                )
+                topic_ids = []
+                for field in ("topic_id", "topic_ids", "cross_topic_ids"):
+                    for value in _frontmatter_list(content, field):
+                        if value not in topic_ids:
+                            topic_ids.append(value)
+                status = _frontmatter_value(content, "status") or "unknown"
+                source_refs = []
+                for field in ("source_ref", "source_refs"):
+                    for value in _frontmatter_list(content, field):
+                        if value not in source_refs:
+                            source_refs.append(value)
+                allowed_uses = []
+                for field in ("allowed_use", "allowed_uses"):
+                    for value in _frontmatter_list(content, field):
+                        if value not in allowed_uses:
+                            allowed_uses.append(value)
+                entries.append(
+                    {
+                        "id": item_id,
+                        "topic_ids": topic_ids,
+                        "kind": kind,
+                        "status": status,
+                        "source_refs": source_refs,
+                        "sensitivity": _frontmatter_value(content, "sensitivity") or "unknown",
+                        "allowed_uses": allowed_uses,
+                        "path": rel,
+                        "sha256": digest,
+                    }
+                )
+        index_source_hash = hashlib.sha256("\n".join(source_hash_parts).encode("utf-8")).hexdigest()
+        matrix_path = target_root / "主题覆盖矩阵.md"
+        index_source_matrix_version = sha256_file(matrix_path) if matrix_path.is_file() else ""
+        index = {
+            "layout": marker["layout"],
+            "layout_version": int(marker["layout_version"]),
+            "generated_at": now_utc(),
+            "index_source_hash": index_source_hash,
+            "index_source_version": str(marker.get("profile_version", marker.get("source_profile_version", ""))),
+            "index_source_progress_version": str(marker.get("progress_version", marker.get("source_progress_version", ""))),
+            "index_source_matrix_version": index_source_matrix_version,
+            "entries": entries,
+        }
+        atomic_write(target_root / "权威" / "声明索引.json", serialize_json(index))
+        marker["index_source_hash"] = index_source_hash
+        marker["index_generated_at"] = index["generated_at"]
+        marker["index_source_matrix_version"] = index_source_matrix_version
+        _write_target_marker(target_root, marker)
+        manifest = _target_manifest(target_root, marker)
+        manifest["index_source_hash"] = index_source_hash
+        manifest["index_generated_at"] = index["generated_at"]
+        manifest["index_source_matrix_version"] = index_source_matrix_version
+        atomic_write(target_root / "manifest.json", serialize_json(manifest))
+        atomic_write(
+            target_root / "资料索引.md",
+            "# 资料索引\n\n"
+            f"- 布局：{marker['layout']}\n"
+            f"- 权威条目数：{len(entries)}\n"
+            f"- 索引源哈希：{index_source_hash}\n"
+            f"- 索引源矩阵版本：{index_source_matrix_version}\n"
+            f"- 生成时间：{index['generated_at']}\n",
+        )
+        return {
+            "ok": True,
+            "command": "rebuild-index",
+            "root": str(target_root),
+            "layout": marker["layout"],
+            "entry_count": str(len(entries)),
+            "index_source_hash": index_source_hash,
+            "index_source_matrix_version": index_source_matrix_version,
+            "generated_at": index["generated_at"],
+        }
+
+
+def switch_layout(
+    canonical_root: Path,
+    target_root: Path,
+    migration_id: str | None,
+    expected_version: str | None,
+    expected_progress_version: str | None,
+    confirmed: bool,
+    simulate_failure: bool = False,
+) -> dict:
+    """Activate a validated target package at the canonical root.
+
+    The old canonical tree is snapshotted under ``历史版本`` before any
+    target files are copied.  A durable layout transaction marker plus source
+    hash/version fences make interruption and rollback explicit.
+    """
+    require_confirmed(confirmed)
+    migration_id = _safe_migration_id(migration_id)
+    _assert_independent_roots(canonical_root, target_root)
+    with _lock_roots(canonical_root, target_root):
+        source_payload, source_code = validate_space(canonical_root)
+        if source_code and not (
+            canonical_root.is_dir()
+            and (canonical_root / STATE_FILE).is_file()
+            and parse_key_values(canonical_root / STATE_FILE).get("layout") == "target"
+        ):
+            raise StoreError("Canonical source is invalid: " + "; ".join(source_payload["issues"]))
+        source_state = parse_state(canonical_root / STATE_FILE)
+        # Idempotent retry after a completed switch.
+        if source_state.get("layout") == "target" and source_state.get("migration_id") == migration_id:
+            target_payload, target_code = _target_validate_unlocked(canonical_root, "target")
+            if target_code:
+                raise StoreError("Canonical target is invalid: " + "; ".join(target_payload["issues"]))
+            return {
+                "ok": True,
+                "command": "switch-layout",
+                "root": str(canonical_root),
+                "target": str(target_root),
+                "migration_id": migration_id,
+                "layout": "target",
+                "idempotent": True,
+                "source_unchanged": True,
+            }
+        source = _compat_source_snapshot(canonical_root)
+        if expected_version is not None and expected_version != source["profile"]["version"]:
+            raise StoreError(f"Version conflict: expected {expected_version}, current {source['profile']['version']}.")
+        if expected_progress_version is not None and expected_progress_version != source["progress"]["version"]:
+            raise StoreError(
+                f"Progress version conflict: expected {expected_progress_version}, current {source['progress']['version']}."
+            )
+        target_payload, target_code = _target_validate_unlocked(target_root)
+        if target_code:
+            raise StoreError("Target package is invalid: " + "; ".join(target_payload["issues"]))
+        target_marker = _target_marker(target_root)
+        if target_marker["migration_id"] != migration_id:
+            raise StoreError("Target migration_id does not match the requested migration.")
+        if target_marker.get("layout") != "target":
+            raise StoreError("switch-layout requires a formal target with layout=target; run migrate-apply first.")
+        target_manifest = _target_manifest(target_root, target_marker)
+        _source_matches_manifest(
+            canonical_root,
+            target_manifest,
+            target_marker,
+            expected_version=expected_version,
+            expected_progress_version=expected_progress_version,
+        )
+        # Keep the documented compatibility snapshot name stable so an
+        # operator can locate/rollback a switch without reading transaction
+        # internals.  Version is part of the name and comes from the fenced
+        # pre-switch source cursor.
+        snapshot = _snapshot_root(canonical_root, migration_id, source["profile"]["version"])
+        _write_layout_transaction(
+            canonical_root,
+            {
+                "migration_id": migration_id,
+                "snapshot": relative_to_root(canonical_root, snapshot),
+                "operation": "switch-layout",
+                "target": str(target_root),
+                "created_at": now_utc(),
+            },
+        )
+        try:
+            # Do not import a target's history/backup/trash into the
+            # canonical history; the pre-switch snapshot remains the sole
+            # rollback source and avoids duplicate sensitive copies.
+            _copy_tree_contents(
+                target_root,
+                canonical_root,
+                skip={"历史版本", ".backups", ".trash", LOCK_DIR, LAYOUT_TRANSACTION_FILE, STATE_FILE, "manifest.json"},
+            )
+            # Fill compatibility files absent from a draft from the source;
+            # this keeps record-turn/stage available immediately after switch.
+            for name in TARGET_COMPAT_FILES:
+                if not (canonical_root / name).is_file():
+                    source_copy = snapshot / name
+                    if source_copy.is_file():
+                        _copy_file_atomic(source_copy, canonical_root / name)
+            formal_state = dict(source_state)
+            formal_state.update(target_marker)
+            formal_state.update(
+                {
+                    "layout": "target",
+                    "layout_version": target_marker.get("layout_version", "1"),
+                    "schema_version": TARGET_FORMAL_SCHEMA,
+                    "migration_id": migration_id,
+                    "profile_version": source["profile"]["version"],
+                    "progress_version": source["progress"]["version"],
+                    "source_profile_version": source["profile"]["version"],
+                    "source_progress_version": source["progress"]["version"],
+                    "source_profile_sha256": source["profile"]["sha256"],
+                    "source_progress_sha256": source["progress"]["sha256"],
+                    "source_pending_sha256": source["pending"]["sha256"],
+                    # The owner has confirmed the physical switch. Remaining
+                    # review belongs to migrated entities, not activation.
+                    "authority_status": "active-pending-review",
+                    "updated_at": now_utc(),
+                }
+            )
+            _write_target_marker(canonical_root, formal_state)
+            target_manifest["layout"] = "target"
+            target_manifest["schema_version"] = TARGET_FORMAL_SCHEMA
+            target_manifest["layout_version"] = int(target_marker.get("layout_version", "1"))
+            target_manifest["authority_status"] = "active-pending-review"
+            target_manifest["activated_at"] = now_utc()
+            target_manifest["source"] = _merge_source_manifest(target_manifest.get("source"), source)
+            atomic_write(canonical_root / "manifest.json", serialize_json(target_manifest))
+            _update_migration_manifest(canonical_root, source, migration_id, "target")
+            if simulate_failure:
+                raise StoreError("simulated failure during layout switch")
+            checked, checked_code = _target_validate_unlocked(canonical_root, "target")
+            if checked_code:
+                raise StoreError("Post-switch validation failed: " + "; ".join(checked["issues"]))
+            (canonical_root / LAYOUT_TRANSACTION_FILE).unlink()
+        except Exception as exc:
+            try:
+                _restore_snapshot(canonical_root, snapshot)
+                (canonical_root / LAYOUT_TRANSACTION_FILE).unlink(missing_ok=True)
+            except Exception as rollback_error:
+                raise StoreError(
+                    f"Layout switch failed: {exc}. Rollback failed: {rollback_error}; run rollback-layout."
+                ) from exc
+            raise StoreError(f"Layout switch failed and was rolled back: {exc}") from exc
+        return {
+            "ok": True,
+            "command": "switch-layout",
+            "root": str(canonical_root),
+            "target": str(target_root),
+            "migration_id": migration_id,
+            "layout": "target",
+            "profile_version": source["profile"]["version"],
+            "progress_version": source["progress"]["version"],
+            "snapshot": str(snapshot),
+            # Activation intentionally changes the canonical root; the old
+            # bytes remain available through the returned snapshot.
+            "source_unchanged": False,
+            "source_snapshot_preserved": True,
+            "idempotent": False,
+        }
+
+
+def rollback_layout(root: Path, migration_id: str, confirmed: bool) -> dict:
+    """Restore the exact pre-switch compatibility tree from a layout snapshot."""
+    require_confirmed(confirmed)
+    migration_id = _safe_migration_id(migration_id)
+    with store_lock(root):
+        snapshot: Path | None = None
+        if (root / LAYOUT_TRANSACTION_FILE).is_file():
+            tx = _read_layout_transaction(root)
+            if str(tx.get("migration_id")) != migration_id:
+                raise StoreError("Layout transaction migration_id does not match.")
+            snapshot = transaction_target(root, str(tx["snapshot"]))
+        else:
+            history = root / "历史版本"
+            candidates = [
+                path
+                for pattern in (f"compat-v*-{migration_id}*", f".hello-layout-{migration_id}-*")
+                for path in history.glob(pattern)
+                if path.is_dir()
+                and (path / "snapshot.json").is_file()
+                and _snapshot_belongs_to(path, migration_id)
+            ]
+            if candidates:
+                snapshot = sorted(candidates, key=lambda path: path.name)[-1]
+        if snapshot is None or not snapshot.is_dir():
+            raise StoreError("No layout snapshot found for migration_id.")
+        _restore_snapshot(root, snapshot)
+        (root / LAYOUT_TRANSACTION_FILE).unlink(missing_ok=True)
+        payload, code = validate_space(root)
+        if code:
+            raise StoreError("Rollback completed but restored root is invalid: " + "; ".join(payload["issues"]))
+        state = parse_state(root / STATE_FILE)
+        return {
+            "ok": True,
+            "command": "rollback-layout",
+            "root": str(root),
+            "migration_id": migration_id,
+            "snapshot": str(snapshot),
+            "layout": state.get("layout", "compatibility"),
+            "profile_version": str(state.get("profile_version", "")),
+            "progress_version": str(state.get("progress_version", "")),
+        }
+
+
+def require_active_layout(root: Path, state: Dict[str, str], operation: str) -> None:
+    layout = state.get("layout", "compatibility")
+    if layout == "target-draft":
+        raise StoreError(
+            f"{operation} cannot write a target-draft package; run migrate-apply/switch-layout after confirmation."
+        )
+    if layout not in {"compatibility", "target", ""}:
+        raise StoreError(f"Unsupported profile layout for {operation}: {layout}")
+
+
 def _init_space_unlocked(root: Path, confirmed: bool) -> dict:
     require_confirmed(confirmed)
     root_created = not root.exists()
@@ -578,6 +1976,25 @@ def init_space(root: Path, confirmed: bool) -> dict:
 
 @locked
 def validate_space(root: Path, ignore_transaction: bool = False) -> Tuple[dict, int]:
+    # A root-level target marker is authoritative for layout detection.  Do
+    # not feed target packages through the schema-2 section validator; doing
+    # so would either reject the aggregate projection or, worse, invite a
+    # legacy writer to overwrite entity files.
+    if root.is_dir() and (root / STATE_FILE).is_file():
+        try:
+            marker_probe = parse_key_values(root / STATE_FILE)
+        except StoreError:
+            marker_probe = {}
+        if marker_probe.get("layout") in TARGET_LAYOUTS:
+            payload, code = _target_validate_unlocked(root)
+            payload["command"] = "validate"
+            if (root / LAYOUT_TRANSACTION_FILE).exists() and not ignore_transaction:
+                payload["issues"].append(
+                    "Interrupted layout transaction exists; run rollback-layout --confirmed --root <authorized-root> --migration-id <id>"
+                )
+                payload["ok"] = False
+                code = 1
+            return payload, code
     issues: list[str] = []
     state: Dict[str, str] | None = None
     if not root.is_dir():
@@ -663,6 +2080,13 @@ def finish_transaction(root: Path) -> None:
 
 @locked
 def status(root: Path) -> Tuple[dict, int]:
+    if root.is_dir() and (root / STATE_FILE).is_file():
+        try:
+            marker_probe = parse_key_values(root / STATE_FILE)
+        except StoreError:
+            marker_probe = {}
+        if marker_probe.get("layout") in TARGET_LAYOUTS:
+            return target_status(root)
     payload, code = validate_space(root)
     if code:
         payload["command"] = "status"
@@ -751,6 +2175,7 @@ def configure_space(
 ) -> dict:
     require_confirmed(confirmed)
     state = require_valid(root)
+    require_active_layout(root, state, "configure")
     if capture_mode is None and next_review_at is None and review_stage is None:
         raise StoreError("configure requires at least one setting.")
     new_capture_mode = state["capture_mode"]
@@ -798,6 +2223,7 @@ def record_disclosure(root: Path, confirmed: bool, capture_mode: str | None = No
     """
     require_confirmed(confirmed)
     state = require_valid(root)
+    require_active_layout(root, state, "record-disclosure")
     if capture_mode is not None:
         if capture_mode not in CAPTURE_MODES:
             raise StoreError("--capture-mode must be auto-stage, prompt, or explicit.")
@@ -821,7 +2247,9 @@ def record_disclosure(root: Path, confirmed: bool, capture_mode: str | None = No
 
 @locked
 def diff_profile(root: Path, input_path: Path) -> str:
-    require_valid(root)
+    state = require_valid(root)
+    if state.get("layout") == "target":
+        raise StoreError("diff is only available for a compatibility schema-2 root; use target-validate/rebuild-index.")
     current = read_text(root / "个人全景档案.md").splitlines(keepends=True)
     candidate = read_text(input_path).splitlines(keepends=True)
     return "".join(
@@ -838,6 +2266,7 @@ def clean_label(value: str | None, fallback: str) -> str:
 def stage_candidate(root: Path, input_path: Path, kind: str | None, source: str | None, confirmed: bool) -> dict:
     require_confirmed(confirmed)
     state = require_valid(root)
+    require_active_layout(root, state, "stage")
     if state["capture_mode"] != "explicit":
         if (
             not state.get("last_capture_disclosed_at")
@@ -1048,6 +2477,9 @@ def apply_profile(
 ) -> dict:
     require_confirmed(confirmed)
     state = require_valid(root)
+    if state.get("layout") == "target":
+        raise StoreError("apply is only available for a compatibility schema-2 root; update target entities explicitly.")
+    require_active_layout(root, state, "apply")
     current_version = state["profile_version"]
     if expected_version != current_version:
         raise StoreError(f"Version conflict: expected {expected_version}, current {current_version}.")
@@ -1132,7 +2564,10 @@ def apply_profile(
         # The first mutating operation on a schema-1 space upgrades the
         # state shape.  Missing schema-2 cursor fields are intentionally
         # initialized rather than inferred from unrelated files.
-        state["schema_version"] = "2"
+        # Formal target roots retain the compatibility cursor but keep their
+        # target schema marker; downgrading it to schema 2 would make the
+        # package fail closed on the next status/validate call.
+        state["schema_version"] = TARGET_FORMAL_SCHEMA if state.get("layout") == "target" else "2"
         state.setdefault("progress_version", str(migration_progress_version))
         state.setdefault("last_session_id", "")
         state.setdefault("last_turn_id", "")
@@ -1171,6 +2606,7 @@ def record_turn(
 ) -> dict:
     require_confirmed(confirmed)
     state = require_valid(root)
+    require_active_layout(root, state, "record-turn")
     if not SESSION_ID.fullmatch(session_id) or not SAFE_ID.fullmatch(turn_id):
         raise StoreError("session-id must start with YYYY-MM-DD; ids may only use ASCII letters, digits, dot, underscore, or hyphen.")
     body = read_text(input_path).strip()
@@ -1239,7 +2675,10 @@ def record_turn(
             secure_directory(record_path.parent)
             secure_directory(record_path.parent.parent)
         atomic_write(progress_path, progress_candidate)
-        state["schema_version"] = "2"
+        # Preserve the formal target marker while advancing its compatibility
+        # progress cursor; a target root must not silently downgrade to
+        # schema-2 after a recorded interview turn.
+        state["schema_version"] = TARGET_FORMAL_SCHEMA if state.get("layout") == "target" else "2"
         state["progress_version"] = str(new_progress_version)
         state["last_session_id"] = session_id
         state["last_turn_id"] = turn_id
@@ -1288,6 +2727,7 @@ def session_termination(root: Path, session_id: str) -> dict:
 def withdraw_candidate(root: Path, candidate_id: str, confirmed: bool) -> dict:
     require_confirmed(confirmed)
     state = require_valid(root)
+    require_active_layout(root, state, "withdraw")
     if not CANDIDATE_ID.fullmatch(candidate_id):
         raise StoreError("Invalid candidate id.")
     pending_path = root / "待确认信息.md"
@@ -1333,6 +2773,23 @@ def test_summary() -> str:
 
 def self_test() -> dict:
     assert serialize_json({"中文": "自测"}).encode("utf-8").decode("utf-8").startswith("{\"中文\"")
+    # Target entries use ordinary YAML frontmatter (without a Markdown list
+    # dash).  Keep this fixture synthetic so index parsing cannot regress to
+    # the old `- key:`-only pattern unnoticed.
+    frontmatter_fixture = (
+        "---\n"
+        "draft_id: D-fixture\n"
+        "kind: Claim\n"
+        "topic_id: capability\n"
+        "cross_topic_ids: [work, values]\n"
+        "status: draft\n"
+        "source_ref: source://fixture\n"
+        "sensitivity: medium\n"
+        "allowed_uses: local-review-only\n"
+        "---\n"
+    )
+    assert _frontmatter_value(frontmatter_fixture, "draft_id") == "D-fixture"
+    assert _frontmatter_value(frontmatter_fixture, "status") == "draft"
     saved_hello_home = os.environ.get("HELLO_HOME")
     os.environ["HELLO_HOME"] = str(Path(tempfile.gettempdir()) / "must-not-be-used")
     try:
@@ -1633,6 +3090,60 @@ def self_test() -> dict:
         withdraw_candidate(root, staged["candidate_id"], True)
         final, code = validate_space(root)
         assert code == 0, final
+    # Target-layout protocol probes use a separate fixture so the legacy
+    # schema-2 assertions above remain independent.  No user path or body is
+    # read by this self-test.
+    with tempfile.TemporaryDirectory(prefix="hello-target-self-test-") as target_temp:
+        base = Path(target_temp)
+        source_root = base / "source"
+        draft_root = base / "draft"
+        formal_root = base / "formal"
+        canonical_root = base / "canonical"
+        init_space(source_root, True)
+        init_space(canonical_root, True)
+        source_bytes = {
+            name: (source_root / name).read_bytes()
+            for name in ("个人全景档案.md", "访谈进度.md", "待确认信息.md", STATE_FILE)
+        }
+        plan = migrate_plan(source_root, draft_root, "self-test-migration", True)
+        assert plan["created"] is True
+        target_payload, target_code = target_validate(draft_root)
+        assert target_code == 0, target_payload
+        entity = draft_root / "权威" / "声明" / "capability" / "CL-self-test.md"
+        entity.parent.mkdir(parents=True)
+        atomic_write(
+            entity,
+            "---\n- claim_id: CL-self-test\n- topic_id: capability\n- status: draft\n---\n\n虚构测试声明。\n",
+        )
+        rebuilt = rebuild_index(draft_root, True)
+        assert rebuilt["entry_count"] == "1"
+        promoted = migrate_apply(
+            source_root,
+            draft_root,
+            formal_root,
+            "self-test-migration",
+            plan["source_profile_version"],
+            plan["source_progress_version"],
+            True,
+        )
+        assert promoted["layout"] == "target"
+        formal_payload, formal_code = target_validate(formal_root, "target")
+        assert formal_code == 0, formal_payload
+        assert all((source_root / name).read_bytes() == value for name, value in source_bytes.items())
+        switched = switch_layout(
+            canonical_root,
+            formal_root,
+            "self-test-migration",
+            "1",
+            "1",
+            True,
+        )
+        assert switched["layout"] == "target"
+        canonical_status, canonical_code = status(canonical_root)
+        assert canonical_code == 0 and canonical_status["layout"] == "target"
+        rollback = rollback_layout(canonical_root, "self-test-migration", True)
+        assert rollback["layout"] in {"compatibility", ""}
+        assert (canonical_root / "个人全景档案.md").read_bytes() == source_bytes["个人全景档案.md"]
     return {"ok": True, "command": "self-test"}
 
 
@@ -1698,6 +3209,40 @@ def build_parser() -> argparse.ArgumentParser:
     item = sub.add_parser("recover")
     root_argument(item)
     item.add_argument("--confirmed", action="store_true")
+    item = sub.add_parser("target-validate")
+    root_argument(item)
+    item.add_argument("--target")
+    item = sub.add_parser("migrate-plan")
+    root_argument(item)
+    item.add_argument("--target")
+    item.add_argument("--destination")
+    item.add_argument("--migration-id")
+    item.add_argument("--confirmed", action="store_true")
+    item = sub.add_parser("migrate-apply")
+    root_argument(item)
+    item.add_argument("--destination", required=True)
+    item.add_argument("--target", required=True)
+    item.add_argument("--migration-id")
+    item.add_argument("--expected-version", required=True, type=positive_integer)
+    item.add_argument("--expected-progress-version", required=True, type=positive_integer)
+    item.add_argument("--confirmed", action="store_true")
+    item.add_argument("--simulate-failure", action="store_true")
+    item = sub.add_parser("rebuild-index")
+    root_argument(item)
+    item.add_argument("--target")
+    item.add_argument("--confirmed", action="store_true")
+    item = sub.add_parser("switch-layout")
+    root_argument(item)
+    item.add_argument("--target", required=True)
+    item.add_argument("--migration-id", required=True)
+    item.add_argument("--expected-version", required=True, type=positive_integer)
+    item.add_argument("--expected-progress-version", required=True, type=positive_integer)
+    item.add_argument("--confirmed", action="store_true")
+    item.add_argument("--simulate-failure", action="store_true")
+    item = sub.add_parser("rollback-layout")
+    root_argument(item)
+    item.add_argument("--migration-id", required=True)
+    item.add_argument("--confirmed", action="store_true")
     sub.add_parser("self-test")
     return parser
 
@@ -1718,13 +3263,21 @@ def main(argv: Iterable[str] | None = None) -> int:
         if args.command == "self-test":
             emit(self_test())
             return 0
-        if args.command in MUTATING_COMMANDS and args.root is None:
+        if args.command in MUTATING_COMMANDS and args.command != "rebuild-index" and args.root is None:
             # HELLO_HOME remains a convenient read-only discovery fallback,
             # but a write must name its exact profile root.  This fail-closed
             # guard prevents a dropped --root value from mutating whichever
             # personal space happens to be in the process environment.
             raise StoreError("Mutating commands require an explicit --root.")
-        root = resolve_root(args.root)
+        if args.command == "rebuild-index" and args.root is None and args.target is None:
+            raise StoreError("rebuild-index requires an explicit --root or --target.")
+        # Target-only commands may name their root with --target.  They must
+        # never silently fall back to HELLO_HOME when an explicit target path
+        # was supplied.
+        if args.command in {"target-validate", "rebuild-index"} and args.target is not None:
+            root = resolve_root(args.target)
+        else:
+            root = resolve_root(args.root)
         if args.command == "resolve-root":
             emit({"ok": True, "command": args.command, "root": str(root)})
             return 0
@@ -1782,6 +3335,82 @@ def main(argv: Iterable[str] | None = None) -> int:
             return 0
         if args.command == "recover":
             emit(recover_transaction(root, args.confirmed))
+            return 0
+        if args.command == "target-validate":
+            payload, code = target_validate(root)
+            emit(payload)
+            return code
+        if args.command == "migrate-plan":
+            target_value = args.target or args.destination
+            if not target_value:
+                raise StoreError("migrate-plan requires --target (or --destination).")
+            if args.confirmed and args.root is None:
+                raise StoreError("Confirmed migrate-plan requires an explicit --root.")
+            emit(migrate_plan(root, Path(target_value), args.migration_id, args.confirmed))
+            return 0
+        if args.command == "migrate-apply":
+            if not args.destination and not args.target:
+                raise StoreError("migrate-apply requires --destination or --target.")
+            draft = None
+            formal = None
+            if args.destination and args.target:
+                first = Path(args.destination).expanduser().resolve(strict=False)
+                second = Path(args.target).expanduser().resolve(strict=False)
+                # Accept both spellings used by host wrappers: either
+                # --destination=draft --target=formal or
+                # --target=draft --destination=formal.  An existing marker
+                # is the unambiguous discriminator; equal paths promote
+                # in-place without copying.
+                if first == second:
+                    draft, formal = first, None
+                else:
+                    first_layout = ""
+                    second_layout = ""
+                    try:
+                        first_layout = _target_marker(first).get("layout", "")
+                    except StoreError:
+                        pass
+                    try:
+                        second_layout = _target_marker(second).get("layout", "")
+                    except StoreError:
+                        pass
+                    if second_layout == "target-draft" and first_layout != "target-draft":
+                        draft, formal = second, first
+                    else:
+                        draft, formal = first, second
+            else:
+                draft = Path(args.destination or args.target).expanduser().resolve(strict=False)
+            emit(
+                migrate_apply(
+                    root,
+                    draft,
+                    formal,
+                    args.migration_id,
+                    args.expected_version,
+                    args.expected_progress_version,
+                    args.confirmed,
+                    args.simulate_failure,
+                )
+            )
+            return 0
+        if args.command == "rebuild-index":
+            emit(rebuild_index(root, args.confirmed))
+            return 0
+        if args.command == "switch-layout":
+            emit(
+                switch_layout(
+                    root,
+                    Path(args.target).expanduser().resolve(strict=False),
+                    args.migration_id,
+                    args.expected_version,
+                    args.expected_progress_version,
+                    args.confirmed,
+                    args.simulate_failure,
+                )
+            )
+            return 0
+        if args.command == "rollback-layout":
+            emit(rollback_layout(root, args.migration_id, args.confirmed))
             return 0
         raise StoreError(f"Unknown command: {args.command}")
     except (StoreError, OSError, UnicodeError, AssertionError) as exc:

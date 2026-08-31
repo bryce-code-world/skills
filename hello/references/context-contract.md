@@ -12,11 +12,11 @@
 - 允许使用的资料范围。
 - 使用期限或失效条件。
 
-兼容 schema 2 没有机器可校验的主体 manifest，只能由用户明确确认资料根目录、主体、所有者和接收方；适配器不会替宿主完成主体隔离。目标包协议冻结后，宿主必须拒绝缺少或不匹配 `package_id`/`subject_id`/`owner`/`audience` 的读取请求。
+旧 schema 资料没有机器可校验的主体 manifest，只能在一次性迁移时由用户明确确认资料根目录、主体、所有者和接收方；适配器不会替宿主完成主体隔离。正式目标包中，宿主必须拒绝缺少或不匹配 `package_id`/`subject_id`/`owner`/`audience` 的读取请求。
 
-目标包可由宿主注入上述包级元数据，或先读取只含以下最小字段的 metadata-only manifest：`package_id`、`subject_id`、`owner`、`audience`、`layout` 和 `schema_version`/`layout_version`。manifest 不得包含声明、事件、决策、候选、原始表达或其他个人资料内容；这一步不算生成上下文。兼容 schema 2 没有该 manifest 时，宿主必须让用户明确提供并核对主体、所有者、根目录和受众。若两者都无法取得，协议在任何内容读取前暂停，不得用默认路径、文件名或整篇档案猜测主体。
+目标包可由宿主注入上述包级元数据，或先读取只含以下最小字段的 metadata-only manifest：`package_id`、`subject_id`、`owner`、`audience`、`layout` 和 `schema_version`/`layout_version`。manifest 不得包含声明、事件、决策、候选、原始表达或其他个人资料内容；这一步不算生成上下文。旧 schema 没有该 manifest 时，仅可在迁移阶段让用户明确提供并核对主体、所有者、根目录和受众。若两者都无法取得，协议在任何内容读取前暂停，不得用默认路径、文件名或整篇档案猜测主体。
 
-读取限制：当前兼容适配器的 `status` 和 `record-disclosure` 都会为校验而受控读取根级档案、进度、候选和日志；`record-disclosure` 不是 metadata-only 入口。远端分支若只有这些适配器、没有宿主注入或目标 metadata-only 状态来源，必须在读取个人正文前暂停，不能把调用 `status`/`record-disclosure` 当作已经满足最小读取协议。
+读取限制：目标适配器的 `status` 和 `record-disclosure` 仍可能为校验而受控读取资料包元数据、进度、候选和日志；`record-disclosure` 不是 metadata-only 入口。远端分支若没有宿主注入或目标 metadata-only 状态来源，必须在读取个人正文前暂停，不能把调用 `status`/`record-disclosure` 当作已经满足最小读取协议。
 
 ## 生成前判定清单（强制）
 

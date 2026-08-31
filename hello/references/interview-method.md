@@ -116,14 +116,14 @@
 1. 完成必要的单个澄清，不把多个主题塞进一轮。
 2. 生成本轮不可变记录，使用稳定的 `session-id` 和递增或稳定的 `turn-id`。
 3. 生成完整但精简的《访谈进度》候选，只保留恢复访谈需要的信息。
-4. 仅在兼容 schema 2 分支使用 `record-turn` 和当前 `progress_version` 原子写入；目标包不得调用现有 `record-turn`，不能把草稿当作已落盘。
-5. 兼容 schema 2 写入成功后再提出下一问题；目标包仅在目标协议生成草稿后继续，并明确其尚未由现有适配器落盘。失败时先恢复或说明未落盘，不把“已回答”误报成“已保存”。
+4. 正式 target 使用 `record-turn` 和当前 `progress_version` 原子写入不可变轮次、目标游标和相关事务元数据；实体状态与聚合索引仍必须由目标事务更新，不能把草稿当作已确认事实。
+5. 目标写入成功后再提出下一问题；失败时先恢复或说明未落盘，不把“已回答”误报成“已保存”。
 
 同一轮因重试再次执行时沿用相同的会话和轮次编号，以获得幂等结果。原始记录不得整会话反复覆盖，也不得绕过适配器直接追加。
 
 ## 八、覆盖、完成与暂停
 
-目标包中每个主题都要在 `主题覆盖矩阵.md` 中标记覆盖状态：`not_started`、`signals_only`、`partial`、`confirmed_minimum`、`deepened`、`stale`、`conflicted`、`declined` 或 `not_applicable`；兼容 schema 2 空间暂在 `访谈进度.md` 的“基线必答/可长期补充/暂不收集”分组中维护同一语义。同时标注它是“基线必答”还是“可长期补充”。若 `status.baseline_split_unknown=true`，先完成分组确认或迁移，不能以空清单收口。用户明确拒答或不适用时，记录原因范围但不追问，也不让该主题继续阻塞基线收口。
+每个主题都要在 `主题覆盖矩阵.md` 中标记覆盖状态：`not_started`、`signals_only`、`partial`、`confirmed_minimum`、`deepened`、`stale`、`conflicted`、`declined` 或 `not_applicable`，同时标注它是“基线必答”还是“可长期补充”。若 `status.baseline_split_unknown=true`，先完成分组确认或迁移，不能以空清单收口。用户明确拒答或不适用时，记录原因范围但不追问，也不让该主题继续阻塞基线收口。
 
 基线完成标准：
 

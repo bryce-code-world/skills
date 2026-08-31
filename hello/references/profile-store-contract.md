@@ -4,7 +4,7 @@
 
 三个适配器必须遵守同一行为契约：Windows PowerShell 5.1+ 使用 `scripts/profile_store.ps1`，POSIX 系统使用 `scripts/profile_store.sh`，后备使用 Python 3.8+ 的 `scripts/profile_store.py`。PowerShell 和 Shell 不得调用 Python 或 Node.js。
 
-根目录按 `--root <path>`、`HELLO_HOME` 的顺序解析；两者都没有时失败。`--root` 一旦显式出现，空字符串或全空白值即为参数错误并应失败关闭，不得回退到 `HELLO_HOME`。为避免探针或包装器漏掉参数后误写资料，所有会改变资料空间的命令（`init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw`、`recover`）必须显式传入 `--root`；只有只读的 `resolve-root`、`validate`、`status`、`diff` 可以在完全省略 `--root` 时使用 `HELLO_HOME`。测试和审查一律使用明确的隔离临时根，不依赖环境变量。所有文本使用 UTF-8，路径必须支持中文和空格。当前适配器维护兼容 schema 2 的根目录文件；目标目录的声明、事件、决策拆分见 [profile-architecture.md](profile-architecture.md)，在协议升级前不得假装已经支持物理拆分。
+根目录按 `--root <path>`、`HELLO_HOME` 的顺序解析；两者都没有时失败。`--root` 一旦显式出现，空字符串或全空白值即为参数错误并应失败关闭，不得回退到 `HELLO_HOME`。为避免探针或包装器漏掉参数后误写资料，所有会改变资料空间的命令必须显式传入准确的 `--root`；只有只读探针可以在完全省略 `--root` 时使用 `HELLO_HOME`。测试和审查一律使用明确的隔离临时根，不依赖环境变量。所有文本使用 UTF-8，路径必须支持中文和空格。三套适配器的正式运行语义统一面向目标 schema 3；旧 schema 2 只由迁移入口读取，目标布局的 marker、迁移、索引和切换语义以 [target-protocol.md](target-protocol.md) 为准。
 
 状态文件和事务标记的键名按大小写不敏感规则判重；因此保留未知键时，只有不与保留键或其他未知键形成大小写变体的键才会被保留。这样可避免 PowerShell、Python 和 POSIX 适配器对同一份状态产生不同解释。
 
@@ -23,8 +23,18 @@ apply --input <candidate-profile.md> --summary-input <summary.md> --expected-ver
 record-turn --session-id <yyyy-mm-dd...> --turn-id <id> --input <turn.md> --progress-input <progress.md> --expected-progress-version <n> --confirmed --root <path> [--simulate-failure]
 withdraw --id <candidate-id> --confirmed --root <path>
 recover --confirmed --root <path>
+target-validate --root <target-root>
+migrate-plan --root <source-root> --target <target-draft> [--migration-id <id>] [--confirmed]
+migrate-apply --root <source-root> --target <target-draft> --destination <formal-target> --expected-version <n> --expected-progress-version <n> --confirmed
+rebuild-index --root <target-root> --confirmed
+switch-layout --root <canonical-root> --target <formal-target> --expected-version <n> --expected-progress-version <n> --confirmed
+rollback-layout --root <canonical-root> --migration-id <id> --confirmed
 self-test
 ```
+
+目标命令的 marker、来源指纹、锁、事务、双读和回退要求见 [target-protocol.md](target-protocol.md)。
+
+目标命令只接受 `layout=target-draft|target`；草稿可使用 `schema_version=target-draft-0.1`，正式包必须使用 `schema_version=3`。兼容命令发现目标 marker 时必须转入目标分支或明确失败，不能按 schema 2 猜测写入。目标实体的状态仍由条目自身保存；迁移切换只改变活动布局，不把 `draft` 自动改成 `confirmed`。`migrate-plan` 默认只读；只有明确带 `--confirmed` 的创建便捷调用才允许为不存在的目标建立草稿骨架。
 
 `init`、`configure`、`record-disclosure`、`stage`、`apply`、`record-turn`、`withdraw`、`recover` 都要求 `--confirmed`。它只防误调用，不能替代用户授权。适配器无法知道宿主是否真的向用户展示了策略或披露是否已过期；但在非 `explicit` 模式，`stage` 会拒绝缺少合法 ISO 8601 UTC `last_capture_disclosed_at` 或 `last_capture_disclosed_mode` 不匹配当前 `capture_mode` 的状态，`explicit` 模式不要求披露回执。隐式发现的披露闸门仍由 `hello`/宿主流程负责，未完成披露时不得调用 `stage`，不能把命令护栏误当成知情证明。`--simulate-failure` 仅供三套适配器的隔离故障注入和 `self-test` 使用：在 `apply` 或 `record-turn` 写完状态后故意失败并验证回滚，生产流程不得传入。
 
@@ -34,10 +44,15 @@ self-test
 
 ## 三、状态与兼容
 
-新空间写入 schema 2；schema 1 仍可读取和校验，首次 `apply` 或 `record-turn` 后迁移为 schema 2。未知键必须保留。
+正式资料根写入 schema 3；schema 2/1 只作为一次性迁移输入读取，迁移完成后不再作为日常运行状态。未知键必须保留在迁移快照中。
 
 ```text
-schema_version=2
+layout=target
+layout_version=1
+schema_version=3
+migration_id=<stable migration id>
+package_id=<stable package id>
+subject_id=<stable subject id>
 profile_version=<canonical positive integer [1-9][0-9]*>
 progress_version=<canonical positive integer [1-9][0-9]*>
 capture_mode=auto-stage|prompt|explicit
@@ -85,13 +100,15 @@ last_capture_disclosed_mode=<empty or auto-stage|prompt|explicit; mode recorded 
 4. 在同一可恢复事务中更新主档案、迭代日志和状态。
 5. 写后严格校验成功才清除事务标记。
 
-当前 `apply` 只更新兼容 schema 2 的根级综合档案；权威 Claim/Event/Decision 的撤回、隐藏、删除和派生失效仍是目标 P1/P2/P3 协议，不能把单文件差异应用描述成已完成的目录化撤回。
+旧 `apply` 只用于一次性迁移输入；正式目标布局明确拒绝单文件差异写入。权威 Claim/Event/Decision 的逐条确认、撤回、隐藏、删除和派生失效必须由目标实体事务完成。
 
 允许的摘要更新类型是：新增、状态变化、事实纠正、解释变化、假设验证、撤回隐藏。
 
 ### 访谈轮次
 
-`record-turn` 是正式访谈的唯一写入入口。每轮写入：
+正式目标布局中，`record-turn` 只写不可变原始轮次、目标进度游标和相关事务元数据；实体确认、撤回和聚合索引更新必须走目标实体事务，不能回退写旧单文件。
+
+每轮写入：
 
 ```text
 原始访谈/<year>/<session-id>/<turn-id>.md

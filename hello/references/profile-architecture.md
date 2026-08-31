@@ -100,11 +100,11 @@
 
 现有资料继续使用根目录的《个人全景档案》作为唯一综合权威，保留现有 `profile_version`、`expected-version`、`record-turn` 和事务协议。当前 `diff`/`apply` 只认根级旧档案，不会原子更新 `权威/`、覆盖矩阵或派生目录；此阶段只增加导航、覆盖、来源锚点和派生视图的兼容入口，不移动或覆盖真实资料。
 
-### 目标阶段（架构已确定，存量迁移待确认）
+### 目标阶段（协议已运行化，后续实例仍需确认）
 
-目录化拆分是本 Skill 的确定目标架构，不再以“是否证明单文件不足”作为是否设计它的前置条件；但对现有 v21/兼容空间的物理迁移仍必须先旁路盘点、取得用户确认，并等 P3 协议完成后执行：
+目录化拆分是本 Skill 的确定目标架构，不再以“是否证明单文件不足”作为是否设计它的前置条件。目标 schema 3 的迁移、索引、双读、切换和回退协议已经运行化；对新的兼容空间仍必须先旁路盘点并取得用户确认：
 
-用户确认的资料根目录仍是最终 canonical root。旁路根只是迁移期间的独立暂存/验收空间，不能变成第二个长期事实源；双读验收通过后，未来切换协议才会把目标包设为该根目录的唯一活动布局，并将旧单文件作为可回溯的历史版本保留。具体旁路路径和切换命令在 P1/P3 冻结前不预设。
+用户确认的资料根目录仍是最终 canonical root。旁路根只是迁移期间的独立暂存/验收空间，不能变成第二个长期事实源；双读验收通过后，`migrate-apply`/`switch-layout` 才会把目标包设为该根目录的唯一活动布局，并将旧单文件作为可回溯的历史版本保留。首个实例切换后，旁路副本只作审计证据，未来访谈继续使用 canonical 根。
 
 ```text
 <root>/
@@ -146,17 +146,17 @@
 
 `个人全景档案.md` 在目标阶段是资料包唯一的聚合入口和导航门面，不是另一份详细正文；详细事实的唯一 owner 在权威条目中。它由权威条目生成，目标包中不应手工维护第二份事实；若发现内容过期，应回到权威条目并重新生成。`声明索引.json` 只是机器导航索引，不能取代权威声明。
 
-目标包尚未运行化时，任何目标实体或聚合索引草稿都只能留在当前会话、系统临时目录或用户确认的隔离旁路根；不得写入 canonical root、覆盖兼容档案或交给 schema 2 适配器。临时草稿在会话结束/拒绝后清理并核验；旁路保留的草稿必须标记 `layout=target-draft`、带来源映射且不具备权威事实资格。
+目标包尚未切换时，任何目标实体或聚合索引草稿都只能留在当前会话、系统临时目录或用户确认的隔离旁路根；不得覆盖旧来源。目标协议运行化后，旁路保留的草稿仍必须标记 `layout=target-draft`、带来源映射且不具备权威事实资格；正式提升和切换必须经过用户确认、版本/哈希护栏与可回退快照。
 
-目标实例必须在根级 `.hello-state` 或独立 manifest 中声明并校验 `layout=target-draft|target`；这是布局契约，不以 `权威/` 等目录是否存在来猜测。目标样板中的标识只是示意，当前 schema 2 状态不识别它。
+目标实例必须在根级 `.hello-state` 或独立 manifest 中声明并校验 `layout=target-draft|target`；这是布局契约，不以 `权威/` 等目录是否存在来猜测。目标样板中的标识只是示意，旧 schema 状态不识别它。
 
 为了让资料包脱离某个会话或平台后仍可识别，目标 manifest 还应在 P1 冻结包级身份元数据。metadata-only 读取的最小字段是 `package_id`、`subject_id`、`owner`、`audience`、`layout` 和 `schema_version`/`layout_version`；可再提供主体显示标签/语言和默认用途，但不得包含声明、事件、决策、候选或原始表达。这里只登记“这份资料包描述谁、由谁控制、默认给谁使用”，不把真实姓名或其他敏感身份写入 Skill 样板；具体字段、稳定性和对外导出规则待 P1 冻结。
 
 一个资料根目录只描述一个主体；需要维护多个人时使用彼此独立的根目录和 `subject_id`，不把不同主体的声明、候选或原始访谈混在同一套权威文件中。涉及他人的关系信息只保留理解该主体所必需的最小称谓或化名，不由 `hello` 自动建立第三方人物档案。`package_id` 标识资料包，`subject_id` 标识被描述主体；二者都应使用稳定、与真实身份脱钩的标识，具体格式待 P1 冻结。
 
-`声明索引.json`（目标阶段虽沿用兼容文件名，实际是全实体导航索引）的拟定索引项至少指向 `id`、`topic_ids`（一个或多个稳定主题 ID）、`kind`（Claim/Event/Decision）、`status`、`valid_from/valid_to`、`source_refs`、`sensitivity` 和相对路径。索引与聚合档案中的 `index_source_version`、`index_source_progress_version`、`index_source_matrix_version`、`generated_at`、`index_source_hash` 目前都是拟定元数据；它们应共同指向权威、进度和覆盖矩阵的输入版本，字段名称、格式、哈希算法和同批次原子重建规则待 P1 冻结，冻结后才执行 freshness 校验。索引缺失、过期或重建失败时，只读扫描已授权的 `权威/`，不得把空索引当作空资料，也不得在降级过程中生成或修改文件；目标协议的生成器和 freshness 校验属于 P1，当前 schema 2 不生成也不校验这些字段。
+`声明索引.json`（目标阶段虽沿用兼容文件名，实际是全实体导航索引）的索引项至少指向 `id`、`topic_ids`（一个或多个稳定主题 ID）、`kind`（Claim/Event/Decision）、`status`、`valid_from/valid_to`、`source_refs`、`sensitivity` 和相对路径。运行化目标协议由 `rebuild-index` 写入 `index_source_version`、`index_source_progress_version`、`index_source_matrix_version`、`generated_at` 和 `index_source_hash` 等 freshness 元数据；索引不是第二事实源。索引缺失、过期或重建失败时，只读扫描已授权的 `权威/`，不得把空索引当作空资料，也不得在降级过程中生成或修改文件。兼容 schema 2 不生成这些目标字段。
 
-目标包的版本字段在 P1 冻结前只作为架构草案：`authority_version` 表示权威实体内容版本，`layout_version`/`schema_version` 表示目录和字段结构版本，`index_source_version` 表示聚合索引生成所依据的 `authority_version`，派生文件使用 `source_authority_version`（兼容 schema 2 的旧字段 `profile_version` 只保护根级旧档案）。`expected-version` 只保护权威内容版本，`progress_version` 独立保护访谈进度；当前适配器只实现并输出 schema 2 的 `profile_version`/`progress_version`，不会识别目标字段。
+目标包的版本字段分工如下：`layout_version`/`schema_version` 表示目录和字段结构版本，`index_source_version`/`index_source_progress_version`/`index_source_matrix_version` 表示索引生成输入，派生文件使用 `source_authority_version`（兼容 schema 2 的旧字段 `profile_version` 只保护根级旧档案）。`expected-version` 只保护兼容来源内容版本，`progress_version` 独立保护访谈进度；目标实体内容版本和完整机器 `resume_cursor` 仍待后续写入口冻结。
 
 目标索引在 P1 冻结时还应把 `evidence_refs` 和 `relation_refs` 作为可选导航字段暴露出来，以便从能力、偏好或约束追到支持它们的事件、决策和来源；兼容 schema 2 不生成这些字段。
 
@@ -335,7 +335,7 @@ not_applicable
 ## 九、v21 迁移原则
 
 1. 只读盘点、快照和来源映射，先冻结旧版本。
-2. 双读必须使用两个相互独立的根目录：旧根继续由 schema 2 适配器维护，目标包放在隔离旁路根（不是旧根的子目录），并写入明确的 `layout=target-draft`/`layout=target` 标识；目标包未切换前不得在旧根混放 `权威/`、聚合索引或派生目录。
+2. 双读必须使用两个相互独立的根目录：旧根只作为冻结迁移输入，目标包放在隔离旁路根（不是旧根的子目录），并写入明确的 `layout=target-draft`/`layout=target` 标识；目标包未切换前不得在旧根混放 `权威/`、聚合索引或派生目录。
 3. 在隔离目录旁路生成新结构，不原地拆分或删除旧文件。
 4. 按旧章节和段落映射到主题、声明、事件和决策，保留原来源标注。
 5. 抽不准的内容标为未知或待确认，不强行归类。
@@ -343,10 +343,10 @@ not_applicable
 7. 旧候选只进入收件箱，不自动转为权威事实。
 8. 每个主题由用户确认后再应用；失败可回退到旧版本。
 9. 生成聚合档案和派生视图时写入源版本和迁移映射。
-10. 双读兼容期结束后才切换适配器和 schema。
+10. 双读验收结束后切换到 target；此后旧 schema 只保留为迁移快照，不再作为运行模式。
 11. 验收撤回后，派生视图不得继续复现已撤回内容。
 
-旁路根的实际路径、`package`/`rebuild-index`/切换命令名称和输入输出尚未冻结；在此之前，目标样板只能作为设计参考，不能交给现有 schema 2 适配器。
+首个实例使用的旁路根、`migrate-plan`/`migrate-apply`/`rebuild-index`/`switch-layout`/`rollback-layout` 命令和 metadata-only 输出已冻结在 [target-protocol.md](target-protocol.md)。目标样板仍只是空白设计参考，不能交给 schema 2 `apply`；目标正式根必须由目标协议入口处理。
 
 ## 十、阶段与验收
 
@@ -356,9 +356,9 @@ not_applicable
 
 ### P1：可追溯底座
 
-增加声明、事件、决策 ID、来源索引、候选处置审计和续访游标；冻结 `layout` 标识、目标版本映射、聚合/全实体索引生成器（同批次原子写入并带权威、进度和矩阵输入版本及 `index_source_hash`）与 freshness 校验、双读切换策略，同时保持旧目录可读。还要冻结 17 个主题的定义、排他边界、主主题判定、交叉映射、每主题的模型来源/版本/覆盖理由/冲突取舍和 `confirmed_minimum` 最小字段/证据，并定义权威实体 `status` 枚举与转换审计。兼容 schema 2 的 `record-disclosure` 审计命令已实现；目标包的实体审计字段、索引协议和双读切换仍未由三套适配器实现。
+增加声明、事件、决策 ID、来源索引、候选处置审计和续访游标；目标布局标识、来源指纹、聚合索引生成器、freshness 元数据、双读切换策略和回退协议已由三套适配器实现并通过各自可用环境的自测。目标包的逐条实体确认/撤回审计、完整机器 `resume_cursor` 写入口和派生生成器仍待后续冻结；兼容 schema 2 的 `record-disclosure` 审计命令继续保留。
 
-已知读取边界：当前兼容 schema 2 的 `status` 和 `record-disclosure` 为校验并计算进度/审计字段，会受控读取根级档案、访谈进度、候选和日志；它们的输出应只作为状态元数据，不等同于生成上下文，也不得绕过产出物去向闸门。远端、非私密或公开任务仍必须先完成 `context-contract.md`，再调用这些兼容命令。P1 应冻结并实现 metadata-only 的状态读取/索引路径，使状态检查无需载入整篇权威正文，并明确失败时的最小可见字段。兼容版的 `last_capture_disclosed_at` 只是未绑定会话/设备的审计时间，`last_capture_disclosed_mode` 只用于与当前策略匹配，不构成跨会话授权；披露是否过期由宿主按会话、设备、策略版本、用户记忆和约定时限判定，当前适配器不自行设定 TTL。目标包应记录带 `session_id`、`device_id`、策略版本、宿主回执和失效条件的 disclosure event，或采用等价锁定机制；并发策略变更或披露回执冲突时须停写并重新读取，不能让旧回执覆盖新策略。
+已知读取边界：正式 target 的 `status` 和 `record-disclosure` 只返回 metadata-only 校验/审计字段，不等同于生成上下文，也不得绕过产出物去向闸门。远端、非私密或公开任务仍必须先完成 `context-contract.md`。旧 schema 的状态读取仅服务一次性迁移；目标实体级 disclosure event（含宿主设备回执和失效条件）仍待后续写入口。并发策略变更或披露回执冲突时须停写并重新读取，不能让旧回执覆盖新策略。
 
 ### P2：派生文档
 
@@ -366,7 +366,7 @@ not_applicable
 
 ### P3：物理拆分迁移
 
-目标架构已经确定为目录化拆分；P3 负责在用户确认、旁路迁移验收和适配器协议完成后执行物理切换，不把“是否证明单文件不足”作为继续设计的门槛。
+目标架构已经确定为目录化拆分；P3 负责在用户确认、旁路迁移验收和适配器协议完成后执行物理切换，不把“是否证明单文件不足”作为继续设计的门槛。首个实例已完成切换；后续实例仍须逐次确认，且本机无原生 POSIX 运行时的验证保持“未验证”。
 
 验收必须能回答：任何结论从哪里来、何时确认、当前是否有效、谁可以使用、撤回后哪些派生物需要重建，以及访谈下次从哪里继续。
 

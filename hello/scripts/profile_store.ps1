@@ -15,6 +15,7 @@ $script:Files = @('README.md', '个人全景档案.md', '待确认信息.md', '�
 $script:Directories = @('原始访谈', '历史版本', '.backups', '.trash')
 $script:StateFile = '.hello-state'
 $script:TransactionFile = '.hello-transaction'
+$script:LayoutTransactionFile = '.hello-layout-transaction'
 $script:LockDirectoryName = '.hello-lock'
 $script:HeldLocks = @{}
 $script:SelfPath = $PSCommandPath
@@ -27,6 +28,8 @@ $script:ProfileSections = @(
 )
 $script:ProgressSections = @('## 已覆盖主题', '## 待补充主题', '## 暂不收集', '## 下次问题')
 $script:SummaryFields = @('触发原因', '信息来源', '更新类型', '更新位置', '更新摘要', '用户确认状态', '执行工具')
+$script:TargetRequiredFiles = @('.hello-state', 'manifest.json', 'README.md', '个人全景档案.md', '主题覆盖矩阵.md', '待确认信息.md', '访谈进度.md', '资料索引.md', '迭代日志.md')
+$script:TargetRequiredDirectories = @('原始访谈', '来源', '权威', '派生', '历史版本', '.backups', '.trash')
 
 function Write-Json([hashtable]$Value) {
     [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -46,7 +49,7 @@ function Parse-Arguments([string[]]$Items) {
     $valueNames = @(
         'root', 'input', 'summary-input', 'expected-version', 'kind', 'source', 'id',
         'capture-mode', 'next-review-at', 'review-stage', 'progress-input', 'session-id',
-        'turn-id', 'expected-progress-version'
+        'turn-id', 'expected-progress-version', 'target', 'destination', 'migration-id'
     )
     for ($index = 0; $index -lt $Items.Count; $index++) {
         $token = $Items[$index]
@@ -88,16 +91,22 @@ function Validate-CommandArguments([string]$Name,[System.Collections.IDictionary
         'record-turn' = @('root','input','progress-input','session-id','turn-id','expected-progress-version')
         'withdraw' = @('root','id')
         'recover' = @('root')
+        'target-validate' = @('root','target')
+        'migrate-plan' = @('root','target','migration-id')
+        'migrate-apply' = @('root','target','destination','expected-version','expected-progress-version')
+        'rebuild-index' = @('root','target')
+        'switch-layout' = @('root','target','migration-id','expected-version','expected-progress-version')
+        'rollback-layout' = @('root','migration-id')
     }
     foreach($key in $Values.Keys) {
         if(-not ($allowed.Keys -ccontains $Name) -or $allowed[$Name] -cnotcontains [string]$key) {
             Fail "Option --$key is not valid for $Name."
         }
     }
-    if($Flags['confirmed'] -and @('resolve-root','validate','status','diff') -ccontains $Name) {
+    if($Flags['confirmed'] -and @('resolve-root','validate','status','diff','target-validate') -ccontains $Name) {
         Fail "Option --confirmed is not valid for $Name."
     }
-    if($Flags['simulate-failure'] -and @('apply','record-turn') -cnotcontains $Name) {
+    if($Flags['simulate-failure'] -and @('apply','record-turn','migrate-apply','switch-layout') -cnotcontains $Name) {
         Fail "Option --simulate-failure is not valid for $Name."
     }
 }
@@ -127,6 +136,10 @@ function Read-Text([string]$Path) {
 function Write-Atomic([string]$Path, [string]$Content) {
     $directory = [IO.Path]::GetDirectoryName($Path)
     [IO.Directory]::CreateDirectory($directory) | Out-Null
+    # PowerShell's JSON serializer may emit CRLF even when the caller passes
+    # LF.  Normalize at the single write boundary so target packages satisfy
+    # the cross-adapter UTF-8/LF contract.
+    $Content = [regex]::Replace([string]$Content, "`r`n|`r", "`n")
     $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($Path) + '.' + [Guid]::NewGuid().ToString('N') + '.tmp')
     [IO.File]::WriteAllText($temporary, $Content, $script:Utf8)
     try {
@@ -146,6 +159,7 @@ function Write-Atomic([string]$Path, [string]$Content) {
 function Write-Atomic-New([string]$Path, [string]$Content) {
     $directory = [IO.Path]::GetDirectoryName($Path)
     [IO.Directory]::CreateDirectory($directory) | Out-Null
+    $Content = [regex]::Replace([string]$Content, "`r`n|`r", "`n")
     $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($Path) + '.' + [Guid]::NewGuid().ToString('N') + '.tmp')
     [IO.File]::WriteAllText($temporary, $Content, $script:Utf8)
     try {
@@ -296,7 +310,8 @@ function Test-State([System.Collections.IDictionary]$State) {
     $issues = New-Object Collections.Generic.List[string]
     $required = @('schema_version','profile_version','capture_mode','created_at','updated_at','last_confirmed_at','next_review_at','review_stage')
     foreach ($key in $required) { if (-not $State.Contains($key)) { $issues.Add("Missing state key: $key") } }
-    if (@('1','2') -cnotcontains [string]$State['schema_version']) { $issues.Add('schema_version must be 1 or 2') }
+    if (@('1','2','3') -cnotcontains [string]$State['schema_version']) { $issues.Add('schema_version must be 1, 2, or 3') }
+    if ([string]$State['schema_version'] -ceq '3' -and [string]$State['layout'] -cne 'target') { $issues.Add('schema_version 3 requires layout=target') }
     if ($State['schema_version'] -ceq '2') { foreach($key in @('progress_version','last_session_id','last_turn_id')) { if(-not $State.Contains($key)){$issues.Add("Missing state key: $key")} } }
     foreach ($key in @('profile_version','progress_version')) {
         if ($key -ceq 'progress_version' -and $State['schema_version'] -ceq '1' -and -not $State.Contains($key)) { continue }
@@ -382,7 +397,256 @@ function Initialize-Space([string]$Root, [bool]$Confirmed) {
     return Invoke-WithProfileLock $Root { Initialize-Space-Core $Root $Confirmed }
 }
 
+# ---------------------------------------------------------------------------
+# Target layout (schema 3) helpers
+# ---------------------------------------------------------------------------
+# Target commands deliberately live beside the compatibility implementation.
+# They never infer a root from directory names: a root is target only when the
+# explicit marker and manifest agree.  Keeping these helpers in the adapter
+# makes the PowerShell, Python and POSIX implementations share the same
+# fail-closed boundary without changing schema-2 files or command semantics.
+
+function Resolve-ExplicitPath([string]$Value,[string]$OptionName) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { Fail "Explicit --$OptionName cannot be empty." }
+    return [IO.Path]::GetFullPath($Value)
+}
+
+function Get-Sha256Hex([string]$Path) {
+    if (-not [IO.File]::Exists($Path)) { Fail "File does not exist: $Path" }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        $digest = $sha.ComputeHash($bytes)
+        return ([BitConverter]::ToString($digest).Replace('-', '')).ToLowerInvariant()
+    } finally { $sha.Dispose() }
+}
+
+function Get-RelativePath([string]$Root,[string]$Path) {
+    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $full = [IO.Path]::GetFullPath($Path)
+    if (-not $full.StartsWith($rootFull,[StringComparison]::OrdinalIgnoreCase)) {
+        Fail "Path escapes root: $Path"
+    }
+    return $full.Substring($rootFull.Length).Replace('\','/')
+}
+
+function Assert-IndependentRoots([string]$Left,[string]$Right) {
+    $leftFull = [IO.Path]::GetFullPath($Left).TrimEnd('\')
+    $rightFull = [IO.Path]::GetFullPath($Right).TrimEnd('\')
+    if ($leftFull.Equals($rightFull,[StringComparison]::OrdinalIgnoreCase)) {
+        Fail 'Source and target roots must be independent (the same root is not allowed).'
+    }
+    $leftPrefix = $leftFull + '\'; $rightPrefix = $rightFull + '\'
+    if ($leftFull.StartsWith($rightPrefix,[StringComparison]::OrdinalIgnoreCase) -or
+        $rightFull.StartsWith($leftPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+        Fail 'Source and target roots must not be parent/child directories.'
+    }
+}
+
+function Test-SafeMigrationId([string]$Value) {
+    return (-not [string]::IsNullOrWhiteSpace($Value)) -and $Value -cmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+}
+
+function Has-JsonProperty($Object,[string]$Name) {
+    if ($null -eq $Object) { return $false }
+    if ($Object -is [System.Collections.IDictionary]) { return $Object.Contains($Name) }
+    return ($null -ne $Object.PSObject.Properties[$Name])
+}
+
+function Read-TargetMarker([string]$Root) {
+    $path = Join-Path $Root $script:StateFile
+    if (-not [IO.File]::Exists($path)) { Fail "Missing target marker: $script:StateFile" }
+    $values = Read-KeyValues $path
+    foreach ($key in @('layout','layout_version','schema_version','migration_id','package_id','subject_id')) {
+        if (-not $values.Contains($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) {
+            Fail "Missing target marker field: $key"
+        }
+    }
+    if (@('target-draft','target') -cnotcontains [string]$values['layout']) { Fail 'Target marker layout must be target-draft or target.' }
+    if ([string]$values['layout_version'] -cne '1') { Fail 'Target marker layout_version must be 1.' }
+    $schema = [string]$values['schema_version']
+    if ($schema -cne '3' -and $schema -notmatch '^target-draft-[0-9]+\.[0-9]+$') { Fail 'Target marker schema_version must be 3 or target-draft-x.y.' }
+    if (-not (Test-SafeMigrationId ([string]$values['migration_id']))) { Fail 'Target marker migration_id is invalid.' }
+    return $values
+}
+
+function Read-TargetManifest([string]$Root) {
+    $path = Join-Path $Root 'manifest.json'
+    if (-not [IO.File]::Exists($path)) { Fail 'Missing target manifest: manifest.json' }
+    try { $manifest = (Read-Text $path) | ConvertFrom-Json -ErrorAction Stop }
+    catch { Fail "Invalid target manifest JSON: $($_.Exception.Message)" }
+    foreach ($key in @('layout','layout_version','schema_version','migration_id','package_id','subject_id','owner','audience')) {
+        if (-not (Has-JsonProperty $manifest $key)) { Fail "Missing target manifest field: $key" }
+    }
+    if (@('target-draft','target') -cnotcontains [string]$manifest.layout) { Fail 'Target manifest layout must be target-draft or target.' }
+    if ([int]$manifest.layout_version -ne 1) { Fail 'Target manifest layout_version must be 1.' }
+    if ([string]$manifest.schema_version -cne '3' -and [string]$manifest.schema_version -notmatch '^target-draft-[0-9]+\.[0-9]+$') { Fail 'Target manifest schema_version is invalid.' }
+    if (-not (Test-SafeMigrationId ([string]$manifest.migration_id))) { Fail 'Target manifest migration_id is invalid.' }
+    return $manifest
+}
+
+function Get-TargetMarkerIfPresent([string]$Root) {
+    $path = Join-Path $Root $script:StateFile
+    if (-not [IO.File]::Exists($path)) { return $null }
+    try {
+        $values = Read-KeyValues $path
+        if ($values.Contains('layout')) { return $values }
+    } catch { return $null }
+    return $null
+}
+
+function Test-TargetTextFiles([string]$Root,[System.Collections.Generic.List[string]]$Issues) {
+    # Check all markdown/JSON/key-value files for UTF-8 and LF.  Binary files
+    # are ignored; no file is ever echoed into validation output.
+    try {
+        foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File -ErrorAction Stop)) {
+            if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { $Issues.Add("Reparse point is not allowed: $(Get-RelativePath $Root $file.FullName)"); continue }
+            $ext = [IO.Path]::GetExtension($file.Name).ToLowerInvariant()
+            if (@('.md','.json','.state','.txt','') -notcontains $ext -and $file.Name -ne 'manifest.json') { continue }
+            try {
+                $bytes = [IO.File]::ReadAllBytes($file.FullName)
+                if ($bytes -contains [byte]13) { $Issues.Add("CRLF is not allowed: $(Get-RelativePath $Root $file.FullName)") }
+                [void]$script:StrictUtf8.GetString($bytes)
+            } catch { $Issues.Add("Invalid UTF-8 file: $(Get-RelativePath $Root $file.FullName)") }
+        }
+    } catch { $Issues.Add("Cannot enumerate target files: $($_.Exception.Message)") }
+}
+
+function Target-Validate-Core([string]$Root) {
+    $issues = New-Object Collections.Generic.List[string]
+    $marker = $null; $manifest = $null
+    if (-not [IO.Directory]::Exists($Root)) { $issues.Add('Root directory does not exist') }
+    else {
+        foreach ($name in $script:TargetRequiredFiles) { if (-not [IO.File]::Exists((Join-Path $Root $name))) { $issues.Add("Missing target file: $name") } }
+        foreach ($name in $script:TargetRequiredDirectories) { if (-not [IO.Directory]::Exists((Join-Path $Root $name))) { $issues.Add("Missing target directory: $name") } }
+        try { $marker = Read-TargetMarker $Root } catch { $issues.Add($_.Exception.Message) }
+        try { $manifest = Read-TargetManifest $Root } catch { $issues.Add($_.Exception.Message) }
+        if ($null -ne $marker -and $null -ne $manifest) {
+            foreach ($key in @('layout','layout_version','schema_version','migration_id','package_id','subject_id')) {
+                $mv = [string]$marker[$key]; $fv = [string]$manifest.$key
+                if ($mv -cne $fv) { $issues.Add("Marker/manifest mismatch: $key") }
+            }
+            if ([string]$marker['layout'] -ceq 'target') {
+                foreach ($key in @('profile_version','progress_version','capture_mode','created_at','updated_at')) {
+                    if (-not $marker.Contains($key) -or [string]::IsNullOrWhiteSpace([string]$marker[$key])) { $issues.Add("Formal target marker is missing compatibility field: $key") }
+                }
+                foreach ($key in @('last_confirmed_at','next_review_at','review_stage','last_interview_at','last_session_id','last_turn_id','last_capture_disclosed_at','last_capture_disclosed_mode')) {
+                    if (-not $marker.Contains($key)) { $issues.Add("Formal target marker is missing compatibility field: $key") }
+                }
+                if ([string]$marker['schema_version'] -cne '3') { $issues.Add('Formal target marker schema_version must be 3') }
+            }
+        }
+        Test-TargetTextFiles $Root $issues
+    }
+    $layout = if ($null -ne $marker) { [string]$marker['layout'] } else { '' }
+    $migration = if ($null -ne $marker) { [string]$marker['migration_id'] } else { '' }
+    $entryCount = 0
+    # The machine index may be an older `items` projection.  Report the
+    # authoritative markdown count consistently across adapters; index shape
+    # is validated separately and can be rebuilt by rebuild-index.
+    $indexPath = Join-Path $Root '权威\声明索引.json'
+    if ([IO.File]::Exists($indexPath)) {
+        try {
+            $index = (Read-Text $indexPath) | ConvertFrom-Json -ErrorAction Stop
+            if (-not (Has-JsonProperty $index 'entries') -and -not (Has-JsonProperty $index 'items') -and -not ($index -is [Array])) {
+                $issues.Add('Authority index JSON must contain entries or items.')
+            }
+        } catch { $issues.Add('Invalid authority index JSON: 权威/声明索引.json') }
+    }
+    if ([IO.Directory]::Exists((Join-Path $Root '权威'))) {
+        try { $entryCount = @(Get-ChildItem -LiteralPath (Join-Path $Root '权威') -Recurse -Force -File -Filter '*.md' | Where-Object { $_.Name -ne 'README.md' }).Count } catch {}
+    }
+    $fileCount = 0
+    if ([IO.Directory]::Exists($Root)) { try { $fileCount = @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File).Count } catch {} }
+    return [ordered]@{
+        'ok'=($issues.Count -eq 0); 'command'='target-validate'; 'root'=$Root; 'layout'=$layout;
+        'migration_id'=$migration; 'layout_version'=$(if($null -ne $marker){[string]$marker['layout_version']}else{''});
+        'schema_version'=$(if($null -ne $marker){[string]$marker['schema_version']}else{''});
+        'package_id'=$(if($null -ne $marker){[string]$marker['package_id']}else{''});
+        'subject_id'=$(if($null -ne $marker){[string]$marker['subject_id']}else{''});
+        'pending_candidates'=$(if([IO.File]::Exists((Join-Path $Root '待确认信息.md'))){([regex]::Matches((Read-Text (Join-Path $Root '待确认信息.md')),'(?m)^## C-[0-9TZ-]+\s*$')).Count}else{0});
+        'file_count'=$fileCount; 'authority_entry_count'=$entryCount;
+        'issues'=$issues.ToArray()
+    }
+}
+
+function Target-Validate([string]$Root) { return Invoke-WithProfileLock $Root { Target-Validate-Core $Root } }
+
+function Get-TargetSourceSnapshot([string]$Root) {
+    $state = Read-State (Join-Path $Root $script:StateFile)
+    foreach ($key in @('profile_version','progress_version')) { if (-not $state.Contains($key)) { Fail "Source state missing $key." } }
+    $profilePath = Join-Path $Root '个人全景档案.md'; $progressPath = Join-Path $Root '访谈进度.md'; $pendingPath = Join-Path $Root '待确认信息.md'
+    foreach ($path in @($profilePath,$progressPath,$pendingPath)) { if (-not [IO.File]::Exists($path)) { Fail "Source file does not exist: $path" } }
+    return [ordered]@{
+        'profile_version'=[string]$state['profile_version']; 'progress_version'=[string](Get-EffectiveProgressVersion $Root $state);
+        'profile_sha256'=(Get-Sha256Hex $profilePath); 'progress_sha256'=(Get-Sha256Hex $progressPath); 'pending_sha256'=(Get-Sha256Hex $pendingPath);
+        'capture_mode'=[string]$state['capture_mode']; 'capture_strategy'=$(switch([string]$state['capture_mode']){'auto-stage'{'自动暂存'}'prompt'{'提示确认'}'explicit'{'仅显式'}default{''}});
+        'last_capture_disclosed_at'=$(if($state.Contains('last_capture_disclosed_at')){[string]$state['last_capture_disclosed_at']}else{''});
+        'last_capture_disclosed_mode'=$(if($state.Contains('last_capture_disclosed_mode')){[string]$state['last_capture_disclosed_mode']}else{''});
+        'created_at'=[string]$state['created_at']; 'updated_at'=[string]$state['updated_at'];
+        'review_stage'=[string]$state['review_stage']; 'next_review_at'=[string]$state['next_review_at'];
+        'last_confirmed_at'=[string]$state['last_confirmed_at']; 'last_interview_at'=[string]$state['last_interview_at'];
+        'last_session_id'=[string]$state['last_session_id']; 'last_turn_id'=[string]$state['last_turn_id']
+    }
+}
+
+function Get-ManifestSource($Manifest) {
+    if (-not (Has-JsonProperty $Manifest 'source') -or $null -eq $Manifest.source) { return $null }
+    # Accept both the original migration draft's flat source fields and the
+    # frozen protocol's grouped `{profile,progress,pending}` form.  Normalize
+    # to one metadata-only object so fingerprints are compared identically.
+    $source = $Manifest.source
+    if ((Has-JsonProperty $source 'profile') -and $null -ne $source.profile) {
+        # Avoid PowerShell's automatic `$PROFILE` variable (case-insensitive)
+        # when naming the nested source objects.
+        $profileSource = $source.profile; $progressSource = $source.progress; $pendingSource = $source.pending
+        return [ordered]@{
+            'profile_version'=$(if((Has-JsonProperty $profileSource 'version')){[string]$profileSource.version}else{''});
+            'progress_version'=$(if((Has-JsonProperty $progressSource 'version')){[string]$progressSource.version}else{''});
+            'profile_sha256'=$(if((Has-JsonProperty $profileSource 'sha256')){[string]$profileSource.sha256}else{''});
+            'progress_sha256'=$(if((Has-JsonProperty $progressSource 'sha256')){[string]$progressSource.sha256}else{''});
+            'pending_sha256'=$(if(($null -ne $pendingSource) -and (Has-JsonProperty $pendingSource 'sha256')){[string]$pendingSource.sha256}else{''})
+        }
+    }
+    return $source
+}
+
+function Assert-TargetMatchesSource([string]$SourceRoot,[string]$TargetRoot,[bool]$RequireDraft=$false) {
+    $valid = Target-Validate-Core $TargetRoot
+    if (-not $valid.ok) { Fail ('Invalid target package: ' + ($valid.issues -join '; ')) }
+    $marker = Read-TargetMarker $TargetRoot; $manifest = Read-TargetManifest $TargetRoot
+    if ($RequireDraft -and [string]$marker['layout'] -cne 'target-draft') { Fail 'migrate-apply requires a target-draft root.' }
+    $source = Get-TargetSourceSnapshot $SourceRoot; $manifestSource = Get-ManifestSource $manifest
+    if ($null -eq $manifestSource) { Fail 'Target manifest does not contain source fingerprints.' }
+    foreach ($key in @('profile_version','progress_version','profile_sha256','progress_sha256','pending_sha256')) {
+        if (-not (Has-JsonProperty $manifestSource $key)) { Fail "Target manifest source missing $key." }
+        if ([string]$manifestSource.$key -cne [string]$source[$key]) { Fail "Source/target conflict: $key differs; regenerate the migration plan." }
+    }
+    return [ordered]@{'marker'=$marker;'manifest'=$manifest;'source'=$source}
+}
+
+function Require-ActiveLayout([string]$Root,[System.Collections.IDictionary]$State,[string]$Operation) {
+    $layout = if ($State.Contains('layout')) { [string]$State['layout'] } else { 'compatibility' }
+    if ($layout -ceq 'target-draft') { Fail "$Operation cannot write a target-draft package; run migrate-apply/switch-layout after confirmation." }
+    if (@('compatibility','target','') -cnotcontains $layout) { Fail "Unsupported profile layout for ${Operation}: $layout" }
+}
+
 function Validate-Space-Core([string]$Root, [bool]$IgnoreTransaction = $false) {
+    # A target-draft is intentionally not accepted by the compatibility
+    # validator; callers must use target-validate until the package is
+    # explicitly promoted.  A formal target is validated by the schema-3
+    # contract and never interpreted as a schema-2 profile by accident.
+    $targetMarker = Get-TargetMarkerIfPresent $Root
+    if ($null -ne $targetMarker) {
+        if ([string]$targetMarker['layout'] -ceq 'target-draft') {
+            return [ordered]@{'ok'=$false;'command'='validate';'root'=$Root;'issues'=@('Target draft requires target-validate; it is not a schema-2 profile space.')}
+        }
+        if ([string]$targetMarker['layout'] -ceq 'target') {
+            $targetResult = Target-Validate-Core $Root
+            $targetResult['command'] = 'validate'
+            return $targetResult
+        }
+    }
     $issues = New-Object Collections.Generic.List[string]; $state = $null
     if (-not [IO.Directory]::Exists($Root)) { $issues.Add('Root directory does not exist') }
     else {
@@ -441,7 +705,68 @@ function Test-ProgressBuckets([string]$Content) {
     return $true
 }
 
+function Get-TargetStatus-Core([string]$Root) {
+    $valid = Target-Validate-Core $Root
+    if (-not $valid.ok) { return @{'payload'=@{'ok'=$false;'command'='status';'root'=$Root;'layout'='target';'issues'=$valid.issues};'code'=1} }
+    $marker = Read-TargetMarker $Root
+    $manifest = Read-TargetManifest $Root
+    $pending = 0; $pendingPath = Join-Path $Root '待确认信息.md'
+    if ([IO.File]::Exists($pendingPath)) { $pending = ([regex]::Matches((Read-Text $pendingPath), '(?m)^## C-[0-9TZ-]+\s*$')).Count }
+    $progressSummary = @{'current_stage'='';'last_interview_at'='';'next_question'=''}
+    $progressPath = Join-Path $Root '访谈进度.md'
+    # Target status is metadata-only. Do not expose the interview's next
+    # question (or any other body text) merely to report capture policy.
+    # Formal target status is metadata-only: never infer cursor timestamps
+    # from the compatibility progress projection.  The marker is the single
+    # source of the schema-3 resume cursor across adapters.
+    $progressSummary.current_stage = '目标资料包'
+    if ($marker.Contains('last_interview_at')) { $progressSummary.last_interview_at = [string]$marker['last_interview_at'] }
+    $captureMode = if ($marker.Contains('capture_mode')) { [string]$marker['capture_mode'] } elseif (Has-JsonProperty $manifest 'capture_policy_snapshot') { [string]$manifest.capture_policy_snapshot.capture_mode } else { '' }
+    $strategy = @{ 'auto-stage'='自动暂存'; 'prompt'='提示确认'; 'explicit'='仅显式' }[$captureMode]
+    if ($null -eq $strategy) { $strategy = '' }
+    $disclosed = if ($marker.Contains('last_capture_disclosed_at')) { [string]$marker['last_capture_disclosed_at'] } elseif (Has-JsonProperty $manifest 'capture_policy_snapshot') { [string]$manifest.capture_policy_snapshot.last_capture_disclosed_at } else { '' }
+    $disclosedMode = if ($marker.Contains('last_capture_disclosed_mode')) { [string]$marker['last_capture_disclosed_mode'] } elseif (Has-JsonProperty $manifest 'capture_policy_snapshot') { [string]$manifest.capture_policy_snapshot.last_capture_disclosed_mode } else { '' }
+    $source = Get-ManifestSource $manifest
+    $profileVersion = if ($null -ne $source) { [string]$source.profile_version } else { '' }
+    $progressVersion = if ($null -ne $source) { [string]$source.progress_version } else { '' }
+    $baseline = New-Object Collections.Generic.List[string]; $long = New-Object Collections.Generic.List[string]; $splitUnknown = $false
+    $matrixPath = Join-Path $Root '主题覆盖矩阵.md'
+    if ([IO.File]::Exists($matrixPath)) {
+        foreach ($line in (Read-Text $matrixPath) -split "`r?`n") {
+            if (-not $line.Trim().StartsWith('|')) { continue }
+            $cells = @($line.Trim().Trim('|').Split('|') | ForEach-Object { $_.Trim() })
+            if ($cells.Count -lt 4) { continue }
+            $topicId = ([string]$cells[0]).Trim('`').Trim()
+            $priority = ([string]$cells[2]).Trim('`').Trim()
+            $stateText = ([string]$cells[3]).Trim('`').Trim()
+            if ([string]::IsNullOrWhiteSpace($topicId) -or $topicId -in @('主题 ID','topic_id','---','-') -or $topicId -match '^[-:]+$') { continue }
+            if ($priority -in @('基线必答','baseline','基线')) { $splitUnknown = $false; if ($stateText -notmatch '^(confirmed_minimum|deepened|declined|not_applicable)$') { $baseline.Add("$topicId（$stateText）") } }
+            elseif ($priority -in @('可长期补充','long-term','long')) { $splitUnknown = $false; if ($stateText -notmatch '^(confirmed_minimum|deepened|declined|not_applicable)$') { $long.Add("$topicId（$stateText）") } }
+        }
+        if ($baseline.Count -eq 0 -and $long.Count -eq 0 -and ((Read-Text $matrixPath) -notmatch '(?m)^\|.*\|.*\|.*\|')) { $splitUnknown = $true }
+    } else { $splitUnknown = $true }
+    if ($splitUnknown) { $baseline.Add('legacy-unclassified（需先完成基线/长期分组）') }
+    $authorityStatus = if ($marker.Contains('authority_status')) { [string]$marker['authority_status'] } elseif (Has-JsonProperty $manifest 'authority_status') { [string]$manifest.authority_status } else { '' }
+    if ($authorityStatus -in @('non-authoritative-needs-user-confirmation','active-layout-needs-review')) {
+        $baseline.Add('migration-review（需用户确认目录化切换）')
+    }
+    $payload = [ordered]@{
+        'ok'=$true;'command'='status';'root'=$Root;'layout'='target';'layout_version'=[string]$marker['layout_version'];'schema_version'=[string]$marker['schema_version'];
+        'migration_id'=[string]$marker['migration_id'];'package_id'=[string]$marker['package_id'];'subject_id'=[string]$marker['subject_id'];
+        'profile_version'=$profileVersion;'progress_version'=$progressVersion;'capture_mode'=$captureMode;'capture_strategy'=$strategy;
+        'last_capture_disclosed_at'=$disclosed;'last_capture_disclosed_mode'=$disclosedMode;'review_stage'=$(if($marker.Contains('review_stage')){[string]$marker['review_stage']}else{'baseline'});
+        'last_confirmed_at'=$(if($marker.Contains('last_confirmed_at')){[string]$marker['last_confirmed_at']}else{''});'next_review_at'=$(if($marker.Contains('next_review_at')){[string]$marker['next_review_at']}else{''});
+        'last_session_id'=$(if($marker.Contains('last_session_id')){[string]$marker['last_session_id']}else{''});'last_turn_id'=$(if($marker.Contains('last_turn_id')){[string]$marker['last_turn_id']}else{''});
+        'pending_candidates'=$pending;'baseline_required_remaining'=$baseline.ToArray();'baseline_closure_blocked'=($baseline.Count -gt 0 -or $splitUnknown);'baseline_split_unknown'=$splitUnknown;
+        'long_term_backlog'=$long.ToArray();'authority_entry_count'=$valid.authority_entry_count;'file_count'=$valid.file_count;
+        'progress'=$progressSummary
+    }
+    return @{'payload'=$payload;'code'=0}
+}
+
 function Get-Status-Core([string]$Root) {
+    $targetMarker = Get-TargetMarkerIfPresent $Root
+    if ($null -ne $targetMarker -and [string]$targetMarker['layout'] -ceq 'target') { return Get-TargetStatus-Core $Root }
     $valid = Validate-Space $Root
     if (-not $valid.ok) { return @{'payload'=@{'ok'=$false;'command'='status';'root'=$Root;'issues'=$valid.issues};'code'=1} }
     $state = Read-State (Join-Path $Root $script:StateFile)
@@ -472,8 +797,646 @@ function Get-Status([string]$Root) {
     return Invoke-WithProfileLock $Root { Get-Status-Core $Root }
 }
 
+function Write-KeyValues([string]$Path,[System.Collections.IDictionary]$Values) {
+    $builder = New-Object Text.StringBuilder
+    foreach ($key in $Values.Keys) {
+        $keyText = [string]$key; $valueText = [string]$Values[$key]
+        if ($keyText -notmatch '^[A-Za-z0-9_.-]+$' -or $valueText -match '[\r\n]') { Fail "Invalid key-value marker field: $keyText" }
+        [void]$builder.Append($keyText).Append('=').Append($valueText).Append("`n")
+    }
+    Write-Atomic $Path $builder.ToString()
+}
+
+function Copy-TargetTree([string]$Source,[string]$Destination,[string[]]$ExcludePrefixes=@()) {
+    if (-not [IO.Directory]::Exists($Source)) { Fail "Target source directory does not exist: $Source" }
+    [IO.Directory]::CreateDirectory($Destination) | Out-Null
+    $sourceFull = [IO.Path]::GetFullPath($Source).TrimEnd('\')
+    foreach ($directory in @(Get-ChildItem -LiteralPath $Source -Recurse -Force -Directory -ErrorAction Stop)) {
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Fail "Reparse point is not allowed: $($directory.FullName)" }
+        $relativeDir = Get-RelativePath $Source $directory.FullName
+        $skipDir = $false
+        foreach ($prefix in $ExcludePrefixes) {
+            $p = [string]$prefix
+            if ($relativeDir.Equals($p,[StringComparison]::OrdinalIgnoreCase) -or $relativeDir.StartsWith($p.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase)) { $skipDir = $true; break }
+        }
+        if (-not $skipDir) { [IO.Directory]::CreateDirectory((Join-Path $Destination ($relativeDir -replace '/','\'))) | Out-Null }
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $Source -Recurse -Force -File -ErrorAction Stop)) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Fail "Reparse point is not allowed: $($file.FullName)" }
+        $relative = Get-RelativePath $Source $file.FullName
+        $skip = $false
+        foreach ($prefix in $ExcludePrefixes) {
+            $p = [string]$prefix
+            if ($relative.Equals($p,[StringComparison]::OrdinalIgnoreCase) -or $relative.StartsWith($p.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase)) { $skip = $true; break }
+        }
+        if ($skip) { continue }
+        $destinationPath = Join-Path $Destination ($relative -replace '/','\')
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destinationPath)) | Out-Null
+        [IO.File]::Copy($file.FullName,$destinationPath,$true)
+    }
+}
+
+function Set-TargetMarkerValues([string]$Root,[hashtable]$Changes) {
+    $path = Join-Path $Root $script:StateFile; $values = Read-KeyValues $path
+    foreach ($key in $Changes.Keys) { if ($values.Contains($key)) { $values[$key] = [string]$Changes[$key] } else { $values.Add($key,[string]$Changes[$key]) } }
+    Write-KeyValues $path $values
+    return $values
+}
+
+function Promote-TargetPackage([string]$Root,[string]$AuthorityStatus='active-pending-review',[System.Collections.IDictionary]$CompatibilityState=$null) {
+    $marker = Read-TargetMarker $Root
+    $manifest = Read-TargetManifest $Root
+    $now = Utc-Now
+    $sourceMeta = Get-ManifestSource $manifest
+    $policy = if (Has-JsonProperty $manifest 'capture_policy_snapshot') { $manifest.capture_policy_snapshot } else { $null }
+    $captureMode = if ($null -ne $policy -and (Has-JsonProperty $policy 'capture_mode')) { [string]$policy.capture_mode } elseif ($marker.Contains('capture_mode')) { [string]$marker['capture_mode'] } else { '' }
+    if ([string]::IsNullOrWhiteSpace($captureMode)) { $captureMode = 'prompt' }
+    $captureStrategy = switch($captureMode) { 'auto-stage' {'自动暂存'} 'prompt' {'提示确认'} 'explicit' {'仅显式'} default { '' } }
+    $createdAt = if ($marker.Contains('created_at')) { [string]$marker['created_at'] } elseif ($marker.Contains('generated_at')) { [string]$marker['generated_at'] } elseif (Has-JsonProperty $manifest 'generated_at') { [string]$manifest.generated_at } else { $now }
+    if ([string]::IsNullOrWhiteSpace($createdAt)) { $createdAt = $now }
+    $disclosedAt = if ($null -ne $policy -and (Has-JsonProperty $policy 'last_capture_disclosed_at')) { [string]$policy.last_capture_disclosed_at } elseif ($marker.Contains('last_capture_disclosed_at')) { [string]$marker['last_capture_disclosed_at'] } else { '' }
+    $disclosedMode = if ($null -ne $policy -and (Has-JsonProperty $policy 'last_capture_disclosed_mode')) { [string]$policy.last_capture_disclosed_mode } elseif ($marker.Contains('last_capture_disclosed_mode')) { [string]$marker['last_capture_disclosed_mode'] } else { '' }
+    $compat = if ($null -ne $CompatibilityState) { $CompatibilityState } else { @{} }
+    $compatValue = {
+        param([string]$Key,[string]$Fallback='')
+        if ($compat.Contains($Key)) { return [string]$compat[$Key] }
+        return $Fallback
+    }
+    [void](Set-TargetMarkerValues $Root @{
+        'layout'='target'; 'layout_version'='1'; 'schema_version'='3';
+        'authority_status'=$AuthorityStatus; 'activated_at'=$now;
+        'profile_version'=$(if($null -ne $sourceMeta){[string]$sourceMeta.profile_version}else{[string]$marker['source_profile_version']});
+        'progress_version'=$(if($null -ne $sourceMeta){[string]$sourceMeta.progress_version}else{[string]$marker['source_progress_version']});
+        'capture_mode'=$captureMode; 'capture_strategy'=$captureStrategy; 'created_at'=$createdAt; 'updated_at'=$now;
+        'last_confirmed_at'=&$compatValue 'last_confirmed_at';
+        'next_review_at'=&$compatValue 'next_review_at';
+        'review_stage'=&$compatValue 'review_stage' 'baseline';
+        'last_interview_at'=&$compatValue 'last_interview_at';
+        'last_session_id'=&$compatValue 'last_session_id';
+        'last_turn_id'=&$compatValue 'last_turn_id';
+        'last_capture_disclosed_at'=$disclosedAt; 'last_capture_disclosed_mode'=$disclosedMode
+    })
+    $manifest.layout = 'target'; $manifest.layout_version = 1; $manifest.schema_version = '3'
+    if (Has-JsonProperty $manifest 'authority_status') { $manifest.authority_status = $AuthorityStatus } else { $manifest | Add-Member -NotePropertyName authority_status -NotePropertyValue $AuthorityStatus }
+    if (-not (Has-JsonProperty $manifest 'activated_at')) { $manifest | Add-Member -NotePropertyName activated_at -NotePropertyValue $now } else { $manifest.activated_at = $now }
+    if (-not (Has-JsonProperty $manifest 'capture_policy_snapshot')) {
+        $manifest | Add-Member -NotePropertyName capture_policy_snapshot -NotePropertyValue ([pscustomobject]@{capture_mode=$captureMode;capture_strategy=$captureStrategy;last_capture_disclosed_at=$disclosedAt;last_capture_disclosed_mode=$disclosedMode})
+    } else {
+        if (Has-JsonProperty $manifest.capture_policy_snapshot 'capture_mode') { $manifest.capture_policy_snapshot.capture_mode = $captureMode } else { $manifest.capture_policy_snapshot | Add-Member -NotePropertyName capture_mode -NotePropertyValue $captureMode }
+        if (Has-JsonProperty $manifest.capture_policy_snapshot 'capture_strategy') { $manifest.capture_policy_snapshot.capture_strategy = $captureStrategy } else { $manifest.capture_policy_snapshot | Add-Member -NotePropertyName capture_strategy -NotePropertyValue $captureStrategy }
+        if (Has-JsonProperty $manifest.capture_policy_snapshot 'last_capture_disclosed_at') { $manifest.capture_policy_snapshot.last_capture_disclosed_at = $disclosedAt } else { $manifest.capture_policy_snapshot | Add-Member -NotePropertyName last_capture_disclosed_at -NotePropertyValue $disclosedAt }
+        if (Has-JsonProperty $manifest.capture_policy_snapshot 'last_capture_disclosed_mode') { $manifest.capture_policy_snapshot.last_capture_disclosed_mode = $disclosedMode } else { $manifest.capture_policy_snapshot | Add-Member -NotePropertyName last_capture_disclosed_mode -NotePropertyValue $disclosedMode }
+    }
+    $manifestText = (($manifest | ConvertTo-Json -Depth 40) -replace "`r`n", "`n") + "`n"
+    Write-Atomic (Join-Path $Root 'manifest.json') $manifestText
+    return Read-TargetMarker $Root
+}
+
+function New-TargetDraft([string]$SourceRoot,[string]$TargetRoot,[string]$MigrationId,$Source) {
+    if ([IO.Directory]::Exists($TargetRoot)) {
+        $existing = @(Get-ChildItem -LiteralPath $TargetRoot -Force -ErrorAction Stop | Where-Object { $_.Name -notin @('.hello-lock','.hello-transaction','.hello-layout-transaction') })
+        if ($existing.Count -gt 0) { Fail 'Target destination already exists and is not empty.' }
+    } else {
+        [IO.Directory]::CreateDirectory($TargetRoot) | Out-Null
+    }
+    foreach ($directory in @('原始访谈','来源','权威','派生','历史版本','.backups','.trash')) {
+        [IO.Directory]::CreateDirectory((Join-Path $TargetRoot $directory)) | Out-Null
+    }
+    $now = Utc-Now
+    $package = 'pkg-' + $MigrationId
+    $subject = 'subject-local'
+    $marker = [ordered]@{
+        layout='target-draft'; layout_version='1'; schema_version='target-draft-0.1';
+        migration_id=$MigrationId; package_id=$package; subject_id=$subject;
+        source_profile_version=[string]$Source.profile_version; source_progress_version=[string]$Source.progress_version;
+        source_profile_sha256=[string]$Source.profile_sha256; source_progress_sha256=[string]$Source.progress_sha256;
+        source_pending_sha256=[string]$Source.pending_sha256; generated_at=$now;
+        authority_status='non-authoritative-needs-user-confirmation'
+    }
+    $markerText = (($marker.Keys | ForEach-Object { "$_=$($marker[$_])" }) -join "`n") + "`n"
+    Write-Atomic (Join-Path $TargetRoot $script:StateFile) $markerText
+    $sourceManifest = [ordered]@{
+        profile=[ordered]@{path='个人全景档案.md';version=[string]$Source.profile_version;sha256=[string]$Source.profile_sha256};
+        progress=[ordered]@{path='访谈进度.md';version=[string]$Source.progress_version;sha256=[string]$Source.progress_sha256};
+        pending=[ordered]@{path='待确认信息.md';sha256=[string]$Source.pending_sha256}
+    }
+    $manifest = [ordered]@{
+        layout='target-draft'; layout_version=1; schema_version='target-draft-0.1'; migration_id=$MigrationId;
+        package_id=$package; subject_id=$subject; owner='local-owner'; audience='owner-and-authorized-ai';
+        language='zh-CN'; generated_at=$now; authority_status='non-authoritative-needs-user-confirmation'; source=$sourceManifest;
+        capture_policy_snapshot=[ordered]@{
+            capture_mode=[string]$Source.capture_mode; capture_strategy=[string]$Source.capture_strategy;
+            last_capture_disclosed_at=[string]$Source.last_capture_disclosed_at;
+            last_capture_disclosed_mode=[string]$Source.last_capture_disclosed_mode
+        }
+    }
+    Write-Atomic (Join-Path $TargetRoot 'manifest.json') (($manifest | ConvertTo-Json -Depth 20) + "`n")
+    $minimal = @{
+        'README.md'="# 个人资料包`n`n此目录由 hello 目标布局协议创建。`n";
+        '个人全景档案.md'="# 个人全景档案`n`n> 本文件是目录化资料包的聚合入口；详细内容以权威实体为准。`n";
+        '主题覆盖矩阵.md'="# 主题覆盖矩阵`n`n> 覆盖状态由权威条目和用户确认维护。`n`n## 基线必答（阻塞基线收口）`n`n- situation（待确认）`n- chapters（待确认）`n- work（待确认）`n- capability（待确认）`n`n## 可长期补充（不阻塞基线收口）`n`n- 其余主题按需补充。`n";
+        '迁移映射.md'="# 迁移映射`n`n- 状态：待用户确认。`n- 详细来源映射由迁移工具维护。`n";
+        '资料索引.md'="# 资料索引`n`n- 布局：target-draft`n- 由目标协议维护。`n";
+        '迭代日志.md'="# 迭代日志`n`n- 迁移草稿尚未产生正式迭代。`n"
+    }
+    foreach ($name in $minimal.Keys) { Write-Atomic (Join-Path $TargetRoot $name) $minimal[$name] }
+    foreach ($name in @('待确认信息.md','访谈进度.md')) {
+        $sourcePath = Join-Path $SourceRoot $name
+        if ([IO.File]::Exists($sourcePath)) { Write-Atomic (Join-Path $TargetRoot $name) (Read-Text $sourcePath) }
+        else { Write-Atomic (Join-Path $TargetRoot $name) "# $name`n" }
+    }
+    $migration = [ordered]@{migration_id=$MigrationId;layout='target-draft';source=$sourceManifest;generated_at=$now}
+    Write-Atomic (Join-Path $TargetRoot 'migration-manifest.json') (($migration | ConvertTo-Json -Depth 20) + "`n")
+}
+
+function Get-TargetPlan([string]$SourceRoot,[string]$TargetRoot,[string]$MigrationId,[bool]$Confirmed=$false) {
+    if (-not (Test-SafeMigrationId $MigrationId)) { Fail 'migration-id is invalid.' }
+    Assert-IndependentRoots $SourceRoot $TargetRoot
+    $sourceValid = Validate-Space $SourceRoot
+    if (-not $sourceValid.ok) { Fail ('Invalid source profile space: ' + ($sourceValid.issues -join '; ')) }
+    $source = Get-TargetSourceSnapshot $SourceRoot
+    $targetExists = [IO.Directory]::Exists($TargetRoot)
+    $created = $false
+    if (-not $targetExists -and $Confirmed) {
+        Require-Confirmed $Confirmed
+        New-TargetDraft $SourceRoot $TargetRoot $MigrationId $source
+        $targetExists = $true
+        $created = $true
+    }
+    $targetValid = $null; $targetLayout = ''
+    if ($targetExists) {
+        $targetValid = Target-Validate-Core $TargetRoot
+        $targetMarker = Get-TargetMarkerIfPresent $TargetRoot
+        if ($null -ne $targetMarker) { $targetLayout = [string]$targetMarker['layout'] }
+    }
+    return [ordered]@{
+        'ok'=($null -eq $targetValid -or [bool]$targetValid.ok); 'command'='migrate-plan';
+        'source_root'=$SourceRoot;'target_root'=$TargetRoot;'migration_id'=$MigrationId;
+        'source_profile_version'=$source.profile_version;'source_progress_version'=$source.progress_version;
+        'source_profile_sha256'=$source.profile_sha256;'source_progress_sha256'=$source.progress_sha256;'source_pending_sha256'=$source.pending_sha256;
+        'target_exists'=$targetExists;'target_layout'=$targetLayout;
+        'target_issues'=($(if($null -ne $targetValid){$targetValid.issues}else{@()}));
+        'created'=$created;
+        'mapping_ready'=($targetExists -and ($null -eq $targetValid -or [bool]$targetValid.ok))
+    }
+}
+
+function Migrate-Plan([string]$SourceRoot,[string]$TargetRoot,[string]$MigrationId,[bool]$Confirmed=$false) {
+    return Get-TargetPlan $SourceRoot $TargetRoot $MigrationId $Confirmed
+}
+
+function Migrate-Apply-Core([string]$SourceRoot,[string]$TargetRoot,[string]$Destination,[string]$ExpectedVersion,[string]$ExpectedProgressVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
+    Require-Confirmed $Confirmed
+    if (-not (Test-PositiveDecimal $ExpectedVersion) -or -not (Test-PositiveDecimal $ExpectedProgressVersion)) { Fail 'Expected versions must be positive decimal integers.' }
+    Assert-IndependentRoots $SourceRoot $TargetRoot
+    Assert-IndependentRoots $SourceRoot $Destination
+    $sourceValid = Validate-Space $SourceRoot
+    if (-not $sourceValid.ok) { Fail ('Invalid source profile space: ' + ($sourceValid.issues -join '; ')) }
+    $source = Get-TargetSourceSnapshot $SourceRoot
+    $sourceState = Read-State (Join-Path $SourceRoot $script:StateFile)
+    if ($source.profile_version -cne $ExpectedVersion) { Fail "Version conflict: expected $ExpectedVersion, current $($source.profile_version)." }
+    if ($source.progress_version -cne $ExpectedProgressVersion) { Fail "Progress version conflict: expected $ExpectedProgressVersion, current $($source.progress_version)." }
+    $targetInfo = Assert-TargetMatchesSource $SourceRoot $TargetRoot $true
+    $marker = $targetInfo.marker; $manifest = $targetInfo.manifest
+    if ([string]$marker['migration_id'] -cne [string]$manifest.migration_id) { Fail 'Target marker/manifest migration_id mismatch.' }
+    $destinationFull = [IO.Path]::GetFullPath($Destination)
+    $targetFull = [IO.Path]::GetFullPath($TargetRoot)
+    # Promoting the already-reviewed draft in place is safe and avoids an
+    # unnecessary second copy of sensitive material.  It still uses atomic
+    # marker/manifest writes and revalidates the result.
+    if ($destinationFull.Equals($targetFull,[StringComparison]::OrdinalIgnoreCase)) {
+        $promoted = Promote-TargetPackage $TargetRoot 'active-pending-review' $sourceState
+        if ($SimulateFailure) { Fail 'simulated failure during target promotion' }
+        $after = Target-Validate-Core $TargetRoot
+        if (-not $after.ok) { Fail ('Target promotion validation failed: ' + ($after.issues -join '; ')) }
+        return [ordered]@{'ok'=$true;'command'='migrate-apply';'source_root'=$SourceRoot;'target_root'=$TargetRoot;'destination'=$TargetRoot;'migration_id'=$marker['migration_id'];'layout'='target';'promoted_in_place'=$true;'source_unchanged'=$true}
+    }
+    if ([IO.Directory]::Exists($destinationFull) -or [IO.File]::Exists($destinationFull)) { Fail 'Destination must not already exist; choose a new formal target path.' }
+    $parent = [IO.Path]::GetDirectoryName($destinationFull)
+    if ([string]::IsNullOrWhiteSpace($parent)) { Fail 'Destination must have a parent directory.' }
+    [IO.Directory]::CreateDirectory($parent) | Out-Null
+    $temporary = Join-Path $parent ('.hello-target-promote-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        Copy-TargetTree $TargetRoot $temporary @('.hello-lock','.hello-transaction','.hello-layout-transaction')
+        [void](Promote-TargetPackage $temporary 'active-pending-review' $sourceState)
+        if ($SimulateFailure) { Fail 'simulated failure during target copy' }
+        $check = Target-Validate-Core $temporary
+        if (-not $check.ok) { Fail ('Promoted target validation failed: ' + ($check.issues -join '; ')) }
+        [IO.Directory]::Move($temporary,$destinationFull)
+    } catch { if ([IO.Directory]::Exists($temporary)) { Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue }; throw }
+    return [ordered]@{'ok'=$true;'command'='migrate-apply';'source_root'=$SourceRoot;'target_root'=$TargetRoot;'destination'=$destinationFull;'migration_id'=$marker['migration_id'];'layout'='target';'promoted_in_place'=$false;'source_unchanged'=$true}
+}
+
+function Migrate-Apply([string]$SourceRoot,[string]$TargetRoot,[string]$Destination,[string]$ExpectedVersion,[string]$ExpectedProgressVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
+    # Source is read-only; only the destination (or explicitly named draft in
+    # the in-place promotion case) is mutated.  Locking the source prevents a
+    # concurrent schema-2 write from invalidating the fingerprint mid-copy.
+    return Invoke-WithProfileLock $SourceRoot { Migrate-Apply-Core $SourceRoot $TargetRoot $Destination $ExpectedVersion $ExpectedProgressVersion $Confirmed $SimulateFailure }
+}
+
+function Get-StringSha256Hex([string]$Text) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha.ComputeHash($script:Utf8.GetBytes($Text))
+        return ([BitConverter]::ToString($digest).Replace('-', '')).ToLowerInvariant()
+    } finally { $sha.Dispose() }
+}
+
+function Split-TargetYamlValues([string]$Raw) {
+    $value = if ($null -eq $Raw) { '' } else { [string]$Raw.Trim() }
+    $parts = New-Object Collections.Generic.List[string]
+    $builder = New-Object Text.StringBuilder
+    $quote = [char]0; $depth = 0
+    foreach ($character in $value.ToCharArray()) {
+        if ($quote -ne [char]0) {
+            [void]$builder.Append($character)
+            if ($character -eq $quote) { $quote = [char]0 }
+            continue
+        }
+        if ($character -eq [char]39 -or $character -eq [char]34) { $quote = $character; [void]$builder.Append($character); continue }
+        if ($character -eq '[' -or $character -eq '{' -or $character -eq '(') { $depth++; [void]$builder.Append($character); continue }
+        if ($character -eq ']' -or $character -eq '}' -or $character -eq ')') { if ($depth -gt 0) { $depth-- }; [void]$builder.Append($character); continue }
+        if ($character -eq ',' -and $depth -eq 0) { [void]$parts.Add($builder.ToString()); [void]$builder.Clear(); continue }
+        [void]$builder.Append($character)
+    }
+    [void]$parts.Add($builder.ToString())
+    return @($parts.ToArray())
+}
+
+function Normalize-TargetYamlScalar([string]$Raw) {
+    $value = if ($null -eq $Raw) { '' } else { [string]$Raw.Trim() }
+    if ([string]::IsNullOrWhiteSpace($value) -or $value -match '^#') { return '' }
+    # Strip an unquoted YAML comment suffix; URLs and quoted values are kept.
+    if ($value -notmatch '^["''].*["'']$') { $value = [regex]::Replace($value, '\s+#.*$', '').Trim() }
+    if (($value.StartsWith('[') -and $value.EndsWith(']')) -or ($value.StartsWith('{') -and $value.EndsWith('}'))) { $value = $value.Substring(1,$value.Length-2).Trim() }
+    if ($value.Length -ge 2 -and (($value[0] -eq [char]39 -and $value[$value.Length-1] -eq [char]39) -or ($value[0] -eq [char]34 -and $value[$value.Length-1] -eq [char]34))) {
+        $value = $value.Substring(1,$value.Length-2)
+        $value = $value.Replace("''", "'").Replace('\"','"')
+    }
+    if ($value -in @('null','Null','NULL','~')) { return '' }
+    return $value.Trim()
+}
+
+function Convert-TargetYamlValues([string]$Raw) {
+    $value = if ($null -eq $Raw) { '' } else { [string]$Raw.Trim() }
+    if ([string]::IsNullOrWhiteSpace($value)) { return @() }
+    $flow = (($value.StartsWith('[') -and $value.EndsWith(']')) -or ($value.StartsWith('{') -and $value.EndsWith('}')))
+    if ($flow) { $value = $value.Substring(1,$value.Length-2) }
+    $pieces = if ($flow) { Split-TargetYamlValues $value } else { @($value) }
+    $result = New-Object Collections.Generic.List[string]
+    foreach ($piece in $pieces) {
+        $normalized = Normalize-TargetYamlScalar ([string]$piece)
+        if (-not [string]::IsNullOrWhiteSpace($normalized)) { [void]$result.Add($normalized) }
+    }
+    return @($result.ToArray())
+}
+
+function Add-TargetFrontmatterValues([System.Collections.IDictionary]$Map,[string]$Key,[string]$Raw) {
+    $normalizedKey = [string]$Key.ToLowerInvariant()
+    if (-not $Map.Contains($normalizedKey)) { $Map[$normalizedKey] = New-Object Collections.Generic.List[string] }
+    foreach ($value in @(Convert-TargetYamlValues $Raw)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$value)) { [void]$Map[$normalizedKey].Add([string]$value) }
+    }
+}
+
+function Read-TargetFrontmatter([string]$Content) {
+    $normalized = ([string]$Content).Replace("`r`n", "`n").Replace("`r", "`n").TrimStart([char]0xFEFF)
+    $allLines = @($normalized -split "`n")
+    $start = -1; $end = $allLines.Count
+    for ($i = 0; $i -lt $allLines.Count; $i++) {
+        if ($allLines[$i].Trim() -ceq '---') { $start = $i; break }
+        if (-not [string]::IsNullOrWhiteSpace($allLines[$i])) { break }
+    }
+    if ($start -ge 0) {
+        for ($i = $start + 1; $i -lt $allLines.Count; $i++) { if ($allLines[$i].Trim() -in @('---','...')) { $end = $i; break } }
+    } else { $start = -1 }
+    $map = [ordered]@{}; $current = ''
+    $first = $start + 1; $last = $end - 1
+    if ($last -lt $first) { return ,$map }
+    for ($i = $first; $i -le $last; $i++) {
+        $line = [string]$allLines[$i]
+        $match = [regex]::Match($line, '^\s*(?:-\s*)?([A-Za-z][A-Za-z0-9_.-]*)\s*:\s*(.*?)\s*$')
+        if ($match.Success) {
+            $current = $match.Groups[1].Value.ToLowerInvariant()
+            Add-TargetFrontmatterValues $map $current $match.Groups[2].Value
+            continue
+        }
+        $item = [regex]::Match($line, '^\s*-\s+(.+?)\s*$')
+        if ($item.Success -and -not [string]::IsNullOrWhiteSpace($current)) {
+            foreach ($value in @(Convert-TargetYamlValues $item.Groups[1].Value)) { if (-not $map.Contains($current)) { $map[$current] = New-Object Collections.Generic.List[string] }; [void]$map[$current].Add([string]$value) }
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($line)) { $current = '' }
+    }
+    return ,$map
+}
+
+function Get-TargetFrontmatterValues([System.Collections.IDictionary]$Map,[string]$Key) {
+    $normalizedKey = $Key.ToLowerInvariant()
+    if (-not $Map.Contains($normalizedKey)) { return @() }
+    $value = $Map[$normalizedKey]
+    if ($value -is [System.Collections.IEnumerable] -and $value -isnot [string]) { return @($value | ForEach-Object { [string]$_ }) }
+    return @([string]$value)
+}
+
+function Merge-TargetFrontmatterValues([System.Collections.IDictionary]$Map,[string[]]$Keys) {
+    $result = New-Object Collections.Generic.List[string]
+    foreach ($key in $Keys) {
+        foreach ($value in @(Get-TargetFrontmatterValues $Map $key)) {
+            $text = [string]$value
+            if (-not [string]::IsNullOrWhiteSpace($text) -and -not $result.Contains($text)) { [void]$result.Add($text) }
+        }
+    }
+    return @($result.ToArray())
+}
+
+function Get-TargetAuthorityEntries([string]$Root) {
+    $entries = New-Object Collections.Generic.List[object]
+    $authority = Join-Path $Root '权威'
+    if (-not [IO.Directory]::Exists($authority)) { return @() }
+    foreach ($file in @(Get-ChildItem -LiteralPath $authority -Recurse -Force -File | Sort-Object FullName)) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Fail "Reparse point is not allowed: $($file.FullName)" }
+        if ($file.Name -ceq 'README.md' -or $file.Name -ceq '索引.json' -or $file.Name -ceq '声明索引.json') { continue }
+        $relative = Get-RelativePath $Root $file.FullName
+        $kind = 'Claim'
+        if ($relative -match '^权威/事件/') { $kind = 'Event' } elseif ($relative -match '^权威/决策/') { $kind = 'Decision' }
+        $body = Read-Text $file.FullName
+        $frontmatter = Read-TargetFrontmatter $body
+        $id = ''
+        foreach ($field in @('claim_id','event_id','decision_id','draft_id','id')) {
+            $values = @(Get-TargetFrontmatterValues $frontmatter $field)
+            if ($values.Count -gt 0) { $id = [string]$values[0]; break }
+        }
+        if ([string]::IsNullOrWhiteSpace($id)) { $id = [IO.Path]::GetFileNameWithoutExtension($file.Name) }
+        $topicIds = Merge-TargetFrontmatterValues $frontmatter @('topic_id','topic_ids','cross_topic_ids')
+        $sourceRefs = Merge-TargetFrontmatterValues $frontmatter @('source_ref','source_refs')
+        $allowedUses = Merge-TargetFrontmatterValues $frontmatter @('allowed_use','allowed_uses')
+        $statusValues = @(Get-TargetFrontmatterValues $frontmatter 'status')
+        $sensitivityValues = @(Get-TargetFrontmatterValues $frontmatter 'sensitivity')
+        $entry = [ordered]@{
+            'id'=[string]$id; 'kind'=[string]$kind;
+            'status'=$(if($statusValues.Count -gt 0){[string]$statusValues[0]}else{'unknown'});
+            'topic_ids'=@($topicIds); 'source_refs'=@($sourceRefs);
+            'sensitivity'=$(if($sensitivityValues.Count -gt 0){[string]$sensitivityValues[0]}else{'unknown'});
+            'allowed_uses'=@($allowedUses); 'path'=[string]$relative; 'sha256'=[string](Get-Sha256Hex $file.FullName)
+        }
+        $entries.Add($entry)
+    }
+    return @($entries.ToArray())
+}
+
+function Rebuild-Index-Core([string]$Root,[bool]$Confirmed) {
+    Require-Confirmed $Confirmed
+    $marker = Read-TargetMarker $Root; $manifest = Read-TargetManifest $Root
+    $entries = Get-TargetAuthorityEntries $Root
+    # Keep the freshness hash independent of adapter-specific JSON formatting:
+    # it is the SHA-256 of sorted `path:sha256` lines with no trailing LF.
+    $hashLines = @($entries | ForEach-Object { "$($_.path):$($_.sha256)" })
+    $sourceHash = Get-StringSha256Hex ($hashLines -join "`n")
+    $matrixPath = Join-Path $Root '主题覆盖矩阵.md'
+    $matrixHash = if ([IO.File]::Exists($matrixPath)) { Get-Sha256Hex $matrixPath } else { '' }
+    $source = Get-ManifestSource $manifest
+    $profileVersion = if ($null -ne $source) { [string]$source.profile_version } else { '' }
+    $progressVersion = if ($null -ne $source) { [string]$source.progress_version } else { '' }
+    $index = [ordered]@{
+        'schema_version'=1;'layout'='target';'migration_id'=[string]$marker['migration_id'];
+        'index_source_version'=$profileVersion;'index_source_progress_version'=$progressVersion;
+        'index_source_matrix_version'=$matrixHash;'generated_at'=(Utc-Now);'index_source_hash'=$sourceHash;
+        'entries'=@($entries)
+    }
+    $indexText = ((($index | ConvertTo-Json -Depth 40) -replace "`r`n", "`n") + "`n")
+    $indexPath = Join-Path $Root '权威\声明索引.json'
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($indexPath)) | Out-Null
+    Write-Atomic $indexPath $indexText
+    $lines = New-Object Collections.Generic.List[string]
+    $lines.Add('# 资料索引（目标布局）'); $lines.Add(''); $lines.Add("- 索引源档案版本：$profileVersion"); $lines.Add("- 索引源进度版本：$progressVersion"); $lines.Add("- 索引源矩阵版本：$matrixHash"); $lines.Add("- 生成时间：$($index.generated_at)"); $lines.Add("- 索引源 hash：$sourceHash"); $lines.Add('')
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File | Sort-Object FullName)) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+        $relative = Get-RelativePath $Root $file.FullName
+        if ($relative -ceq '资料索引.md') { continue }
+        $lines.Add("- $relative · $((Get-Sha256Hex $file.FullName))")
+    }
+    Write-Atomic (Join-Path $Root '资料索引.md') (($lines -join "`n") + "`n")
+    [void](Set-TargetMarkerValues $Root @{
+        'index_source_version'=$profileVersion;'index_source_progress_version'=$progressVersion;
+        'index_source_matrix_version'=$matrixHash;'index_source_hash'=$sourceHash;'generated_at'=$index.generated_at
+    })
+    $manifestFreshness = [ordered]@{
+        'index_source_version'=$profileVersion; 'index_source_progress_version'=$progressVersion;
+        'index_source_matrix_version'=$matrixHash; 'index_source_hash'=$sourceHash;
+        'index_generated_at'=$index.generated_at
+    }
+    foreach ($key in $manifestFreshness.Keys) {
+        $value = [string]$manifestFreshness[$key]
+        if (Has-JsonProperty $manifest $key) { $manifest.PSObject.Properties[$key].Value = $value }
+        else { $manifest | Add-Member -NotePropertyName $key -NotePropertyValue $value }
+    }
+    Write-Atomic (Join-Path $Root 'manifest.json') ((($manifest | ConvertTo-Json -Depth 40) -replace "`r`n", "`n") + "`n")
+    return [ordered]@{'ok'=$true;'command'='rebuild-index';'root'=$Root;'layout'=[string]$marker['layout'];'migration_id'=$marker['migration_id'];'entry_count'=$entries.Count;'index_source_hash'=$sourceHash;'index_source_matrix_version'=$matrixHash;'generated_at'=$index.generated_at}
+}
+
+function Rebuild-Index([string]$Root,[bool]$Confirmed) {
+    return Invoke-WithProfileLock $Root { Rebuild-Index-Core $Root $Confirmed }
+}
+
+function Write-LayoutTransaction([string]$Root,[System.Collections.IDictionary]$Values) {
+    $path = Join-Path $Root $script:LayoutTransactionFile
+    if ([IO.File]::Exists($path)) { Fail 'Interrupted layout transaction exists; run rollback-layout --confirmed --root <authorized-root>.' }
+    Write-KeyValues $path $Values
+}
+
+function Read-LayoutTransaction([string]$Root) {
+    $path = Join-Path $Root $script:LayoutTransactionFile
+    if (-not [IO.File]::Exists($path)) { return $null }
+    $values = Read-KeyValues $path
+    foreach ($key in @('kind','migration_id','snapshot_rel','target_root','old_profile_version','old_progress_version')) {
+        if (-not $values.Contains($key) -or [string]::IsNullOrWhiteSpace([string]$values[$key])) { Fail "Missing layout transaction field: $key" }
+    }
+    if ([string]$values['kind'] -cne 'switch-layout') { Fail 'Unknown layout transaction kind.' }
+    if (-not (Test-SafeMigrationId ([string]$values['migration_id']))) { Fail 'Invalid layout transaction migration_id.' }
+    $snapshot = Resolve-TransactionPath $Root ([string]$values['snapshot_rel'])
+    if (-not [IO.Directory]::Exists($snapshot)) { Fail 'Missing layout transaction snapshot.' }
+    return $values
+}
+
+function Snapshot-Canonical([string]$Root,[string]$SnapshotDir,[string]$MigrationId) {
+    if ([IO.Directory]::Exists($SnapshotDir)) { Fail "Snapshot already exists: $SnapshotDir" }
+    [IO.Directory]::CreateDirectory($SnapshotDir) | Out-Null
+    $snapshotRel = Get-RelativePath $Root $SnapshotDir
+    # Preserve directory shape as well as files.  Empty recovery/history
+    # directories are part of the schema-2 contract, so a file-only snapshot
+    # would be impossible to validate during rollback.
+    foreach ($directory in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -Directory -ErrorAction Stop)) {
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Fail "Reparse point is not allowed: $($directory.FullName)" }
+        $relativeDir = Get-RelativePath $Root $directory.FullName
+        if ($relativeDir.Equals($snapshotRel,[StringComparison]::OrdinalIgnoreCase) -or $relativeDir.StartsWith($snapshotRel.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($relativeDir.Equals($script:LayoutTransactionFile,[StringComparison]::OrdinalIgnoreCase) -or
+            $relativeDir.StartsWith($script:LayoutTransactionFile + '/',[StringComparison]::OrdinalIgnoreCase) -or
+            $relativeDir.Equals($script:TransactionFile,[StringComparison]::OrdinalIgnoreCase) -or
+            $relativeDir.StartsWith($script:TransactionFile + '/',[StringComparison]::OrdinalIgnoreCase) -or
+            $relativeDir.Equals($script:LockDirectoryName,[StringComparison]::OrdinalIgnoreCase) -or
+            $relativeDir.StartsWith($script:LockDirectoryName + '/',[StringComparison]::OrdinalIgnoreCase)) { continue }
+        [IO.Directory]::CreateDirectory((Join-Path $SnapshotDir ($relativeDir -replace '/','\'))) | Out-Null
+    }
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File -ErrorAction Stop)) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { Fail "Reparse point is not allowed: $($file.FullName)" }
+        $relative = Get-RelativePath $Root $file.FullName
+        if ($relative.Equals($snapshotRel,[StringComparison]::OrdinalIgnoreCase) -or $relative.StartsWith($snapshotRel.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($relative.Equals($script:LayoutTransactionFile,[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($script:LayoutTransactionFile + '/',[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.Equals($script:TransactionFile,[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($script:TransactionFile + '/',[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.Equals($script:LockDirectoryName,[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($script:LockDirectoryName + '/',[StringComparison]::OrdinalIgnoreCase)) { continue }
+        $destination = Join-Path $SnapshotDir ($relative -replace '/','\')
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
+        [IO.File]::Copy($file.FullName,$destination,$true)
+    }
+    $snapshotState = $null
+    try { $snapshotState = Read-State (Join-Path $Root $script:StateFile) } catch { $snapshotState = $null }
+    $snapshotMetadata = [ordered]@{
+        'layout_snapshot' = $true; 'migration_id' = [string]$MigrationId;
+        'profile_version' = $(if($null -ne $snapshotState -and $snapshotState.Contains('profile_version')){[string]$snapshotState['profile_version']}else{''});
+        'created_at' = (Utc-Now)
+    }
+    Write-Atomic (Join-Path $SnapshotDir 'snapshot.json') ((($snapshotMetadata | ConvertTo-Json -Depth 10) -replace "`r`n", "`n") + "`n")
+}
+
+function Invoke-WithTwoProfileLocks([string]$Left,[string]$Right,[scriptblock]$Action) {
+    $leftFull = [IO.Path]::GetFullPath($Left); $rightFull = [IO.Path]::GetFullPath($Right)
+    # PowerShell uses dynamic scoping for scriptblocks. Capture the caller's
+    # action under distinct names before nesting lock wrappers; otherwise the
+    # nested block resolves `$Action` to Invoke-WithProfileLock's own
+    # parameter and recursively invokes itself until call-depth overflow.
+    $leftRoot = $Left; $rightRoot = $Right; $callerAction = $Action
+    if ([String]::Compare($leftFull,$rightFull,[StringComparison]::OrdinalIgnoreCase) -le 0) {
+        $nested = { Invoke-WithProfileLock $rightRoot $callerAction }.GetNewClosure()
+        return Invoke-WithProfileLock $leftRoot $nested
+    }
+    $nested = { Invoke-WithProfileLock $leftRoot $callerAction }.GetNewClosure()
+    return Invoke-WithProfileLock $rightRoot $nested
+}
+
+function Restore-LayoutSnapshot-Core([string]$Root,[string]$MigrationId,[System.Collections.IDictionary]$Transaction=$null) {
+    $snapshot = $null
+    if ($null -ne $Transaction) { $snapshot = Resolve-TransactionPath $Root ([string]$Transaction['snapshot_rel']) }
+    if ($null -eq $snapshot) {
+        $historyRoot = Join-Path $Root '历史版本'
+        $matches = @()
+        if ([IO.Directory]::Exists($historyRoot)) {
+            $pattern = '^compat-v[1-9][0-9]*-' + [regex]::Escape($MigrationId) + '$'
+            $matches = @(Get-ChildItem -LiteralPath $historyRoot -Directory -Force | Where-Object { $_.Name -cmatch $pattern })
+        }
+        if ($matches.Count -ne 1) { Fail "No unique migration snapshot found for $MigrationId." }
+        $snapshot = $matches[0].FullName
+    }
+    if (-not [IO.Directory]::Exists($snapshot)) { Fail 'Migration snapshot does not exist.' }
+    $snapshotValid = Validate-Space-Core $snapshot $true
+    if (-not $snapshotValid.ok) { Fail ('Migration snapshot is invalid: ' + ($snapshotValid.issues -join '; ')) }
+    $quarantine = Join-Path $Root ('.trash\layout-rollback-' + $MigrationId + '-' + (File-Stamp))
+    [IO.Directory]::CreateDirectory($quarantine) | Out-Null
+    $snapshotRel = Get-RelativePath $Root $snapshot
+    $snapshotFiles = @{}
+    foreach ($file in @(Get-ChildItem -LiteralPath $snapshot -Recurse -Force -File)) {
+        $relativeSnapshotFile = Get-RelativePath $snapshot $file.FullName
+        if ($relativeSnapshotFile -ceq 'snapshot.json') { continue }
+        $snapshotFiles[$relativeSnapshotFile] = $true
+    }
+    $quarantineRel = Get-RelativePath $Root $quarantine
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -Force -File)) {
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+        $relative = Get-RelativePath $Root $file.FullName
+        if ($relative.StartsWith($snapshotRel.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase) -or $relative.Equals($snapshotRel,[StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($relative.StartsWith($quarantineRel.TrimEnd('/') + '/',[StringComparison]::OrdinalIgnoreCase) -or $relative.Equals($quarantineRel,[StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($relative.Equals($script:LayoutTransactionFile,[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($script:LayoutTransactionFile + '/',[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.Equals($script:LockDirectoryName,[StringComparison]::OrdinalIgnoreCase) -or
+            $relative.StartsWith($script:LockDirectoryName + '/',[StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (-not $snapshotFiles.ContainsKey($relative)) {
+            $destination = Join-Path $quarantine ($relative -replace '/','\')
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
+            Move-Item -LiteralPath $file.FullName -Destination $destination -Force
+        }
+    }
+    $restored = New-Object Collections.Generic.List[string]
+    foreach ($file in @(Get-ChildItem -LiteralPath $snapshot -Recurse -Force -File)) {
+        $relative = Get-RelativePath $snapshot $file.FullName
+        if ($relative -ceq 'snapshot.json') { continue }
+        $destination = Join-Path $Root ($relative -replace '/','\')
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
+        [IO.File]::Copy($file.FullName,$destination,$true); $restored.Add($relative)
+    }
+    $layoutMarker = Join-Path $Root $script:LayoutTransactionFile
+    if ([IO.File]::Exists($layoutMarker)) { [IO.File]::Delete($layoutMarker) }
+    $valid = Validate-Space-Core $Root $true
+    if (-not $valid.ok) { Fail ('Rollback completed but canonical profile is invalid: ' + ($valid.issues -join '; ')) }
+    return [ordered]@{'ok'=$true;'command'='rollback-layout';'root'=$Root;'migration_id'=$MigrationId;'snapshot'=$snapshot;'quarantine'=$quarantine;'restored_count'=$restored.Count}
+}
+
+function Switch-Layout-Core([string]$Root,[string]$TargetRoot,[string]$RequestedMigrationId,[string]$ExpectedVersion,[string]$ExpectedProgressVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
+    Require-Confirmed $Confirmed
+    if (-not (Test-PositiveDecimal $ExpectedVersion) -or -not (Test-PositiveDecimal $ExpectedProgressVersion)) { Fail 'Expected versions must be positive decimal integers.' }
+    Assert-IndependentRoots $Root $TargetRoot
+    $sourceMarker = Get-TargetMarkerIfPresent $Root
+    if ($null -ne $sourceMarker -and [string]$sourceMarker['layout'] -ceq 'target') {
+        $existingId = [string]$sourceMarker['migration_id']
+        $targetMarker = Read-TargetMarker $TargetRoot
+        if ($existingId -ceq [string]$targetMarker['migration_id']) { return [ordered]@{'ok'=$true;'command'='switch-layout';'root'=$Root;'target'=$TargetRoot;'migration_id'=$existingId;'already_switched'=$true;'layout'='target'} }
+        Fail 'Canonical root is already a different target migration.'
+    }
+    $sourceValid = Validate-Space $Root
+    if (-not $sourceValid.ok) { Fail ('Invalid canonical source: ' + ($sourceValid.issues -join '; ')) }
+    $source = Get-TargetSourceSnapshot $Root
+    $sourceState = Read-State (Join-Path $Root $script:StateFile)
+    if ($source.profile_version -cne $ExpectedVersion) { Fail "Version conflict: expected $ExpectedVersion, current $($source.profile_version)." }
+    if ($source.progress_version -cne $ExpectedProgressVersion) { Fail "Progress version conflict: expected $ExpectedProgressVersion, current $($source.progress_version)." }
+    $targetInfo = Assert-TargetMatchesSource $Root $TargetRoot $false
+    $targetMarker = $targetInfo.marker
+    if ([string]$targetMarker['layout'] -cne 'target') { Fail 'switch-layout requires a formal target with layout=target.' }
+    $migrationId = [string]$targetMarker['migration_id']
+    if (-not [string]::IsNullOrWhiteSpace($RequestedMigrationId) -and $RequestedMigrationId -cne $migrationId) { Fail 'Migration id does not match formal target.' }
+    $historyRoot = Join-Path $Root '历史版本'
+    $snapshotDir = Join-Path $historyRoot ("compat-v$ExpectedVersion-$migrationId")
+    $transactionPath = Join-Path $Root $script:LayoutTransactionFile
+    Invoke-WithTwoProfileLocks $Root $TargetRoot {
+        if ([IO.File]::Exists($transactionPath)) { Fail 'Interrupted layout transaction exists; run rollback-layout --confirmed --root <authorized-root>.' }
+        Write-LayoutTransaction $Root ([ordered]@{'kind'='switch-layout';'migration_id'=$migrationId;'snapshot_rel'=(Get-RelativePath $Root $snapshotDir);'target_root'=$TargetRoot;'old_profile_version'=$ExpectedVersion;'old_progress_version'=$ExpectedProgressVersion})
+        try {
+            Snapshot-Canonical $Root $snapshotDir $migrationId
+            # Preserve old recovery/history/withdrawal stores.  Target
+            # authority, source indexes and derived views are copied over; the
+            # old root-level files are in the exact snapshot above.
+            Copy-TargetTree $TargetRoot $Root @('.hello-lock','.hello-transaction','.hello-layout-transaction','历史版本','.backups','.trash')
+            [void](Promote-TargetPackage $Root 'active-pending-review' $sourceState)
+            if ($SimulateFailure) { Fail 'simulated failure after target copy' }
+            $valid = Target-Validate-Core $Root
+            if (-not $valid.ok) { Fail ('Post-switch target validation failed: ' + ($valid.issues -join '; ')) }
+            [IO.File]::Delete($transactionPath)
+        } catch {
+            $original = $_.Exception
+            try { [void](Restore-LayoutSnapshot-Core $Root $migrationId (Read-LayoutTransaction $Root)) } catch { Fail "Layout switch failed: $($original.Message). Automatic rollback failed: $($_.Exception.Message)." }
+            Fail "Layout switch failed and was rolled back: $($original.Message)"
+        }
+    }
+    return [ordered]@{'ok'=$true;'command'='switch-layout';'root'=$Root;'target'=$TargetRoot;'migration_id'=$migrationId;'layout'='target';'snapshot'=$snapshotDir;'source_unchanged'=$false}
+}
+
+function Switch-Layout([string]$Root,[string]$TargetRoot,[string]$MigrationId,[string]$ExpectedVersion,[string]$ExpectedProgressVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
+    return Switch-Layout-Core $Root $TargetRoot $MigrationId $ExpectedVersion $ExpectedProgressVersion $Confirmed $SimulateFailure
+}
+
+function Rollback-Layout([string]$Root,[string]$MigrationId,[bool]$Confirmed) {
+    Require-Confirmed $Confirmed
+    if (-not (Test-SafeMigrationId $MigrationId)) { Fail 'migration-id is invalid.' }
+    return Invoke-WithProfileLock $Root {
+        $transaction = $null; $markerPath = Join-Path $Root $script:LayoutTransactionFile
+        if ([IO.File]::Exists($markerPath)) { $transaction = Read-LayoutTransaction $Root; if ([string]$transaction['migration_id'] -cne $MigrationId) { Fail 'Interrupted transaction migration_id does not match.' } }
+        Restore-LayoutSnapshot-Core $Root $MigrationId $transaction
+    }
+}
+
 function Configure-Space-Core([string]$Root,[string]$CaptureMode,[string]$NextReviewAt,[string]$ReviewStage,[bool]$Confirmed,[bool]$CaptureModeProvided=$false,[bool]$NextReviewAtProvided=$false,[bool]$ReviewStageProvided=$false) {
-    Require-Confirmed $Confirmed; $state = Require-Valid $Root
+    Require-Confirmed $Confirmed; $state = Require-Valid $Root; Require-ActiveLayout $Root $state 'configure'
     # The CLI passes explicit presence flags because Windows PowerShell 5.1
     # coerces a missing value-index into an empty string for typed parameters.
     # Direct callers retain the historical inference for non-empty values.
@@ -505,6 +1468,7 @@ function Configure-Space([string]$Root,[string]$CaptureMode,[string]$NextReviewA
 function Record-Disclosure-Core([string]$Root,[string]$CaptureMode,[bool]$Confirmed,[bool]$CaptureModeProvided=$false) {
     Require-Confirmed $Confirmed
     $state=Require-Valid $Root
+    Require-ActiveLayout $Root $state 'record-disclosure'
     if(-not$CaptureModeProvided -and -not[string]::IsNullOrWhiteSpace($CaptureMode)){$CaptureModeProvided=$true}
     if($CaptureModeProvided) {
         if(@('auto-stage','prompt','explicit') -cnotcontains $CaptureMode) { Fail '--capture-mode must be auto-stage, prompt, or explicit.' }
@@ -524,7 +1488,8 @@ function Record-Disclosure([string]$Root,[string]$CaptureMode,[bool]$Confirmed,[
 }
 
 function Show-Diff-Core([string]$Root,[string]$InputPath) {
-    [void](Require-Valid $Root)
+    $diffState = Require-Valid $Root
+    if ($diffState.Contains('layout') -and [string]$diffState['layout'] -ceq 'target') { Fail 'diff is only available for a compatibility schema-2 root; use target-validate/rebuild-index.' }
     $current = @((Read-Text (Join-Path $Root '个人全景档案.md')) -split "`n")
     $candidate = @((Read-Text $InputPath) -split "`n")
     if ((($current -join "`n") -ceq ($candidate -join "`n"))) { [Console]::WriteLine('No changes.'); return }
@@ -543,7 +1508,7 @@ function Show-Diff([string]$Root,[string]$InputPath) {
 function Clean-Label([string]$Value,[string]$Fallback) { if([string]::IsNullOrWhiteSpace($Value)){return $Fallback}; $clean=([regex]::Replace($Value,'\s+',' ')).Trim(); if($clean.Length -gt 200){return $clean.Substring(0,200)}; return $clean }
 
 function Stage-Candidate-Core([string]$Root,[string]$InputPath,[string]$Kind,[string]$Source,[bool]$Confirmed) {
-    Require-Confirmed $Confirmed; $state=Require-Valid $Root
+    Require-Confirmed $Confirmed; $state=Require-Valid $Root; Require-ActiveLayout $Root $state 'stage'
     $mode=[string]$state['capture_mode']; $disclosedMode=if($state.Contains('last_capture_disclosed_mode')){[string]$state['last_capture_disclosed_mode']}else{''}; $disclosedAt=if($state.Contains('last_capture_disclosed_at')){[string]$state['last_capture_disclosed_at']}else{''}
     if($mode -cne 'explicit' -and ([string]::IsNullOrWhiteSpace($disclosedAt) -or $disclosedMode -cne $mode)){Fail 'Capture policy has not been disclosed for the current mode; record-disclosure is required before staging.'}
     $body=(Read-Text $InputPath).Trim(); if([string]::IsNullOrWhiteSpace($body)){Fail 'Candidate input is empty.'}
@@ -621,6 +1586,8 @@ function Test-Summary([string]$Summary){$invalid=New-Object Collections.Generic.
 function Apply-Profile-Core([string]$Root,[string]$InputPath,[string]$SummaryPath,[string]$ExpectedVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
     Require-Confirmed $Confirmed
     $state=Require-Valid $Root
+    if ($state.Contains('layout') -and [string]$state['layout'] -ceq 'target') { Fail 'apply is only available for a compatibility schema-2 root; update target entities explicitly.' }
+    Require-ActiveLayout $Root $state 'apply'
     $currentVersion=[string]$state['profile_version']
     if($ExpectedVersion -cne $currentVersion){Fail "Version conflict: expected $ExpectedVersion, current $currentVersion."}
     $candidate=(Read-Text $InputPath).Trim()+"`n"
@@ -699,7 +1666,7 @@ function Get-SessionTermination([string]$Root,[string]$SessionId) {
 }
 
 function Record-Turn-Core([string]$Root,[string]$InputPath,[string]$ProgressInput,[string]$SessionId,[string]$TurnId,[string]$ExpectedProgressVersion,[bool]$Confirmed,[bool]$SimulateFailure=$false) {
-    Require-Confirmed $Confirmed;$state=Require-Valid $Root
+    Require-Confirmed $Confirmed;$state=Require-Valid $Root; Require-ActiveLayout $Root $state 'record-turn'
     if($SessionId-cnotmatch'^[0-9]{4}-[0-9]{2}-[0-9]{2}[A-Za-z0-9._-]{0,117}$'-or$TurnId-cnotmatch'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'){Fail 'session-id must start with YYYY-MM-DD; ids may only use ASCII letters, digits, dot, underscore, or hyphen.'}
     $body=(Read-Text $InputPath).Trim();if([string]::IsNullOrWhiteSpace($body)){Fail 'Turn input is empty.'};$year=$SessionId.Substring(0,4);$recordPath=Join-Path $Root "原始访谈\$year\$SessionId\$TurnId.md"
     # The immutable turn file is the durable idempotency key, not the mutable
@@ -710,7 +1677,7 @@ function Record-Turn-Core([string]$Root,[string]$InputPath,[string]$ProgressInpu
     $progress=(Read-Text $ProgressInput).Trim()+"`n";$issues=Test-ProgressContent $progress $null $false;if($issues.Count){Fail ('Invalid progress input: '+($issues -join '; '))};$newVersion=Increment-Decimal $currentVersion;$progress=Update-ProgressHeader $progress $newVersion
     $transactionDir=Join-Path $Root '.backups\transactions';$progressPath=Join-Path $Root '访谈进度.md';$statePath=Join-Path $Root $script:StateFile;$tag=File-Stamp;$progressBackup=Copy-Unique $progressPath $transactionDir "$tag-p$currentVersion-访谈进度.md";$stateBackup=Copy-Unique $statePath $transactionDir "$tag-p$currentVersion-hello-state"
     Begin-Transaction $Root ([ordered]@{'kind'='record-turn';'progress_backup'=(Relative-ToRoot $Root $progressBackup);'state_backup'=(Relative-ToRoot $Root $stateBackup);'record_path'=(Relative-ToRoot $Root $recordPath);'record_created'='true'})
-    try{$current=Utc-Now;Write-Atomic $recordPath ($body+"`n");Write-Atomic $progressPath $progress;$state['schema_version']='2';$state['progress_version']=[string]$newVersion;$state['last_session_id']=$SessionId;$state['last_turn_id']=$TurnId;$state['last_interview_at']=$current;$state['updated_at']=$current;Write-State $statePath $state;if($SimulateFailure){Fail 'simulated failure after state write'};$valid=Validate-Space $Root $true;if(-not$valid.ok){Fail ('Post-write validation failed: '+($valid.issues -join '; '))}}catch{Rollback-Failure $Root $_.Exception}
+    try{$current=Utc-Now;Write-Atomic $recordPath ($body+"`n");Write-Atomic $progressPath $progress;$state['schema_version']=if($state.Contains('layout') -and [string]$state['layout'] -ceq 'target'){'3'}else{'2'};$state['progress_version']=[string]$newVersion;$state['last_session_id']=$SessionId;$state['last_turn_id']=$TurnId;$state['last_interview_at']=$current;$state['updated_at']=$current;Write-State $statePath $state;if($SimulateFailure){Fail 'simulated failure after state write'};$valid=Validate-Space $Root $true;if(-not$valid.ok){Fail ('Post-write validation failed: '+($valid.issues -join '; '))}}catch{Rollback-Failure $Root $_.Exception}
     Finish-Transaction $Root;return (@{'ok'=$true;'command'='record-turn';'root'=$Root;'session_id'=$SessionId;'turn_id'=$TurnId;'record'=$recordPath;'created'=$true;'idempotent'=$false;'progress_version'=$newVersion} + (Get-SessionTermination $Root $SessionId))
 }
 
@@ -718,7 +1685,7 @@ function Record-Turn([string]$Root,[string]$InputPath,[string]$ProgressInput,[st
     return Invoke-WithProfileLock $Root { Record-Turn-Core $Root $InputPath $ProgressInput $SessionId $TurnId $ExpectedProgressVersion $Confirmed $SimulateFailure }
 }
 
-function Withdraw-Candidate-Core([string]$Root,[string]$CandidateId,[bool]$Confirmed){Require-Confirmed $Confirmed;$state=Require-Valid $Root;if($CandidateId-cnotmatch'^C-[0-9TZ-]+$'){Fail 'Invalid candidate id.'};$pendingPath=Join-Path $Root '待确认信息.md';$content=Read-Text $pendingPath;$pattern='(?ms)^## '+[regex]::Escape($CandidateId)+'\s*\r?\n.*?(?=^## C-[0-9TZ-]+\s*$|\z)';$match=[regex]::Match($content,$pattern);if(-not$match.Success){Fail "Candidate not found: $CandidateId"};$trashDir=Join-Path $Root '.trash\candidates';[IO.Directory]::CreateDirectory($trashDir)|Out-Null;$trash=Join-Path $trashDir ($CandidateId+'.md');if([IO.File]::Exists($trash)){$trash=Join-Path $trashDir ($CandidateId+'-'+(File-Stamp)+'.md')};Write-Atomic $trash ($match.Value.TrimEnd()+"`n");$remaining=($content.Remove($match.Index,$match.Length)).TrimEnd()+"`n";if($remaining-cnotmatch'(?m)^## C-[0-9TZ-]+\s*$'){$remaining=$remaining.TrimEnd()+"`n`n当前没有待确认信息。`n"};Write-Atomic $pendingPath $remaining;$state['updated_at']=Utc-Now;Write-State (Join-Path $Root $script:StateFile) $state;return @{'ok'=$true;'command'='withdraw';'root'=$Root;'candidate_id'=$CandidateId;'trash'=$trash}}
+function Withdraw-Candidate-Core([string]$Root,[string]$CandidateId,[bool]$Confirmed){Require-Confirmed $Confirmed;$state=Require-Valid $Root;Require-ActiveLayout $Root $state 'withdraw';if($CandidateId-cnotmatch'^C-[0-9TZ-]+$'){Fail 'Invalid candidate id.'};$pendingPath=Join-Path $Root '待确认信息.md';$content=Read-Text $pendingPath;$pattern='(?ms)^## '+[regex]::Escape($CandidateId)+'\s*\r?\n.*?(?=^## C-[0-9TZ-]+\s*$|\z)';$match=[regex]::Match($content,$pattern);if(-not$match.Success){Fail "Candidate not found: $CandidateId"};$trashDir=Join-Path $Root '.trash\candidates';[IO.Directory]::CreateDirectory($trashDir)|Out-Null;$trash=Join-Path $trashDir ($CandidateId+'.md');if([IO.File]::Exists($trash)){$trash=Join-Path $trashDir ($CandidateId+'-'+(File-Stamp)+'.md')};Write-Atomic $trash ($match.Value.TrimEnd()+"`n");$remaining=($content.Remove($match.Index,$match.Length)).TrimEnd()+"`n";if($remaining-cnotmatch'(?m)^## C-[0-9TZ-]+\s*$'){$remaining=$remaining.TrimEnd()+"`n`n当前没有待确认信息。`n"};Write-Atomic $pendingPath $remaining;$state['updated_at']=Utc-Now;Write-State (Join-Path $Root $script:StateFile) $state;return @{'ok'=$true;'command'='withdraw';'root'=$Root;'candidate_id'=$CandidateId;'trash'=$trash}}
 
 function Withdraw-Candidate([string]$Root,[string]$CandidateId,[bool]$Confirmed){ return Invoke-WithProfileLock $Root { Withdraw-Candidate-Core $Root $CandidateId $Confirmed } }
 
@@ -871,13 +1838,19 @@ function Invoke-SelfTest {
 }
 
 try {
-    if([string]::IsNullOrWhiteSpace($Command)){Fail 'Command is required.'};$allowed=@('resolve-root','init','validate','status','configure','record-disclosure','diff','stage','apply','record-turn','withdraw','recover','self-test');if($allowed-cnotcontains$Command){Fail ('Unknown command: '+$Command)}
+    if([string]::IsNullOrWhiteSpace($Command)){Fail 'Command is required.'};$allowed=@('resolve-root','init','validate','status','configure','record-disclosure','diff','stage','apply','record-turn','withdraw','recover','target-validate','migrate-plan','migrate-apply','rebuild-index','switch-layout','rollback-layout','self-test');if($allowed-cnotcontains$Command){Fail ('Unknown command: '+$Command)}
     if($Command-ceq'self-test'){
         if($null -ne $Remaining -and $Remaining.Count -gt 0){Fail "Unexpected argument: $($Remaining[0])"}
         Write-Json (Invoke-SelfTest);exit 0
     };$parsed=Parse-Arguments $Remaining;$values=$parsed.values;$confirmed=[bool]$parsed.flags.confirmed;$simulateFailure=[bool]$parsed.flags['simulate-failure'];Validate-CommandArguments $Command $values $parsed.flags
-    if(@('init','configure','record-disclosure','stage','apply','record-turn','withdraw','recover') -ccontains $Command -and -not $values.ContainsKey('root')){Fail "$Command requires --root for mutating operations."}
-    $root=Resolve-ProfileRoot $values['root'] $values.ContainsKey('root')
+    if(@('init','configure','record-disclosure','stage','apply','record-turn','withdraw','recover','migrate-apply','rebuild-index','switch-layout','rollback-layout') -ccontains $Command -and -not $values.ContainsKey('root')){Fail "$Command requires --root for mutating operations."}
+    if($Command -ceq 'migrate-plan' -and $confirmed -and -not $values.ContainsKey('root')){Fail 'Confirmed migrate-plan requires --root.'}
+    if (@('target-validate','rebuild-index') -ccontains $Command -and $values.ContainsKey('target')) {
+        if ($values.ContainsKey('root')) { Fail "$Command accepts either --root or --target, not both." }
+        $root=Resolve-ExplicitPath $values['target'] 'target'
+    } else {
+        $root=Resolve-ProfileRoot $values['root'] $values.ContainsKey('root')
+    }
     switch($Command){
         'resolve-root'{Write-Json @{'ok'=$true;'command'=$Command;'root'=$root};exit 0}
         'init'{Write-Json (Initialize-Space $root $confirmed);exit 0}
@@ -891,5 +1864,11 @@ try {
         'record-turn'{foreach($name in @('input','progress-input','session-id','turn-id','expected-progress-version')){if(-not$values.ContainsKey($name)){Fail "record-turn requires --$name."}};if(-not(Test-PositiveDecimal ([string]$values['expected-progress-version']))){Fail '--expected-progress-version must be a positive decimal integer.'};Write-Json (Record-Turn $root ([IO.Path]::GetFullPath($values['input'])) ([IO.Path]::GetFullPath($values['progress-input'])) $values['session-id'] $values['turn-id'] ([string]$values['expected-progress-version']) $confirmed $simulateFailure);exit 0}
         'withdraw'{if(-not$values.ContainsKey('id')){Fail 'withdraw requires --id.'};Write-Json (Withdraw-Candidate $root $values['id'] $confirmed);exit 0}
         'recover'{Write-Json (Recover-Transaction $root $confirmed);exit 0}
+        'target-validate'{$result=Target-Validate $root;Write-Json $result;if($result.ok){exit 0}else{exit 1}}
+        'migrate-plan'{foreach($name in @('target')){if(-not$values.ContainsKey($name)){Fail "migrate-plan requires --$name."}};$target=Resolve-ExplicitPath $values['target'] 'target';$migrationId=if($values.ContainsKey('migration-id')){[string]$values['migration-id']}else{'hello-migration-'+(Get-Date).ToUniversalTime().ToString('yyyyMMdd')};Write-Json (Migrate-Plan $root $target $migrationId $confirmed);exit 0}
+        'migrate-apply'{foreach($name in @('target','destination','expected-version','expected-progress-version')){if(-not$values.ContainsKey($name)){Fail "migrate-apply requires --$name."}};$target=Resolve-ExplicitPath $values['target'] 'target';$destination=Resolve-ExplicitPath $values['destination'] 'destination';Write-Json (Migrate-Apply $root $target $destination ([string]$values['expected-version']) ([string]$values['expected-progress-version']) $confirmed $simulateFailure);exit 0}
+        'rebuild-index'{Write-Json (Rebuild-Index $root $confirmed);exit 0}
+        'switch-layout'{foreach($name in @('target','migration-id','expected-version','expected-progress-version')){if(-not$values.ContainsKey($name)){Fail "switch-layout requires --$name."}};$target=Resolve-ExplicitPath $values['target'] 'target';$migrationId=[string]$values['migration-id'];Write-Json (Switch-Layout $root $target $migrationId ([string]$values['expected-version']) ([string]$values['expected-progress-version']) $confirmed $simulateFailure);exit 0}
+        'rollback-layout'{if(-not$values.ContainsKey('migration-id')){Fail 'rollback-layout requires --migration-id.'};Write-Json (Rollback-Layout $root ([string]$values['migration-id']) $confirmed);exit 0}
     }
 } catch { Write-Json @{'ok'=$false;'command'=$Command;'error'=$_.Exception.Message};exit 2 }

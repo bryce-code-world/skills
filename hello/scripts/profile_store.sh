@@ -7,6 +7,15 @@ COMMAND=${1-}
 [ -n "$COMMAND" ] || { printf '%s\n' '{"ok":false,"command":"","error":"Command is required."}'; exit 2; }
 shift
 
+# A self-test invokes this script through `sh "$0" ...` while its parent
+# owns an EXIT cleanup trap.  Bash may reuse the inherited trap in that child
+# shell, so clear it before any non-self-test command can run.  The marker is
+# exported only by self-test and is never part of normal adapter state.
+if [ "$COMMAND" != self-test ] && [ "${HELLO_SELF_TEST_ACTIVE-}" = 1 ]; then
+  trap - EXIT HUP INT TERM
+  unset HELLO_SELF_TEST_ACTIVE
+fi
+
 ROOT_ARG=
 ROOT_ARG_SET=false
 INPUT=
@@ -25,6 +34,11 @@ SESSION_ID=
 TURN_ID=
 PROGRESS_INPUT=
 EXPECTED_PROGRESS_VERSION=
+TARGET_ARG=
+TARGET_ARG_SET=false
+DESTINATION_ARG=
+DESTINATION_ARG_SET=false
+MIGRATION_ID=
 CONFIRMED=false
 SIMULATE_FAILURE=false
 CONFIRMED_SEEN=false
@@ -36,6 +50,8 @@ VALIDATION_ISSUES_JSON=[]
 STORE_LOCK_HELD=false
 STORE_LOCK_PATH=
 STORE_LOCK_PID=
+STORE_LOCK_SHELL_ID=
+EXTRA_LOCK_PATHS=
 RESTORED_JSON=[]
 
 json_escape() {
@@ -75,7 +91,7 @@ while [ "$#" -gt 0 ]; do
   case $1 in
     --confirmed) [ "$CONFIRMED_SEEN" = false ] || fail 'Duplicate option: --confirmed'; OPTION_NAMES="$OPTION_NAMES confirmed"; CONFIRMED=true; CONFIRMED_SEEN=true; shift ;;
     --simulate-failure) [ "$SIMULATE_FAILURE_SEEN" = false ] || fail 'Duplicate option: --simulate-failure'; OPTION_NAMES="$OPTION_NAMES simulate-failure"; SIMULATE_FAILURE=true; SIMULATE_FAILURE_SEEN=true; shift ;;
-    --root|--input|--summary-input|--expected-version|--kind|--source|--id|--capture-mode|--next-review-at|--review-stage|--session-id|--turn-id|--progress-input|--expected-progress-version)
+    --root|--input|--summary-input|--expected-version|--kind|--source|--id|--capture-mode|--next-review-at|--review-stage|--session-id|--turn-id|--progress-input|--expected-progress-version|--target|--destination|--migration-id)
       [ "$#" -ge 2 ] || fail "Missing value for $1"
       case $2 in
         --*) fail "Missing value for $1" ;;
@@ -99,6 +115,9 @@ while [ "$#" -gt 0 ]; do
         --turn-id) TURN_ID=$2 ;;
         --progress-input) PROGRESS_INPUT=$2 ;;
         --expected-progress-version) EXPECTED_PROGRESS_VERSION=$2 ;;
+        --target) TARGET_ARG=$2; TARGET_ARG_SET=true ;;
+        --destination) DESTINATION_ARG=$2; DESTINATION_ARG_SET=true ;;
+        --migration-id) MIGRATION_ID=$2 ;;
       esac
       shift 2 ;;
     *) fail "Unknown option: $1" ;;
@@ -106,7 +125,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case $COMMAND in
-  resolve-root|init|validate|status|configure|record-disclosure|diff|stage|apply|withdraw|record-turn|recover|self-test) ;;
+  resolve-root|init|validate|status|configure|record-disclosure|diff|stage|apply|withdraw|record-turn|recover|self-test|target-validate|migrate-plan|migrate-apply|rebuild-index|switch-layout|rollback-layout) ;;
   *) fail "Unknown command: $COMMAND" ;;
 esac
 
@@ -122,21 +141,38 @@ validate_command_arguments() {
       record-turn:root|record-turn:input|record-turn:progress-input|record-turn:session-id|record-turn:turn-id|record-turn:expected-progress-version|record-turn:simulate-failure) ;;
       withdraw:root|withdraw:id) ;;
       recover:root) ;;
+      target-validate:root) ;;
+      migrate-plan:root|migrate-plan:target|migrate-plan:migration-id|migrate-plan:confirmed) ;;
+      migrate-apply:root|migrate-apply:target|migrate-apply:destination|migrate-apply:expected-version|migrate-apply:expected-progress-version|migrate-apply:confirmed|migrate-apply:simulate-failure) ;;
+      rebuild-index:root|rebuild-index:confirmed) ;;
+      switch-layout:root|switch-layout:target|switch-layout:expected-version|switch-layout:expected-progress-version|switch-layout:migration-id|switch-layout:confirmed|switch-layout:simulate-failure) ;;
+      rollback-layout:root|rollback-layout:migration-id|rollback-layout:confirmed) ;;
       init:confirmed|configure:confirmed|record-disclosure:confirmed|stage:confirmed|apply:confirmed|record-turn:confirmed|withdraw:confirmed|recover:confirmed) ;;
       *) fail "Option --$option is not valid for $COMMAND." ;;
     esac
   done
   case $COMMAND in
-    resolve-root|validate|status|diff|self-test)
+    resolve-root|validate|status|diff|self-test|target-validate)
       [ "$CONFIRMED" = false ] || fail "Option --confirmed is not valid for $COMMAND." ;;
   esac
   case $COMMAND in
-    apply|record-turn) ;;
+    apply|record-turn|migrate-apply|switch-layout) ;;
     *) [ "$SIMULATE_FAILURE" = false ] || fail "Option --simulate-failure is not valid for $COMMAND." ;;
   esac
   case $COMMAND in
-    init|configure|record-disclosure|stage|apply|record-turn|withdraw|recover)
+    init|configure|record-disclosure|stage|apply|record-turn|withdraw|recover|migrate-apply|rebuild-index|switch-layout|rollback-layout)
       [ "$ROOT_ARG_SET" = true ] || fail 'Mutating commands require an explicit --root.' ;;
+  esac
+  if [ "$COMMAND" = migrate-plan ] && [ "$CONFIRMED" = true ] && [ "$ROOT_ARG_SET" != true ]; then
+    fail 'Confirmed migrate-plan requires an explicit --root.'
+  fi
+  case $COMMAND in
+    target-validate) [ "$ROOT_ARG_SET" = true ] || fail 'target-validate requires an explicit --root.' ;;
+    migrate-plan) [ "$TARGET_ARG_SET" = true ] || fail 'migrate-plan requires --target.' ;;
+    migrate-apply) [ "$TARGET_ARG_SET" = true ] || fail 'migrate-apply requires --target.'; [ "$DESTINATION_ARG_SET" = true ] || fail 'migrate-apply requires --destination.'; [ -n "$EXPECTED_VERSION" ] || fail 'migrate-apply requires --expected-version.'; [ -n "$EXPECTED_PROGRESS_VERSION" ] || fail 'migrate-apply requires --expected-progress-version.' ;;
+    rebuild-index) ;;
+    switch-layout) [ "$TARGET_ARG_SET" = true ] || fail 'switch-layout requires --target.'; [ -n "$EXPECTED_VERSION" ] || fail 'switch-layout requires --expected-version.'; [ -n "$EXPECTED_PROGRESS_VERSION" ] || fail 'switch-layout requires --expected-progress-version.' ;;
+    rollback-layout) [ -n "$MIGRATION_ID" ] || fail 'rollback-layout requires --migration-id.' ;;
   esac
 }
 
@@ -316,11 +352,509 @@ resolve_root() {
   ROOT=$normalized
 }
 
+# Resolve an explicitly supplied secondary root without ever falling back to
+# HELLO_HOME.  Target-layout operations deliberately require two independent
+# roots; accepting an omitted/relative fallback here would make it possible to
+# accidentally migrate or replace the canonical profile space.
+resolve_explicit_path() {
+  explicit_value=$1
+  explicit_label=$2
+  if ! printf '%s' "$explicit_value" | awk '
+    { gsub(/[[:space:]]/, "", $0); gsub(/\302\240/, "", $0); if (length($0) > 0) found=1 }
+    END { exit(found ? 0 : 1) }
+  '; then
+    fail "$explicit_label must not be empty or whitespace-only."
+  fi
+  raw_secondary=$explicit_value
+  case $raw_secondary in
+    '~') [ -n "${HOME-}" ] && raw_secondary=$HOME ;;
+    '~/'*) [ -n "${HOME-}" ] && raw_secondary=$HOME/${raw_secondary#~/} ;;
+  esac
+  case $raw_secondary in
+    /*) candidate_secondary=$raw_secondary ;;
+    *) candidate_secondary=$(pwd -P)/$raw_secondary ;;
+  esac
+  normalized_secondary=
+  if [ -d "$candidate_secondary" ]; then
+    normalized_secondary=$(CDPATH= cd "$candidate_secondary" 2>/dev/null && pwd -P) || normalized_secondary=
+  fi
+  if [ -z "$normalized_secondary" ]; then
+    normalized_secondary=$(printf '%s\n' "$candidate_secondary" | awk -F/ '
+      { count=0; for (i=1;i<=NF;i++) { part=$i; if (part=="" || part==".") continue; if (part=="..") { if (count>0) count--; continue } parts[++count]=part } }
+      END { if (count==0) print "/"; else { result=""; for (i=1;i<=count;i++) result=result "/" parts[i]; print result } }
+    ')
+  fi
+  [ -n "$normalized_secondary" ] || fail "Cannot normalize $explicit_label."
+  SECONDARY_PATH=$normalized_secondary
+}
+
+path_is_same_or_nested() {
+  path_a=$1
+  path_b=$2
+  [ "$path_a" = "$path_b" ] && return 0
+  case "$path_a/" in "$path_b/"*) return 0 ;; esac
+  case "$path_b/" in "$path_a/"*) return 0 ;; esac
+  return 1
+}
+
+assert_independent_roots() {
+  independent_a=$1
+  independent_b=$2
+  path_is_same_or_nested "$independent_a" "$independent_b" && fail 'Source and target roots must be independent directories (neither may contain the other).'
+}
+
+sha256_file() {
+  hash_file=$1
+  [ -f "$hash_file" ] || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$hash_file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$hash_file" | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$hash_file" | awk '{print $NF}'
+  else
+    return 1
+  fi
+}
+
+safe_migration_id() {
+  printf '%s\n' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+}
+
+target_marker_value() {
+  marker_value_path=$1
+  marker_value_key=$2
+  state_value "$marker_value_path" "$marker_value_key" 2>/dev/null
+}
+
+target_issue_add() {
+  target_issue=$1
+  if [ -n "${TARGET_VALIDATION_ISSUES-}" ]; then
+    TARGET_VALIDATION_ISSUES="$TARGET_VALIDATION_ISSUES; $target_issue"
+  else
+    TARGET_VALIDATION_ISSUES=$target_issue
+  fi
+  target_issue_json=$(json_escape "$target_issue")
+  if [ "${TARGET_VALIDATION_ISSUES_JSON-[]}" = '[]' ]; then
+    TARGET_VALIDATION_ISSUES_JSON="[\"$target_issue_json\"]"
+  else
+    TARGET_VALIDATION_ISSUES_JSON="${TARGET_VALIDATION_ISSUES_JSON%]},\"$target_issue_json\"]"
+  fi
+}
+
+# Validate the machine marker and metadata-only manifest of the target
+# directory.  This intentionally does not inspect claim/event bodies: target
+# validation is a layout/safety check, while content review remains an owner
+# decision.  `schema_version=3` is the formal target protocol; the historical
+# draft marker is accepted only for migration-plan/migrate-apply input.
+validate_target_space() {
+  target_root=$1
+  TARGET_VALIDATION_ISSUES=
+  TARGET_VALIDATION_ISSUES_JSON=[]
+  [ -d "$target_root" ] || target_issue_add 'Target root directory does not exist'
+  if [ -d "$target_root" ]; then
+    marker=$target_root/.hello-state
+    manifest=$target_root/manifest.json
+    [ -f "$marker" ] || target_issue_add 'Missing target marker: .hello-state'
+    if [ -f "$marker" ]; then
+      validate_marker_syntax "$marker" || target_issue_add 'Invalid target marker syntax'
+      target_layout=$(target_marker_value "$marker" layout) || target_layout=
+      target_layout_version=$(target_marker_value "$marker" layout_version) || target_layout_version=
+      target_schema=$(target_marker_value "$marker" schema_version) || target_schema=
+      target_migration=$(target_marker_value "$marker" migration_id) || target_migration=
+      case $target_layout in target-draft|target) ;; *) target_issue_add 'layout must be target-draft or target' ;; esac
+      [ "$target_layout_version" = 1 ] || target_issue_add 'layout_version must be 1'
+      case $target_layout:$target_schema in
+        target:3|target-draft:target-draft-0.1|target-draft:3) ;;
+        *) target_issue_add 'schema_version is incompatible with target layout' ;;
+      esac
+      safe_migration_id "$target_migration" || target_issue_add 'migration_id has invalid characters'
+      for target_identity_key in package_id subject_id; do
+        target_identity_value=$(target_marker_value "$marker" "$target_identity_key") || target_identity_value=
+        [ -n "$target_identity_value" ] || target_issue_add "Missing target marker field: $target_identity_key"
+        safe_migration_id "$target_identity_value" || target_issue_add "$target_identity_key has invalid characters"
+      done
+      if [ "$target_layout" = target ]; then
+        for target_compat_key in profile_version progress_version capture_mode created_at updated_at last_confirmed_at next_review_at review_stage last_interview_at last_session_id last_turn_id last_capture_disclosed_at last_capture_disclosed_mode; do
+          # Formal schema 3 keeps the complete compatibility cursor so every
+          # adapter can resume interviews without reconstructing legacy state.
+          target_compat_value=$(target_marker_value "$marker" "$target_compat_key") || target_compat_value=
+          [ -n "$target_compat_value" ] || {
+            case $target_compat_key in
+              next_review_at|last_confirmed_at|last_interview_at|last_session_id|last_turn_id|last_capture_disclosed_at|last_capture_disclosed_mode) [ -e "$marker" ] && grep -q "^$target_compat_key=" "$marker" || target_issue_add "Formal target marker is missing compatibility field: $target_compat_key" ;;
+              *) target_issue_add "Formal target marker is missing compatibility field: $target_compat_key" ;;
+            esac
+          }
+        done
+        [ "$target_schema" = 3 ] || target_issue_add 'Formal target marker schema_version must be 3'
+      fi
+    fi
+    [ -f "$manifest" ] || target_issue_add 'Missing target manifest: manifest.json'
+    if [ -f "$manifest" ]; then
+      # The manifest is metadata-only. These checks reject a missing or
+      # mismatched identity without parsing or echoing personal body text.
+      manifest_layout=$(target_manifest_field "$manifest" layout) || manifest_layout=
+      manifest_migration=$(target_manifest_field "$manifest" migration_id) || manifest_migration=
+      manifest_package=$(target_manifest_field "$manifest" package_id) || manifest_package=
+      manifest_subject=$(target_manifest_field "$manifest" subject_id) || manifest_subject=
+      manifest_owner=$(target_manifest_field "$manifest" owner) || manifest_owner=
+      manifest_audience=$(target_manifest_field "$manifest" audience) || manifest_audience=
+      [ "$manifest_layout" = "$target_layout" ] || target_issue_add 'Target marker and manifest layout do not match'
+      [ "$(target_manifest_field "$manifest" layout_version)" = 1 ] || target_issue_add 'Manifest layout_version must be 1'
+      [ "$manifest_migration" = "$target_migration" ] || target_issue_add 'Target marker and manifest migration_id do not match'
+      [ -n "$manifest_package" ] || target_issue_add 'Missing target manifest field: package_id'
+      [ "$manifest_package" = "$(target_marker_value "$marker" package_id)" ] || target_issue_add 'Target marker and manifest package_id do not match'
+      [ -n "$manifest_subject" ] || target_issue_add 'Missing target manifest field: subject_id'
+      [ "$manifest_subject" = "$(target_marker_value "$marker" subject_id)" ] || target_issue_add 'Target marker and manifest subject_id do not match'
+      [ -n "$manifest_owner" ] || target_issue_add 'Missing target manifest field: owner'
+      [ -n "$manifest_audience" ] || target_issue_add 'Missing target manifest field: audience'
+      manifest_schema=$(target_manifest_field "$manifest" schema_version) || manifest_schema=
+      [ "$manifest_schema" = "$target_schema" ] || target_issue_add 'Target marker and manifest schema_version do not match'
+      if [ -f "$marker" ]; then
+        marker_profile_hash=$(target_marker_value "$marker" source_profile_sha256) || marker_profile_hash=
+        marker_progress_hash=$(target_marker_value "$marker" source_progress_sha256) || marker_progress_hash=
+        marker_pending_hash=$(target_marker_value "$marker" source_pending_sha256) || marker_pending_hash=
+        manifest_profile_hash=$(target_manifest_source_value "$manifest" profile sha256) || manifest_profile_hash=
+        manifest_progress_hash=$(target_manifest_source_value "$manifest" progress sha256) || manifest_progress_hash=
+        manifest_pending_hash=$(target_manifest_source_value "$manifest" pending sha256) || manifest_pending_hash=
+        [ -z "$marker_profile_hash" ] || [ "$marker_profile_hash" = "$manifest_profile_hash" ] || target_issue_add 'Marker/manifest profile hash mismatch'
+        [ -z "$marker_progress_hash" ] || [ "$marker_progress_hash" = "$manifest_progress_hash" ] || target_issue_add 'Marker/manifest progress hash mismatch'
+        [ -z "$marker_pending_hash" ] || [ "$marker_pending_hash" = "$manifest_pending_hash" ] || target_issue_add 'Marker/manifest pending hash mismatch'
+      fi
+    fi
+    for required_target_file in README.md 个人全景档案.md 主题覆盖矩阵.md 待确认信息.md 访谈进度.md 资料索引.md 迭代日志.md; do
+      [ -f "$target_root/$required_target_file" ] || target_issue_add "Missing target file: $required_target_file"
+    done
+    for required_target_dir in 原始访谈 来源 权威 派生 历史版本 .backups .trash; do
+      [ -d "$target_root/$required_target_dir" ] || target_issue_add "Missing target directory: $required_target_dir"
+    done
+    # Symlinks are not accepted in a migration package.  They could point
+    # outside the authorized root and would defeat the independent-root check.
+    if find "$target_root" -type l -print -quit 2>/dev/null | grep -q .; then
+      target_issue_add 'Target package must not contain symbolic links'
+    fi
+    if [ -f "$marker" ]; then
+      for target_hash_key in source_profile_sha256 source_progress_sha256 source_pending_sha256; do
+        target_hash_value=$(target_marker_value "$marker" "$target_hash_key") || target_hash_value=
+        [ -z "$target_hash_value" ] || printf '%s\n' "$target_hash_value" | grep -Eq '^[0-9a-fA-F]{64}$' || target_issue_add "$target_hash_key must be a SHA-256 value"
+      done
+    fi
+  fi
+  [ -z "$TARGET_VALIDATION_ISSUES" ]
+}
+
+write_target_manifest() {
+  target_manifest_root=$1
+  target_manifest_layout=$2
+  target_manifest_migration=$3
+  target_manifest_package=${4-pkg-local}
+  target_manifest_subject=${5-subject-local}
+  target_manifest_source_profile=${6-}
+  target_manifest_source_progress=${7-}
+  target_manifest_source_pending=${8-}
+  target_manifest_generated=${9-}
+  target_manifest_profile_version=${10-}
+  target_manifest_progress_version=${11-}
+  target_manifest_index_hash=${12-}
+  target_manifest_index_generated=${13-}
+  target_manifest_index_matrix=${14-}
+  [ -n "$target_manifest_generated" ] || target_manifest_generated=$(utc_now)
+  manifest_temp=$target_manifest_root/.manifest.$$.tmp
+  {
+    printf '{\n'
+    printf '  "layout": "%s",\n' "$(json_escape "$target_manifest_layout")"
+    printf '  "layout_version": 1,\n'
+    printf '  "schema_version": %s,\n' "$([ "$target_manifest_layout" = target ] && printf 3 || printf '"target-draft-0.1"')"
+    printf '  "migration_id": "%s",\n' "$(json_escape "$target_manifest_migration")"
+    printf '  "package_id": "%s",\n' "$(json_escape "$target_manifest_package")"
+    printf '  "subject_id": "%s",\n' "$(json_escape "$target_manifest_subject")"
+    printf '  "owner": "local-owner",\n'
+    printf '  "audience": "owner-and-authorized-ai",\n'
+    printf '  "language": "zh-CN",\n'
+    if [ -n "$target_manifest_source_profile" ] || [ -n "$target_manifest_source_progress" ] || [ -n "$target_manifest_source_pending" ]; then
+      printf '  "generated_at": "%s",\n' "$(json_escape "$target_manifest_generated")"
+    else
+      printf '  "generated_at": "%s"' "$(json_escape "$target_manifest_generated")"
+    fi
+    if [ -n "$target_manifest_source_profile" ] || [ -n "$target_manifest_source_progress" ] || [ -n "$target_manifest_source_pending" ]; then
+      printf '\n  "source": {\n'
+      printf '    "profile": {"version": "%s", "sha256": "%s"},\n' "$(json_escape "$target_manifest_profile_version")" "$(json_escape "$target_manifest_source_profile")"
+      printf '    "progress": {"version": "%s", "sha256": "%s"},\n' "$(json_escape "$target_manifest_progress_version")" "$(json_escape "$target_manifest_source_progress")"
+      printf '    "pending": {"sha256": "%s"}\n' "$(json_escape "$target_manifest_source_pending")"
+      printf '  }'
+    fi
+    if [ -n "$target_manifest_index_hash" ]; then
+      printf ',\n  "index_source_hash": "%s",\n  "index_generated_at": "%s"' "$(json_escape "$target_manifest_index_hash")" "$(json_escape "$target_manifest_index_generated")"
+      [ -z "$target_manifest_index_matrix" ] || printf ',\n  "index_source_matrix_version": "%s"' "$(json_escape "$target_manifest_index_matrix")"
+    fi
+    printf '\n}\n'
+  } > "$manifest_temp" || { rm -f "$manifest_temp"; return 1; }
+  mv -f "$manifest_temp" "$target_manifest_root/manifest.json"
+}
+
+write_target_marker() {
+  target_marker_root=$1
+  target_marker_layout=$2
+  target_marker_migration=$3
+  target_marker_package=${4-pkg-local}
+  target_marker_subject=${5-subject-local}
+  target_marker_profile_version=${6-}
+  target_marker_progress_version=${7-}
+  target_marker_profile_hash=${8-}
+  target_marker_progress_hash=${9-}
+  target_marker_pending_hash=${10-}
+  target_marker_generated=${11-}
+  [ -n "$target_marker_generated" ] || target_marker_generated=$(utc_now)
+  marker_temp=$target_marker_root/.hello-state.$$.tmp
+  {
+    printf 'layout=%s\n' "$target_marker_layout"
+    printf 'layout_version=1\n'
+    if [ "$target_marker_layout" = target ]; then printf 'schema_version=3\n'; else printf 'schema_version=target-draft-0.1\n'; fi
+    printf 'migration_id=%s\n' "$target_marker_migration"
+    printf 'package_id=%s\n' "$target_marker_package"
+    printf 'subject_id=%s\n' "$target_marker_subject"
+    [ -n "$target_marker_profile_version" ] && printf 'source_profile_version=%s\n' "$target_marker_profile_version"
+    [ -n "$target_marker_progress_version" ] && printf 'source_progress_version=%s\n' "$target_marker_progress_version"
+    [ -n "$target_marker_profile_hash" ] && printf 'source_profile_sha256=%s\n' "$target_marker_profile_hash"
+    [ -n "$target_marker_progress_hash" ] && printf 'source_progress_sha256=%s\n' "$target_marker_progress_hash"
+    [ -n "$target_marker_pending_hash" ] && printf 'source_pending_sha256=%s\n' "$target_marker_pending_hash"
+    printf 'generated_at=%s\n' "$target_marker_generated"
+    if [ "$target_marker_layout" = target ]; then printf 'authority_status=active\n'; else printf 'authority_status=non-authoritative-needs-user-confirmation\n'; fi
+  } > "$marker_temp" || { rm -f "$marker_temp"; return 1; }
+  mv -f "$marker_temp" "$target_marker_root/.hello-state"
+}
+
+sync_target_compat_state() {
+  target_compat_root=$1
+  # Formal targets retain the cursor/policy fields required by record-turn and
+  # candidate staging.  The caller has already read the source state into the
+  # STATE_* variables; unknown target marker fields are preserved by
+  # write_state.
+  [ -n "${STATE_VERSION-}" ] || return 0
+  write_state "$target_compat_root/.hello-state" 3 "$STATE_VERSION" "${STATE_CAPTURE-}" "${STATE_CREATED-}" "$(utc_now)" "${STATE_CONFIRMED-}" "${STATE_REVIEW-}" "${STATE_STAGE-}" "${STATE_INTERVIEW-}" "${STATE_PROGRESS-1}" "${STATE_SESSION-}" "${STATE_TURN-}" "${STATE_DISCLOSED-}" "${STATE_DISCLOSED_MODE-}"
+}
+
+copy_target_tree() {
+  copy_source=$1
+  copy_destination=$2
+  [ -d "$copy_source" ] || return 1
+  mkdir -p "$copy_destination" || return 1
+  # Refuse links before copying. `cp -R` then preserves filenames (including
+  # spaces and UTF-8) without unsafe word splitting.
+  if find "$copy_source" -type l -print -quit 2>/dev/null | grep -q .; then return 1; fi
+  cp -R "$copy_source"/. "$copy_destination"/ || return 1
+  # Locks belong to the live source/draft process and must never become part
+  # of an installed target package.  The draft is locked while it is copied.
+  rm -rf "$copy_destination/.hello-lock" 2>/dev/null || return 1
+  return 0
+}
+
+target_required_source_hashes() {
+  target_source_root=$1
+  [ -f "$target_source_root/个人全景档案.md" ] || return 1
+  [ -f "$target_source_root/访谈进度.md" ] || return 1
+  [ -f "$target_source_root/待确认信息.md" ] || return 1
+  TARGET_SOURCE_PROFILE_HASH=$(sha256_file "$target_source_root/个人全景档案.md") || return 1
+  TARGET_SOURCE_PROGRESS_HASH=$(sha256_file "$target_source_root/访谈进度.md") || return 1
+  TARGET_SOURCE_PENDING_HASH=$(sha256_file "$target_source_root/待确认信息.md") || return 1
+}
+
+target_manifest_source_value() {
+  target_manifest_file=$1
+  target_manifest_section=$2
+  target_manifest_key=$3
+  [ -f "$target_manifest_file" ] || return 1
+  target_manifest_compact=$(tr -d '\r\n' < "$target_manifest_file")
+  # Frozen protocol form: source.profile/progress/pending objects.  The flat
+  # keys are accepted for drafts produced by the first migration prototype.
+  target_manifest_value_result=$(printf '%s' "$target_manifest_compact" | sed -n \
+    's/.*"'"$target_manifest_section"'"[[:space:]]*:[[:space:]]*{[^}]*"'"$target_manifest_key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -n "$target_manifest_value_result" ]; then
+    printf '%s\n' "$target_manifest_value_result"
+    return 0
+  fi
+  case $target_manifest_section:$target_manifest_key in
+    profile:sha256) printf '%s' "$target_manifest_compact" | sed -n 's/.*"profile_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ;;
+    progress:sha256) printf '%s' "$target_manifest_compact" | sed -n 's/.*"progress_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ;;
+    pending:sha256) printf '%s' "$target_manifest_compact" | sed -n 's/.*"pending_sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ;;
+    profile:version) printf '%s' "$target_manifest_compact" | sed -n 's/.*"profile_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ;;
+    progress:version) printf '%s' "$target_manifest_compact" | sed -n 's/.*"progress_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' ;;
+    *) return 1 ;;
+  esac
+}
+
+target_manifest_field() {
+  target_manifest_field_file=$1
+  target_manifest_field_name=$2
+  [ -f "$target_manifest_field_file" ] || return 1
+  target_manifest_field_compact=$(tr -d '\r\n' < "$target_manifest_field_file")
+  target_manifest_field_result=$(printf '%s' "$target_manifest_field_compact" | sed -n 's/.*"'"$target_manifest_field_name"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  if [ -n "$target_manifest_field_result" ]; then printf '%s\n' "$target_manifest_field_result"; return 0; fi
+  printf '%s' "$target_manifest_field_compact" | sed -n 's/.*"'"$target_manifest_field_name"'"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p'
+}
+
+target_frontmatter_tokens() {
+  tfm_file=$1
+  shift
+  [ -f "$tfm_file" ] || return 1
+  tfm_keys=$(printf '%s|' "$@" | sed 's/|$//')
+  # Target entities use ordinary YAML frontmatter.  A few early drafts used
+  # Markdown-list metadata (`- key:`), so accept that prefix as a compatibility
+  # form while keeping the key/value grammar identical.  If delimiters are
+  # absent, parse the whole file for backwards-compatible fixtures.
+  tr -d '\r' < "$tfm_file" | awk -v wanted="$tfm_keys" '
+    function trim(value) {
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      return value
+    }
+    function emit_scalar(value, quote) {
+      value = trim(value)
+      if (value == "") return
+      # Strip an inline YAML comment only when it is separated by whitespace;
+      # URI fragments and IDs containing # remain intact.
+      sub(/[[:space:]]+#.*$/, "", value)
+      value = trim(value)
+      quote = sprintf("%c", 34)
+      if (length(value) >= 2 && substr(value, 1, 1) == quote && substr(value, length(value), 1) == quote) {
+        value = substr(value, 2, length(value) - 2)
+      } else {
+        quote = sprintf("%c", 39)
+        if (length(value) >= 2 && substr(value, 1, 1) == quote && substr(value, length(value), 1) == quote) {
+          value = substr(value, 2, length(value) - 2)
+        } else if (length(value) >= 2 && substr(value, 1, 1) == "`" && substr(value, length(value), 1) == "`") {
+          value = substr(value, 2, length(value) - 2)
+        }
+      }
+      value = trim(value)
+      if (value != "") print value
+    }
+    function emit_value(value, count, i, item, values) {
+      value = trim(value)
+      if (value == "") return
+      # Inline YAML/JSON arrays and comma-separated scalar compatibility forms
+      # both become one token per array member.
+      if (substr(value, 1, 1) == "[" && substr(value, length(value), 1) == "]") {
+        value = substr(value, 2, length(value) - 2)
+      }
+      if (index(value, ",") > 0) {
+        count = split(value, values, ",")
+        for (i = 1; i <= count; i++) emit_scalar(values[i])
+      } else {
+        emit_scalar(value)
+      }
+    }
+    BEGIN {
+      key_count = split(wanted, key_list, /\|/)
+      has_frontmatter = 0
+      in_frontmatter = 0
+      active_key = ""
+    }
+    {
+      line = $0
+      # Treat only a leading delimiter as an opening marker.  A horizontal
+      # rule in the body must not truncate metadata parsing.
+      if (NR == 1 && line ~ /^[[:space:]]*---[[:space:]]*$/) {
+        has_frontmatter = 1
+        in_frontmatter = 1
+        next
+      }
+      if (has_frontmatter && line ~ /^[[:space:]]*---[[:space:]]*$/) exit
+      if (has_frontmatter && !in_frontmatter) next
+      matched = 0
+      for (i = 1; i <= key_count; i++) {
+        prefix = "^[[:space:]]*-?[[:space:]]*" key_list[i] "[[:space:]]*:[[:space:]]*"
+        if (line ~ prefix) {
+          value = line
+          sub(prefix, "", value)
+          emit_value(value)
+          active_key = key_list[i]
+          if (trim(value) != "") active_key = ""
+          matched = 1
+          break
+        }
+      }
+      if (matched) next
+      # Also accept a conventional multiline YAML list (`key:` followed by
+      # indented `- value`) for the array-valued metadata fields.
+      if (active_key != "" && line ~ /^[[:space:]]+-[[:space:]]+/) {
+        value = line
+        sub(/^[[:space:]]+-[[:space:]]+/, "", value)
+        emit_value(value)
+        next
+      }
+      if (line !~ /^[[:space:]]*$/ && line !~ /^[[:space:]]*#/) active_key = ""
+    }
+  '
+}
+
+target_frontmatter_value() {
+  target_frontmatter_tokens "$1" "$2" | head -n 1
+}
+
+target_frontmatter_array_json() {
+  tfm_array_file=$1
+  shift
+  tfm_array_values=$(target_frontmatter_tokens "$tfm_array_file" "$@") || return 1
+  tfm_array_json='['
+  tfm_array_first=true
+  tfm_array_seen=
+  while IFS= read -r tfm_array_value; do
+    [ -n "$tfm_array_value" ] || continue
+    # Preserve source order while avoiding duplicate aliases such as a
+    # `topic_id` repeated in `cross_topic_ids`.
+    if [ -n "$tfm_array_seen" ] && printf '%s\n' "$tfm_array_seen" | grep -Fqx -- "$tfm_array_value"; then
+      continue
+    fi
+    if [ "$tfm_array_first" = true ]; then
+      tfm_array_first=false
+    else
+      tfm_array_json=$tfm_array_json,
+    fi
+    tfm_array_json=$tfm_array_json\"$(json_escape "$tfm_array_value")\"
+    if [ -n "$tfm_array_seen" ]; then
+      tfm_array_seen=$(printf '%s\n%s' "$tfm_array_seen" "$tfm_array_value")
+    else
+      tfm_array_seen=$tfm_array_value
+    fi
+  done <<EOF
+$tfm_array_values
+EOF
+  printf '%s]\n' "$tfm_array_json"
+}
+
+update_target_marker_keys() {
+  update_marker_root=$1
+  shift
+  update_marker_temp=$update_marker_root/.hello-state.$$.update
+  update_marker_pairs=
+  while [ "$#" -gt 1 ]; do
+    update_marker_pairs="$update_marker_pairs|$1=$2"
+    shift 2
+  done
+  tr -d '\r' < "$update_marker_root/.hello-state" | awk -v pairs="$update_marker_pairs" '
+    BEGIN { n=split(pairs, a, "|"); for (i=1;i<=n;i++) { if (a[i]=="") continue; p=index(a[i], "="); if (p>1) { k=substr(a[i],1,p-1); v=substr(a[i],p+1); values[k]=v; order[++count]=k } } }
+    /^$/ { print; next }
+    /^#/ { print; next }
+    { p=index($0,"="); if (p>1) { k=substr($0,1,p-1); if (k in values) { print k "=" values[k]; seen[k]=1; next } } print }
+    END { for (i=1;i<=count;i++) { k=order[i]; if (!seen[k]) print k "=" values[k] } }
+  ' > "$update_marker_temp" || { rm -f "$update_marker_temp"; return 1; }
+  mv -f "$update_marker_temp" "$update_marker_root/.hello-state"
+}
+
 require_confirmed() {
   [ "$CONFIRMED" = true ] || fail 'Mutating commands require --confirmed after user authorization.'
 }
 
 release_store_lock() {
+  # In Bash, a command-substitution subshell inherits shell variables and
+  # traps but has a different BASHPID.  Only the shell that created the lock
+  # may release it; an external `sh "$0" ...` child has no exported marker and
+  # therefore still cleans up its own lock normally.  Native POSIX shells
+  # without BASHPID retain the historical single-shell behavior.
+  if [ "${BASH_SUBSHELL-0}" -gt 0 ] && [ -n "${STORE_LOCK_SHELL_ID-}" ] && [ -n "${BASHPID-}" ] && [ "${BASHPID}" != "$STORE_LOCK_SHELL_ID" ]; then
+    return 0
+  fi
   [ "${STORE_LOCK_HELD-}" = true ] || return 0
   STORE_LOCK_HELD=false
   # Never remove a lock that no longer carries this process's owner marker.
@@ -330,15 +864,53 @@ release_store_lock() {
   fi
 }
 
+release_extra_locks() {
+  if [ "${BASH_SUBSHELL-0}" -gt 0 ] && [ -n "${STORE_LOCK_SHELL_ID-}" ] && [ -n "${BASHPID-}" ] && [ "${BASHPID}" != "$STORE_LOCK_SHELL_ID" ]; then
+    return 0
+  fi
+  # Secondary roots are tab-delimited explicit paths; tabs are not valid in
+  # the CLI path grammar used by the adapters. Cleanup only removes an owner
+  # marker bearing this PID.
+  printf '%s\n' "$EXTRA_LOCK_PATHS" | tr '\t' '\n' | while IFS= read -r extra_path; do
+    [ -n "$extra_path" ] || continue
+    extra_lock=$extra_path/.hello-lock
+    if [ ! -e "$extra_lock/owner" ] || { [ -f "$extra_lock/owner" ] && [ "$(sed -n 's/^pid=//p' "$extra_lock/owner" | head -n 1)" = "$$" ]; }; then
+      rm -f "$extra_lock/owner" 2>/dev/null || true
+      rmdir "$extra_lock" 2>/dev/null || true
+    fi
+  done
+}
+
+acquire_extra_lock() {
+  extra_root=$1
+  [ -d "$extra_root" ] || return 0
+  [ "$extra_root" = "$ROOT" ] && return 0
+  extra_lock=$extra_root/.hello-lock
+  if ! mkdir "$extra_lock" 2>/dev/null; then
+    fail 'Profile space is busy; retry after the active operation finishes.'
+  fi
+  extra_started=$(utc_now)
+  extra_owner_temp=$(mktemp "$extra_lock/.owner.XXXXXX") || { rmdir "$extra_lock" 2>/dev/null || true; fail 'Cannot create profile lock owner.'; }
+  if ! printf 'pid=%s\nstarted_at=%s\n' "$$" "$extra_started" > "$extra_owner_temp"; then
+    rm -f "$extra_owner_temp" 2>/dev/null || true
+    rmdir "$extra_lock" 2>/dev/null || true
+    fail 'Cannot write profile lock owner.'
+  fi
+  mv "$extra_owner_temp" "$extra_lock/owner" || { rm -f "$extra_owner_temp" 2>/dev/null || true; rmdir "$extra_lock" 2>/dev/null || true; fail 'Cannot finalize profile lock owner.'; }
+  if [ -n "$EXTRA_LOCK_PATHS" ]; then EXTRA_LOCK_PATHS=$(printf '%s\t%s' "$EXTRA_LOCK_PATHS" "$extra_root"); else EXTRA_LOCK_PATHS=$extra_root; fi
+  trap 'release_store_lock; release_extra_locks' 0 1 2 3 15
+}
+
 acquire_store_lock() {
   [ -d "$ROOT" ] || return 0
   STORE_LOCK_PATH=$ROOT/.hello-lock
   STORE_LOCK_PID=$$
+  STORE_LOCK_SHELL_ID=${BASHPID-}
   if ! mkdir "$STORE_LOCK_PATH" 2>/dev/null; then
     fail 'Profile space is busy; retry after the active operation finishes.'
   fi
   STORE_LOCK_HELD=true
-  trap 'release_store_lock' 0 1 2 3 15
+  trap 'release_store_lock; release_extra_locks' 0 1 2 3 15
   lock_started=$(utc_now)
   lock_owner_temp=$(mktemp "$STORE_LOCK_PATH/.owner.XXXXXX") || { release_store_lock; fail 'Cannot create profile lock owner.'; }
   if ! printf 'pid=%s\nstarted_at=%s\n' "$STORE_LOCK_PID" "$lock_started" > "$lock_owner_temp"; then
@@ -506,16 +1078,16 @@ write_state() {
     printf 'last_confirmed_at=%s\n' "$state_confirmed"
     printf 'next_review_at=%s\n' "$state_review"
     printf 'review_stage=%s\n' "$state_stage"
-    if [ "$state_schema" = 2 ] || [ "$state_interview_present" = true ] || [ -n "$state_interview" ]; then
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_interview_present" = true ] || [ -n "$state_interview" ]; then
       printf 'last_interview_at=%s\n' "$state_interview"
     fi
-    if [ "$state_schema" = 2 ] || [ "$state_progress_present" = true ]; then printf 'progress_version=%s\n' "$state_progress"; fi
-    if [ "$state_schema" = 2 ] || [ "$state_session_present" = true ]; then printf 'last_session_id=%s\n' "$state_session"; fi
-    if [ "$state_schema" = 2 ] || [ "$state_turn_present" = true ]; then printf 'last_turn_id=%s\n' "$state_turn"; fi
-    if [ "$state_schema" = 2 ] || [ "$state_disclosed_present" = true ] || [ -n "${state_disclosed-}" ]; then
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_progress_present" = true ]; then printf 'progress_version=%s\n' "$state_progress"; fi
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_session_present" = true ]; then printf 'last_session_id=%s\n' "$state_session"; fi
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_turn_present" = true ]; then printf 'last_turn_id=%s\n' "$state_turn"; fi
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_disclosed_present" = true ] || [ -n "${state_disclosed-}" ]; then
       printf 'last_capture_disclosed_at=%s\n' "${state_disclosed-}"
     fi
-    if [ "$state_schema" = 2 ] || [ "$state_disclosed_mode_present" = true ] || [ -n "${state_disclosed_mode-}" ]; then
+    if [ "$state_schema" = 2 ] || [ "$state_schema" = 3 ] || [ "$state_disclosed_mode_present" = true ] || [ -n "${state_disclosed_mode-}" ]; then
       printf 'last_capture_disclosed_mode=%s\n' "${state_disclosed_mode-}"
     fi
     if [ -f "$state_path" ]; then
@@ -599,6 +1171,20 @@ validate_space() {
     fi
   }
   [ -d "$ROOT" ] || add_issue 'Root directory does not exist'
+  # Once a formal target layout is active, validate its own package contract
+  # instead of applying the legacy schema-2 heading checks to the aggregate
+  # index.  The compatibility root files remain available to record-turn,
+  # stage, and withdraw, while target-specific integrity is checked here.
+  if [ -d "$ROOT" ] && [ -f "$ROOT/.hello-state" ] && grep -q '^layout=target$' "$ROOT/.hello-state" 2>/dev/null; then
+    if validate_target_space "$ROOT"; then
+      VALIDATION_ISSUES=
+      VALIDATION_ISSUES_JSON=[]
+      return 0
+    fi
+    VALIDATION_ISSUES=${TARGET_VALIDATION_ISSUES-Invalid target profile space}
+    VALIDATION_ISSUES_JSON=${TARGET_VALIDATION_ISSUES_JSON-'["Invalid target profile space"]'}
+    return 1
+  fi
   if [ -d "$ROOT" ]; then
     for name in README.md 个人全景档案.md 待确认信息.md 访谈进度.md 资料索引.md 迭代日志.md; do
       [ -f "$ROOT/$name" ] || add_issue "Missing file: $name"
@@ -691,6 +1277,13 @@ validate_space() {
 
 require_valid() {
   validate_space || fail "Invalid profile space: $VALIDATION_ISSUES"
+  # A formal target keeps the compatibility cursor in its schema-3 marker.
+  # `validate_space` intentionally validates the target package without
+  # populating the legacy STATE_* variables, so load that marker before any
+  # compatibility bridge (configure/stage/record-turn/withdraw) uses them.
+  if [ -f "$ROOT/.hello-state" ] && grep -q '^layout=target$' "$ROOT/.hello-state" 2>/dev/null; then
+    read_state || fail "Invalid target compatibility state: ${STATE_PARSE_ERROR:-cannot parse .hello-state}"
+  fi
 }
 
 init_space() {
@@ -723,7 +1316,77 @@ init_space() {
   printf '{"ok":true,"command":"init","root":"%s","created":[%s]}\n' "$(json_escape "$ROOT")" "$created_json"
 }
 
+target_status_space() {
+  if ! validate_target_space "$ROOT"; then
+    printf '{"ok":false,"command":"status","root":"%s","layout":"target","issues":%s}\n' "$(json_escape "$ROOT")" "${TARGET_VALIDATION_ISSUES_JSON-[\"Invalid target profile space\"]}"
+    exit 1
+  fi
+  marker=$ROOT/.hello-state
+  target_layout=$(target_marker_value "$marker" layout)
+  target_migration=$(target_marker_value "$marker" migration_id)
+  target_package=$(target_marker_value "$marker" package_id)
+  target_subject=$(target_marker_value "$marker" subject_id)
+  # Target roots use the same progress/pending projections as the compatibility
+  # adapter, so status remains useful immediately after a layout switch.
+  pending=0
+  [ -f "$ROOT/待确认信息.md" ] && pending=$(grep -c '^## C-[0-9TZ-][0-9TZ-]*[[:space:]]*$' "$ROOT/待确认信息.md" 2>/dev/null || true)
+  progress_stage=
+  progress_last=
+  progress_next=
+  # Target status is metadata-only; never expose the interview's next
+  # question (or other progress body text) in an implicit status probe.
+  progress_next=
+  progress_stage='目标资料包'
+  # read_state is deliberately used only after target validation; schema 3
+  # keeps the legacy cursor keys so record-turn can continue across the switch.
+  read_state || fail "Invalid target state: ${STATE_PARSE_ERROR:-cannot parse .hello-state}"
+  case $STATE_CAPTURE in auto-stage) capture_strategy=自动暂存 ;; prompt) capture_strategy=提示确认 ;; explicit) capture_strategy=仅显式 ;; *) capture_strategy= ;; esac
+  [ -n "$progress_stage" ] || case $STATE_STAGE in baseline) progress_stage=基线访谈 ;; first-review) progress_stage=首次回访 ;; stable) progress_stage=稳定维护 ;; esac
+  progress_last=$STATE_INTERVIEW
+  # Target coverage is owned by the matrix, not by the compatibility
+  # progress projection.  Parse only topic IDs, priority and state so status
+  # remains metadata-only and agrees with the Python/PowerShell adapters.
+  baseline_json='[]'; long_json='[]'; baseline_split_unknown=true; baseline_blocked=true
+  matrix_path=$ROOT/主题覆盖矩阵.md
+  if [ -f "$matrix_path" ]; then
+    matrix_result=$(tr -d '\r' < "$matrix_path" | awk -F'|' '
+      function clean(v){gsub(/[[:space:]`]/,"",v); return v}
+      function add(which,id,state,    escaped){gsub(/\\/,"\\\\",id); gsub(/"/,"\\\"",id); escaped=id "（" state "）"; if(which=="b"){if(bfirst){b="[\"" escaped "\""; bfirst=0}else{b=b ",\"" escaped "\""}} else {if(lfirst){l="[\"" escaped "\""; lfirst=0}else{l=l ",\"" escaped "\""}}}
+      BEGIN{b="[";l="[";bfirst=1;lfirst=1;found=0}
+      /^\|/ {
+        id=clean($2); priority=clean($4); state=clean($5)
+        if(id=="" || id=="主题ID" || id=="topic_id" || id ~ /^[-:]+$/){next}
+        if(priority=="基线必答" || priority=="baseline" || priority=="基线"){found=1; if(state!="confirmed_minimum" && state!="deepened" && state!="declined" && state!="not_applicable") add("b",id,state)}
+        else if(priority=="可长期补充" || priority=="long-term" || priority=="long"){found=1; if(state!="confirmed_minimum" && state!="deepened" && state!="declined" && state!="not_applicable") add("l",id,state)}
+      }
+      END{print b "]\t" l "]\t" (found ? "false" : "true")}
+    ')
+    baseline_json=${matrix_result%%$'\t'*}; matrix_rest=${matrix_result#*$'\t'}
+    long_json=${matrix_rest%%$'\t'*}; baseline_split_unknown=${matrix_rest#*$'\t'}
+  fi
+  if [ "$baseline_split_unknown" = true ]; then
+    baseline_json='["legacy-unclassified（需先完成基线/长期分组）"]'
+  fi
+  authority_status=$(target_marker_value "$ROOT/.hello-state" authority_status) || authority_status=
+  case $authority_status in
+    non-authoritative-needs-user-confirmation|active-layout-needs-review)
+      if [ "$baseline_json" = '[]' ]; then baseline_json='["migration-review（需用户确认目录化切换）"]'; else baseline_json="${baseline_json%]},\"migration-review（需用户确认目录化切换）\"]"; fi
+      ;;
+  esac
+  [ "$baseline_json" = '[]' ] && [ "$baseline_split_unknown" = false ] && baseline_blocked=false
+  authority_entry_count=0
+  [ -d "$ROOT/权威" ] && authority_entry_count=$(find "$ROOT/权威" -type f -name '*.md' ! -name 'README.md' -print 2>/dev/null | wc -l | tr -d '[:space:]')
+  file_count=0
+  [ -d "$ROOT" ] && file_count=$(find "$ROOT" -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')
+  printf '{"ok":true,"command":"status","root":"%s","layout":"%s","layout_version":"1","schema_version":"3","migration_id":"%s","package_id":"%s","subject_id":"%s","profile_version":"%s","progress_version":"%s","capture_mode":"%s","capture_strategy":"%s","last_capture_disclosed_at":"%s","last_capture_disclosed_mode":"%s","review_stage":"%s","last_confirmed_at":"%s","next_review_at":"%s","last_session_id":"%s","last_turn_id":"%s","pending_candidates":%s,"authority_entry_count":%s,"file_count":%s,"baseline_required_remaining":%s,"baseline_closure_blocked":%s,"baseline_split_unknown":%s,"long_term_backlog":%s,"progress":{"current_stage":"%s","last_interview_at":"%s","next_question":"%s"}}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$target_layout")" "$(json_escape "$target_migration")" "$(json_escape "$target_package")" "$(json_escape "$target_subject")" "$STATE_VERSION" "$STATE_PROGRESS" "$(json_escape "$STATE_CAPTURE")" "$(json_escape "$capture_strategy")" "$(json_escape "$STATE_DISCLOSED")" "$(json_escape "$STATE_DISCLOSED_MODE")" "$(json_escape "$STATE_STAGE")" "$(json_escape "$STATE_CONFIRMED")" "$(json_escape "$STATE_REVIEW")" "$(json_escape "$STATE_SESSION")" "$(json_escape "$STATE_TURN")" "$pending" "$authority_entry_count" "$file_count" "$baseline_json" "$baseline_blocked" "$baseline_split_unknown" "$long_json" "$(json_escape "$progress_stage")" "$(json_escape "$progress_last")" "$(json_escape "$progress_next")"
+}
+
 status_space() {
+  if [ -f "$ROOT/.hello-state" ] && grep -q '^layout=target$' "$ROOT/.hello-state" 2>/dev/null; then
+    target_status_space
+    return
+  fi
   if ! validate_space; then
     printf '{"ok":false,"command":"status","root":"%s","issues":%s}\n' "$(json_escape "$ROOT")" "$VALIDATION_ISSUES_JSON"
     exit 1
@@ -976,6 +1639,15 @@ validate_summary() {
 
 apply_profile() {
   require_confirmed
+  # The monolithic schema-2 apply protocol must never overwrite a directoryized
+  # target package (formal or draft).  Target entities are changed through the
+  # target protocol, which preserves the aggregate index/authority split.
+  if [ -f "$ROOT/.hello-state" ]; then
+    apply_layout=$(sed -n 's/^layout=//p' "$ROOT/.hello-state" | head -n 1)
+    case $apply_layout in
+      target|target-draft) fail 'apply is not available for a formal target layout; use target protocol commands.' ;;
+    esac
+  fi
   require_valid
   [ -n "$INPUT" ] || fail 'apply requires --input.'
   [ -n "$SUMMARY_INPUT" ] || fail 'apply requires --summary-input.'
@@ -1158,7 +1830,9 @@ record_turn() {
   fi
   mv -f "$progress_temp" "$ROOT/访谈进度.md" || rollback_fail 'Cannot replace progress.'
   current=$(utc_now)
-  write_state "$ROOT/.hello-state" 2 "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$current" "$new_progress" "$SESSION_ID" "$TURN_ID" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || rollback_fail 'Cannot write state.'
+  record_state_schema=$STATE_SCHEMA
+  [ "$record_state_schema" = 1 ] && record_state_schema=2
+  write_state "$ROOT/.hello-state" "$record_state_schema" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$current" "$new_progress" "$SESSION_ID" "$TURN_ID" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || rollback_fail 'Cannot write state.'
   [ "$SIMULATE_FAILURE" = false ] || rollback_fail 'Simulated failure after state write.'
   if ! validate_space true; then rollback_fail "Post-write validation failed: $VALIDATION_ISSUES"; fi
   cleanup_transaction_backups || rollback_fail 'Cannot clear transaction backups.'
@@ -1197,6 +1871,536 @@ withdraw_candidate() {
     "$(json_escape "$ROOT")" "$CANDIDATE_ID" "$(json_escape "$trash")"
 }
 
+target_prepare_dirs() {
+  target_prepare_root=$1
+  mkdir -p "$target_prepare_root/权威/声明" "$target_prepare_root/权威/事件" "$target_prepare_root/权威/决策" \
+    "$target_prepare_root/来源" "$target_prepare_root/派生" "$target_prepare_root/原始访谈" \
+    "$target_prepare_root/历史版本" "$target_prepare_root/.backups" "$target_prepare_root/.trash" || return 1
+}
+
+target_copy_compatibility_projection() {
+  target_projection_source=$1
+  target_projection_root=$2
+  for projection_name in 访谈进度.md 待确认信息.md; do
+    [ -f "$target_projection_source/$projection_name" ] || return 1
+    cp "$target_projection_source/$projection_name" "$target_projection_root/$projection_name" || return 1
+  done
+  # The target's aggregate is an index, not a second authoritative profile.
+  # Preserve the exact legacy profile under history for traceability instead
+  # of silently replacing the target overview with the monolith.
+  mkdir -p "$target_projection_root/历史版本/compatibility" || return 1
+  cp "$target_projection_source/个人全景档案.md" "$target_projection_root/历史版本/compatibility/个人全景档案.md" || return 1
+  return 0
+}
+
+target_init_draft() {
+  target_init_root=$1
+  target_init_migration=$2
+  target_init_profile_version=$3
+  target_init_progress_version=$4
+  target_init_profile_hash=$5
+  target_init_progress_hash=$6
+  target_init_pending_hash=$7
+  target_init_generated=$8
+  target_init_package=${9-pkg-local}
+  target_init_subject=${10-subject-local}
+  if [ -e "$target_init_root" ]; then
+    [ -d "$target_init_root" ] || return 1
+    # An existing target is safe only when it carries the same migration id;
+    # never merge an unrelated package into a user-selected destination.
+    if [ -f "$target_init_root/.hello-state" ]; then
+      existing_target_migration=$(target_marker_value "$target_init_root/.hello-state" migration_id) || existing_target_migration=
+      [ "$existing_target_migration" = "$target_init_migration" ] || return 1
+    else
+      find "$target_init_root" -mindepth 1 -print -quit 2>/dev/null | grep -q . && return 1
+    fi
+  else
+    mkdir -p "$target_init_root" || return 1
+  fi
+  target_prepare_dirs "$target_init_root" || return 1
+  # Reuse the checked-in target templates where available.  Existing files in
+  # an owner-created draft are never overwritten by plan generation.
+  for template_name in README.md 个人全景档案.md 主题覆盖矩阵.md; do
+    if [ ! -f "$target_init_root/$template_name" ] && [ -f "$TEMPLATE_DIR/target-package/$template_name" ]; then
+      sed 's/\r$//' "$TEMPLATE_DIR/target-package/$template_name" > "$target_init_root/$template_name" || return 1
+    fi
+  done
+  [ -f "$target_init_root/README.md" ] || printf '%s\n' '# 个人资料目标包' > "$target_init_root/README.md"
+  [ -f "$target_init_root/个人全景档案.md" ] || printf '%s\n' '# 个人全景档案' > "$target_init_root/个人全景档案.md"
+  [ -f "$target_init_root/主题覆盖矩阵.md" ] || printf '%s\n' '# 主题覆盖矩阵' > "$target_init_root/主题覆盖矩阵.md"
+  [ -f "$target_init_root/资料索引.md" ] || printf '%s\n' '# 资料索引' > "$target_init_root/资料索引.md"
+  [ -f "$target_init_root/迭代日志.md" ] || printf '%s\n' '# 迭代日志' > "$target_init_root/迭代日志.md"
+  target_copy_compatibility_projection "$ROOT" "$target_init_root" || return 1
+  if [ ! -f "$target_init_root/迁移映射.md" ]; then
+    {
+      printf '# 迁移映射\n\n'
+      printf -- '- 迁移 ID：%s\n' "$target_init_migration"
+      printf -- '- 来源资料版本：%s\n' "$target_init_profile_version"
+      printf -- '- 来源进度版本：%s\n' "$target_init_progress_version"
+      printf -- '- 来源档案 SHA-256：%s\n' "$target_init_profile_hash"
+      printf -- '- 来源进度 SHA-256：%s\n' "$target_init_progress_hash"
+      printf -- '- 来源待确认信息 SHA-256：%s\n\n' "$target_init_pending_hash"
+      printf '## 来源完整性\n\n保留来源文件与哈希；实体草稿须经用户确认后才可成为权威。\n'
+    } > "$target_init_root/迁移映射.md" || return 1
+  fi
+  write_target_marker "$target_init_root" target-draft "$target_init_migration" "$target_init_package" "$target_init_subject" \
+    "$target_init_profile_version" "$target_init_progress_version" "$target_init_profile_hash" "$target_init_progress_hash" "$target_init_pending_hash" "$target_init_generated" || return 1
+  write_target_manifest "$target_init_root" target-draft "$target_init_migration" "$target_init_package" "$target_init_subject" \
+    "$target_init_profile_hash" "$target_init_progress_hash" "$target_init_pending_hash" "$target_init_generated" "$target_init_profile_version" "$target_init_progress_version" || return 1
+  return 0
+}
+
+target_validate_command() {
+  # `ROOT` is the explicitly supplied target root for this command.
+  if validate_target_space "$ROOT"; then
+    marker=$ROOT/.hello-state
+    printf '{"ok":true,"command":"target-validate","root":"%s","layout":"%s","layout_version":"%s","schema_version":"%s","migration_id":"%s","issues":[]}\n' \
+      "$(json_escape "$ROOT")" "$(json_escape "$(target_marker_value "$marker" layout)")" "$(json_escape "$(target_marker_value "$marker" layout_version)")" \
+      "$(json_escape "$(target_marker_value "$marker" schema_version)")" "$(json_escape "$(target_marker_value "$marker" migration_id)")"
+  else
+    printf '{"ok":false,"command":"target-validate","root":"%s","issues":%s}\n' "$(json_escape "$ROOT")" "${TARGET_VALIDATION_ISSUES_JSON-[\"Invalid target profile space\"]}"
+    exit 1
+  fi
+}
+
+migrate_plan_command() {
+  # Planning is a read-only comparison.  It must never create a target root or
+  # copy source body; migrate-apply is the explicit, confirmed write step.
+  # ROOT is the source; TARGET_PATH is the explicitly supplied draft root.
+  require_valid
+  assert_independent_roots "$ROOT" "$TARGET_PATH"
+  target_required_source_hashes "$ROOT" || fail 'Cannot hash source profile files.'
+  read_state || fail "Cannot read source state: ${STATE_PARSE_ERROR:-invalid state}"
+  is_positive_decimal "$STATE_VERSION" || fail 'Source profile version is invalid.'
+  is_positive_decimal "$STATE_PROGRESS" || fail 'Source progress version is invalid.'
+  plan_migration=$MIGRATION_ID
+  [ -n "$plan_migration" ] || plan_migration=hello-migration-$(file_stamp)-$$
+  safe_migration_id "$plan_migration" || fail 'Invalid migration id.'
+  target_exists=false
+  target_layout=
+  target_issues_json='[]'
+  mapping_ready=false
+  if [ -e "$TARGET_PATH" ]; then
+    target_exists=true
+    [ -d "$TARGET_PATH" ] || fail 'Target path exists and is not a directory.'
+    acquire_extra_lock "$TARGET_PATH"
+    if validate_target_space "$TARGET_PATH"; then
+      target_layout=$(target_marker_value "$TARGET_PATH/.hello-state" layout)
+      target_migration=$(target_marker_value "$TARGET_PATH/.hello-state" migration_id) || target_migration=
+      [ "$target_migration" = "$plan_migration" ] || fail 'Target migration id does not match the requested migration.'
+      target_manifest_profile=$(target_manifest_source_value "$TARGET_PATH/manifest.json" profile sha256) || target_manifest_profile=
+      target_manifest_progress=$(target_manifest_source_value "$TARGET_PATH/manifest.json" progress sha256) || target_manifest_progress=
+      target_manifest_pending=$(target_manifest_source_value "$TARGET_PATH/manifest.json" pending sha256) || target_manifest_pending=
+      [ "$target_manifest_profile" = "$TARGET_SOURCE_PROFILE_HASH" ] || fail 'Target manifest profile hash does not match source.'
+      [ "$target_manifest_progress" = "$TARGET_SOURCE_PROGRESS_HASH" ] || fail 'Target manifest progress hash does not match source.'
+      [ "$target_manifest_pending" = "$TARGET_SOURCE_PENDING_HASH" ] || fail 'Target manifest pending hash does not match source.'
+      mapping_ready=true
+    else
+      target_issues_json=${TARGET_VALIDATION_ISSUES_JSON-'["Invalid target package"]'}
+    fi
+  elif [ "$CONFIRMED" = true ]; then
+    # An explicitly confirmed plan may materialize the deterministic draft
+    # skeleton; an unconfirmed probe remains strictly read-only.
+    # Let target_init_draft create the root after the independent-root check.
+    # Creating it before acquiring the secondary lock would leave `.hello-lock`
+    # in an otherwise empty directory, which the draft initializer correctly
+    # rejects as unexpected user content.
+    acquire_extra_lock "$TARGET_PATH"
+    target_init_draft "$TARGET_PATH" "$plan_migration" "$STATE_VERSION" "$STATE_PROGRESS" \
+      "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$(utc_now)" pkg-$plan_migration subject-local || fail 'Cannot initialize confirmed target draft.'
+    target_exists=true
+    target_layout=target-draft
+    mapping_ready=true
+    target_issues_json='[]'
+  fi
+  printf '{"ok":true,"command":"migrate-plan","source_root":"%s","target_root":"%s","migration_id":"%s","source_profile_version":"%s","source_progress_version":"%s","source_profile_sha256":"%s","source_progress_sha256":"%s","source_pending_sha256":"%s","target_exists":%s,"target_layout":"%s","mapping_ready":%s,"target_issues":%s}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$TARGET_PATH")" "$(json_escape "$plan_migration")" "$STATE_VERSION" "$STATE_PROGRESS" \
+    "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$target_exists" "$(json_escape "$target_layout")" "$mapping_ready" "$target_issues_json"
+  # Release secondary and primary locks before returning to a caller that may
+  # capture this command's output in a command substitution.  The explicit
+  # cleanup complements the EXIT trap and avoids leaving a target busy marker
+  # on shells that do not run inherited traps for nested invocations.
+  release_extra_locks
+  release_store_lock
+}
+
+promote_target_in_place() {
+  promote_root=$1
+  promote_migration=$2
+  promote_profile_version=$3
+  promote_progress_version=$4
+  promote_profile_hash=$5
+  promote_progress_hash=$6
+  promote_pending_hash=$7
+  promote_package=${8-pkg-local}
+  promote_subject=${9-subject-local}
+  validate_target_space "$promote_root" || return 1
+  current_promote_migration=$(target_marker_value "$promote_root/.hello-state" migration_id) || current_promote_migration=
+  [ "$current_promote_migration" = "$promote_migration" ] || return 1
+  write_target_marker "$promote_root" target "$promote_migration" "$promote_package" "$promote_subject" \
+    "$promote_profile_version" "$promote_progress_version" "$promote_profile_hash" "$promote_progress_hash" "$promote_pending_hash" "$(utc_now)" || return 1
+  sync_target_compat_state "$promote_root" || return 1
+  write_target_manifest "$promote_root" target "$promote_migration" "$promote_package" "$promote_subject" \
+    "$promote_profile_hash" "$promote_progress_hash" "$promote_pending_hash" "$(utc_now)" "$promote_profile_version" "$promote_progress_version" || return 1
+  validate_target_space "$promote_root"
+}
+
+migrate_apply_command() {
+  require_confirmed
+  require_valid
+  assert_independent_roots "$ROOT" "$TARGET_PATH"
+  assert_independent_roots "$ROOT" "$DESTINATION_PATH"
+  # Target and destination may intentionally be identical for an in-place
+  # promotion.  Distinct roots must also be independent of each other.
+  if [ "$TARGET_PATH" != "$DESTINATION_PATH" ]; then
+    assert_independent_roots "$TARGET_PATH" "$DESTINATION_PATH"
+  fi
+  is_positive_decimal "$EXPECTED_VERSION" || fail '--expected-version must be a positive decimal integer.'
+  is_positive_decimal "$EXPECTED_PROGRESS_VERSION" || fail '--expected-progress-version must be a positive decimal integer.'
+  read_state || fail "Cannot read source state: ${STATE_PARSE_ERROR:-invalid state}"
+  [ "$EXPECTED_VERSION" = "$STATE_VERSION" ] || fail "Version conflict: expected $EXPECTED_VERSION, current $STATE_VERSION."
+  [ "$EXPECTED_PROGRESS_VERSION" = "$STATE_PROGRESS" ] || fail "Progress version conflict: expected $EXPECTED_PROGRESS_VERSION, current $STATE_PROGRESS."
+  acquire_extra_lock "$TARGET_PATH"
+  [ "$TARGET_PATH" = "$DESTINATION_PATH" ] || acquire_extra_lock "$DESTINATION_PATH"
+  target_required_source_hashes "$ROOT" || fail 'Cannot hash source profile files.'
+  validate_target_space "$TARGET_PATH" || fail "Target draft is invalid: $TARGET_VALIDATION_ISSUES"
+  draft_marker=$TARGET_PATH/.hello-state
+  draft_migration=$(target_marker_value "$draft_marker" migration_id) || draft_migration=
+  [ -n "$draft_migration" ] || fail 'Target draft has no migration id.'
+  [ -n "$MIGRATION_ID" ] && [ "$MIGRATION_ID" != "$draft_migration" ] && fail 'Migration id does not match target draft.'
+  draft_profile_hash=$(target_marker_value "$draft_marker" source_profile_sha256) || draft_profile_hash=
+  draft_progress_hash=$(target_marker_value "$draft_marker" source_progress_sha256) || draft_progress_hash=
+  draft_pending_hash=$(target_marker_value "$draft_marker" source_pending_sha256) || draft_pending_hash=
+  [ -z "$draft_profile_hash" ] || [ "$draft_profile_hash" = "$TARGET_SOURCE_PROFILE_HASH" ] || fail 'Target draft source profile hash is stale.'
+  [ -z "$draft_progress_hash" ] || [ "$draft_progress_hash" = "$TARGET_SOURCE_PROGRESS_HASH" ] || fail 'Target draft source progress hash is stale.'
+  [ -z "$draft_pending_hash" ] || [ "$draft_pending_hash" = "$TARGET_SOURCE_PENDING_HASH" ] || fail 'Target draft source pending hash is stale.'
+  draft_package=$(target_marker_value "$draft_marker" package_id) || draft_package=pkg-local
+  draft_subject=$(target_marker_value "$draft_marker" subject_id) || draft_subject=subject-local
+  if [ "$TARGET_PATH" = "$DESTINATION_PATH" ]; then
+    promote_target_in_place "$TARGET_PATH" "$draft_migration" "$STATE_VERSION" "$STATE_PROGRESS" \
+      "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$draft_package" "$draft_subject" || fail 'Cannot promote target draft in place.'
+    printf '{"ok":true,"command":"migrate-apply","source_root":"%s","target_root":"%s","destination_root":"%s","migration_id":"%s","promoted_in_place":true}\n' \
+      "$(json_escape "$ROOT")" "$(json_escape "$TARGET_PATH")" "$(json_escape "$DESTINATION_PATH")" "$(json_escape "$draft_migration")"
+    return
+  fi
+  if [ -e "$DESTINATION_PATH" ]; then
+    [ -d "$DESTINATION_PATH" ] || fail 'Destination exists and is not a directory.'
+    find "$DESTINATION_PATH" -mindepth 1 -print -quit 2>/dev/null | grep -q . && fail 'Destination must be absent or empty.'
+  else
+    parent_destination=$(dirname "$DESTINATION_PATH")
+    mkdir -p "$parent_destination" || fail 'Cannot create destination parent.'
+  fi
+  staging_parent=$(dirname "$DESTINATION_PATH")
+  staging_path=$staging_parent/.hello-target-stage-$$
+  [ ! -e "$staging_path" ] || fail 'Target staging path already exists.'
+  mkdir -p "$staging_path" || fail 'Cannot create target staging directory.'
+  if ! copy_target_tree "$TARGET_PATH" "$staging_path"; then
+    rm -rf "$staging_path" 2>/dev/null || true
+    fail 'Cannot copy target draft to destination.'
+  fi
+  promote_target_in_place "$staging_path" "$draft_migration" "$STATE_VERSION" "$STATE_PROGRESS" \
+    "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$draft_package" "$draft_subject" || {
+      rm -rf "$staging_path" 2>/dev/null || true
+      fail 'Cannot finalize target destination.'
+    }
+  [ "$SIMULATE_FAILURE" = false ] || { rm -rf "$staging_path" 2>/dev/null || true; fail 'Simulated migration failure; source and destination remain unchanged.'; }
+  mv "$staging_path" "$DESTINATION_PATH" || { rm -rf "$staging_path" 2>/dev/null || true; fail 'Cannot atomically install target destination.'; }
+  validate_target_space "$DESTINATION_PATH" || fail "Installed target destination is invalid: $TARGET_VALIDATION_ISSUES"
+  printf '{"ok":true,"command":"migrate-apply","source_root":"%s","target_root":"%s","destination_root":"%s","migration_id":"%s","promoted_in_place":false}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$TARGET_PATH")" "$(json_escape "$DESTINATION_PATH")" "$(json_escape "$draft_migration")"
+}
+
+rebuild_index_command() {
+  require_confirmed
+  validate_target_space "$ROOT" || fail "Target package is invalid: $TARGET_VALIDATION_ISSUES"
+  authority_dir=$ROOT/权威
+  mkdir -p "$authority_dir" || fail 'Cannot create authority index directory.'
+  authority_list=$ROOT/.authority-files.$$.tmp
+  authority_hash_parts=$ROOT/.authority-hashes.$$.tmp
+  authority_index_temp=$authority_dir/.声明索引.$$.tmp
+  index_temp=$ROOT/.资料索引.$$.tmp
+  (cd "$authority_dir" && find . -type f -name '*.md' ! -name 'README.md' ! -name '声明索引.md' -print | LC_ALL=C sort) | sed 's#^./##' > "$authority_list" || fail 'Cannot enumerate authority entries.'
+  : > "$authority_hash_parts" || fail 'Cannot prepare authority hash input.'
+  while IFS= read -r authority_rel; do
+    [ -n "$authority_rel" ] || continue
+    authority_file=$authority_dir/$authority_rel
+    authority_hash=$(sha256_file "$authority_file") || { rm -f "$authority_list" "$authority_hash_parts" "$authority_index_temp"; fail 'Cannot hash authority entry.'; }
+    printf '%s:%s\n' "权威/$authority_rel" "$authority_hash" >> "$authority_hash_parts" || fail 'Cannot write authority hash input.'
+  done < "$authority_list"
+  # Match the Python/PowerShell freshness contract: hash sorted
+  # `path:sha256` lines joined by LF, without a trailing LF.
+  index_source_hash=$(awk '{if (NR > 1) printf "\n"; printf "%s", $0}' "$authority_hash_parts" | sha256sum | awk '{print $1}') || { rm -f "$authority_list" "$authority_hash_parts"; fail 'Cannot hash authority index input.'; }
+  index_source_matrix_version=$(sha256_file "$ROOT/主题覆盖矩阵.md") || { rm -f "$authority_list" "$authority_hash_parts"; fail 'Cannot hash topic matrix.'; }
+  generated_at=$(utc_now)
+  {
+    printf '{\n'
+    printf '  "layout": "target",\n'
+    printf '  "layout_version": 1,\n'
+    printf '  "generated_at": "%s",\n' "$(json_escape "$generated_at")"
+    printf '  "index_source_hash": "%s",\n' "$index_source_hash"
+    printf '  "index_source_version": "%s",\n' "$(json_escape "$(target_marker_value "$ROOT/.hello-state" profile_version)")"
+    printf '  "index_source_progress_version": "%s",\n' "$(json_escape "$(target_marker_value "$ROOT/.hello-state" progress_version)")"
+    printf '  "index_source_matrix_version": "%s",\n' "$index_source_matrix_version"
+    printf '  "entries": ['
+    authority_first=true
+    while IFS= read -r authority_rel; do
+      [ -n "$authority_rel" ] || continue
+      authority_file=$authority_dir/$authority_rel
+      authority_kind=Claim
+      case $authority_rel in 事件/*) authority_kind=Event ;; 决策/*) authority_kind=Decision ;; esac
+      authority_id=$(target_frontmatter_value "$authority_file" claim_id); [ -n "$authority_id" ] || authority_id=$(target_frontmatter_value "$authority_file" event_id); [ -n "$authority_id" ] || authority_id=$(target_frontmatter_value "$authority_file" decision_id); [ -n "$authority_id" ] || authority_id=$(target_frontmatter_value "$authority_file" draft_id); [ -n "$authority_id" ] || authority_id=$(target_frontmatter_value "$authority_file" id); [ -n "$authority_id" ] || authority_id=${authority_rel##*/}; authority_id=${authority_id%.md}
+      authority_topics=$(target_frontmatter_array_json "$authority_file" topic_id topic_ids cross_topic_ids) || authority_topics='[]'
+      authority_status=$(target_frontmatter_value "$authority_file" status); [ -n "$authority_status" ] || authority_status=unknown
+      authority_sensitivity=$(target_frontmatter_value "$authority_file" sensitivity); [ -n "$authority_sensitivity" ] || authority_sensitivity=unknown
+      authority_sources=$(target_frontmatter_array_json "$authority_file" source_ref source_refs) || authority_sources='[]'
+      authority_allowed_uses=$(target_frontmatter_array_json "$authority_file" allowed_use allowed_uses) || authority_allowed_uses='[]'
+      authority_hash=$(sha256_file "$authority_file") || fail 'Cannot hash authority entry.'
+      [ "$authority_first" = true ] || printf ','
+      authority_first=false
+      printf '{"id":"%s","topic_ids":%s,"kind":"%s","status":"%s","source_refs":%s,"sensitivity":"%s","allowed_uses":%s,"path":"%s","sha256":"%s"}' \
+        "$(json_escape "$authority_id")" "$authority_topics" "$(json_escape "$authority_kind")" "$(json_escape "$authority_status")" "$authority_sources" "$(json_escape "$authority_sensitivity")" "$authority_allowed_uses" "$(json_escape "权威/$authority_rel")" "$authority_hash"
+    done < "$authority_list"
+    printf ']\n}\n'
+  } > "$authority_index_temp" || { rm -f "$authority_list" "$authority_hash_parts" "$authority_index_temp"; fail 'Cannot build authority index.'; }
+  mv -f "$authority_index_temp" "$authority_dir/声明索引.json" || fail 'Cannot finalize authority index.'
+  update_target_marker_keys "$ROOT" index_source_hash "$index_source_hash" index_generated_at "$generated_at" index_source_matrix_version "$index_source_matrix_version" || fail 'Cannot update target index freshness metadata.'
+  rebuild_migration=$(target_marker_value "$ROOT/.hello-state" migration_id) || rebuild_migration=local
+  rebuild_package=$(target_marker_value "$ROOT/.hello-state" package_id) || rebuild_package=pkg-local
+  rebuild_subject=$(target_marker_value "$ROOT/.hello-state" subject_id) || rebuild_subject=subject-local
+  rebuild_profile_hash=$(target_marker_value "$ROOT/.hello-state" source_profile_sha256) || rebuild_profile_hash=
+  rebuild_progress_hash=$(target_marker_value "$ROOT/.hello-state" source_progress_sha256) || rebuild_progress_hash=
+  rebuild_pending_hash=$(target_marker_value "$ROOT/.hello-state" source_pending_sha256) || rebuild_pending_hash=
+  rebuild_profile_version=$(target_marker_value "$ROOT/.hello-state" profile_version) || rebuild_profile_version=$(target_marker_value "$ROOT/.hello-state" source_profile_version)
+  rebuild_progress_version=$(target_marker_value "$ROOT/.hello-state" progress_version) || rebuild_progress_version=$(target_marker_value "$ROOT/.hello-state" source_progress_version)
+  write_target_manifest "$ROOT" target "$rebuild_migration" "$rebuild_package" "$rebuild_subject" "$rebuild_profile_hash" "$rebuild_progress_hash" "$rebuild_pending_hash" "$generated_at" "$rebuild_profile_version" "$rebuild_progress_version" "$index_source_hash" "$generated_at" "$index_source_matrix_version" || fail 'Cannot update target manifest freshness metadata.'
+  {
+    printf '# 资料索引\n\n'
+    printf -- '- 布局：target\n'
+    printf -- '- 权威条目数：%s\n' "$(grep -o '"id"' "$authority_dir/声明索引.json" | wc -l | tr -d '[:space:]')"
+    printf -- '- 索引源哈希：%s\n' "$index_source_hash"
+    printf -- '- 索引源矩阵版本：%s\n' "$index_source_matrix_version"
+    printf -- '- 生成时间：%s\n' "$generated_at"
+  } > "$index_temp" || fail 'Cannot build target index summary.'
+  mv -f "$index_temp" "$ROOT/资料索引.md" || fail 'Cannot finalize target index summary.'
+  rm -f "$authority_list" "$authority_hash_parts"
+  printf '{"ok":true,"command":"rebuild-index","root":"%s","layout":"target","entry_count":"%s","index_source_hash":"%s","index_source_matrix_version":"%s","generated_at":"%s"}\n' \
+    "$(json_escape "$ROOT")" "$(grep -o '"id"' "$authority_dir/声明索引.json" | wc -l | tr -d '[:space:]')" "$index_source_hash" "$index_source_matrix_version" "$(json_escape "$generated_at")"
+}
+
+copy_target_content_for_switch() {
+  switch_source=$1
+  switch_destination=$2
+  mkdir -p "$switch_destination" || return 1
+  # Keep the canonical compatibility/history stores intact.  The target's
+  # authoritative/derived/index files are copied; raw interviews, backups,
+  # trash, and old history remain owned by the canonical root and are covered
+  # by the pre-switch snapshot.
+  for switch_item in "$switch_source"/* "$switch_source"/.[!.]* "$switch_source"/..?*; do
+    [ -e "$switch_item" ] || continue
+    switch_name=$(basename "$switch_item")
+    case $switch_name in
+      .hello-state|.hello-lock|.hello-transaction|.hello-layout-transaction|历史版本|原始访谈|.backups|.trash) continue ;;
+    esac
+    cp -R "$switch_item" "$switch_destination"/ || return 1
+  done
+  return 0
+}
+
+create_layout_snapshot() {
+  snapshot_source=$1
+  snapshot_id=$2
+  snapshot_version=${3-1}
+  snapshot_parent=$snapshot_source/历史版本
+  snapshot_path=$snapshot_parent/compat-v$snapshot_version-$snapshot_id
+  [ ! -e "$snapshot_path" ] || { SNAPSHOT_PATH=$snapshot_path; return 0; }
+  mkdir -p "$snapshot_parent" || return 1
+  snapshot_tmp_parent=$(mktemp -d "${TMPDIR:-/tmp}/hello-layout-snapshot.XXXXXX") || return 1
+  snapshot_tmp=$snapshot_tmp_parent/canonical
+  if ! copy_target_tree "$snapshot_source" "$snapshot_tmp"; then
+    rm -rf "$snapshot_tmp_parent" 2>/dev/null || true
+    return 1
+  fi
+  rm -rf "$snapshot_tmp/.hello-lock" "$snapshot_tmp/.hello-transaction" "$snapshot_tmp/.hello-layout-transaction" 2>/dev/null || true
+  if ! mv "$snapshot_tmp" "$snapshot_path"; then
+    rm -rf "$snapshot_tmp_parent" 2>/dev/null || true
+    return 1
+  fi
+  rmdir "$snapshot_tmp_parent" 2>/dev/null || true
+  snapshot_meta_temp=$(mktemp "$snapshot_path/.snapshot.XXXXXX") || return 1
+  {
+    printf '{"layout_snapshot":true,"migration_id":"%s","profile_version":"%s","created_at":"%s"}\n' \
+      "$(json_escape "$snapshot_id")" "$(json_escape "$snapshot_version")" "$(utc_now)"
+  } > "$snapshot_meta_temp" || { rm -f "$snapshot_meta_temp"; return 1; }
+  mv -f "$snapshot_meta_temp" "$snapshot_path/snapshot.json" || { rm -f "$snapshot_meta_temp"; return 1; }
+  SNAPSHOT_PATH=$snapshot_path
+  return 0
+}
+
+write_layout_transaction() {
+  layout_transaction_root=$1
+  layout_transaction_id=$2
+  layout_transaction_snapshot=$3
+  layout_transaction_target=$4
+  layout_transaction_temp=$layout_transaction_root/.hello-layout-transaction.$$
+  {
+    printf 'schema_version=1\n'
+    printf 'kind=switch-layout\n'
+    printf 'migration_id=%s\n' "$layout_transaction_id"
+    printf 'snapshot=%s\n' "${layout_transaction_snapshot#"$layout_transaction_root"/}"
+    printf 'target=%s\n' "$layout_transaction_target"
+  } > "$layout_transaction_temp" || return 1
+  if ! ln "$layout_transaction_temp" "$layout_transaction_root/.hello-layout-transaction" 2>/dev/null; then
+    rm -f "$layout_transaction_temp" 2>/dev/null || true
+    return 1
+  fi
+  rm -f "$layout_transaction_temp" 2>/dev/null || true
+  return 0
+}
+
+remove_layout_transaction() {
+  [ ! -e "$1/.hello-layout-transaction" ] || rm -f "$1/.hello-layout-transaction"
+}
+
+restore_layout_snapshot_internal() {
+  restore_root=$1
+  restore_snapshot=$2
+  restore_id=$3
+  [ -d "$restore_snapshot" ] || return 1
+  # Move current non-history content to a recoverable trash area before
+  # restoring.  This makes rollback exact while retaining the post-switch
+  # target package for forensic recovery.
+  restore_trash=$restore_root/.trash/layout-switch-$restore_id-current
+  [ ! -e "$restore_trash" ] || restore_trash=$restore_root/.trash/layout-switch-$restore_id-current-$(file_stamp)
+  mkdir -p "$restore_trash" || return 1
+  for restore_item in "$restore_root"/* "$restore_root"/.[!.]* "$restore_root"/..?*; do
+    [ -e "$restore_item" ] || continue
+    restore_name=$(basename "$restore_item")
+    case $restore_name in
+      .hello-lock|.hello-layout-transaction|.hello-transaction|.trash|历史版本) continue ;;
+    esac
+    mv "$restore_item" "$restore_trash"/ || return 1
+  done
+  # Copy the snapshot back, preserving all pre-existing canonical files.  A
+  # snapshot created by this adapter never contains its own lock/transaction.
+  for restore_item in "$restore_snapshot"/* "$restore_snapshot"/.[!.]* "$restore_snapshot"/..?*; do
+    [ -e "$restore_item" ] || continue
+    restore_name=$(basename "$restore_item")
+    case $restore_name in .hello-lock|.hello-layout-transaction|.hello-transaction|snapshot.json) continue ;; esac
+    cp -R "$restore_item" "$restore_root"/ || return 1
+  done
+  rm -f "$restore_root/.hello-layout-transaction" 2>/dev/null || true
+  RESTORED_LAYOUT_TRASH=$restore_trash
+  return 0
+}
+
+switch_layout_command() {
+  require_confirmed
+  # ROOT is canonical; TARGET_PATH is the formal target package.
+  require_valid
+  assert_independent_roots "$ROOT" "$TARGET_PATH"
+  is_positive_decimal "$EXPECTED_VERSION" || fail '--expected-version must be a positive decimal integer.'
+  is_positive_decimal "$EXPECTED_PROGRESS_VERSION" || fail '--expected-progress-version must be a positive decimal integer.'
+  read_state || fail "Cannot read canonical state: ${STATE_PARSE_ERROR:-invalid state}"
+  [ "$EXPECTED_VERSION" = "$STATE_VERSION" ] || fail "Version conflict: expected $EXPECTED_VERSION, current $STATE_VERSION."
+  [ "$EXPECTED_PROGRESS_VERSION" = "$STATE_PROGRESS" ] || fail "Progress version conflict: expected $EXPECTED_PROGRESS_VERSION, current $STATE_PROGRESS."
+  acquire_extra_lock "$TARGET_PATH"
+  validate_target_space "$TARGET_PATH" || fail "Formal target is invalid: $TARGET_VALIDATION_ISSUES"
+  target_marker=$TARGET_PATH/.hello-state
+  formal_layout=$(target_marker_value "$target_marker" layout) || formal_layout=
+  [ "$formal_layout" = target ] || fail 'switch-layout requires a formal target with layout=target.'
+  switch_id=$(target_marker_value "$target_marker" migration_id) || switch_id=
+  [ -n "$switch_id" ] || fail 'Formal target has no migration id.'
+  [ -n "$MIGRATION_ID" ] && [ "$MIGRATION_ID" != "$switch_id" ] && fail 'Migration id does not match formal target.'
+  target_profile_hash=$(target_marker_value "$target_marker" source_profile_sha256) || target_profile_hash=
+  target_progress_hash=$(target_marker_value "$target_marker" source_progress_sha256) || target_progress_hash=
+  target_pending_hash=$(target_marker_value "$target_marker" source_pending_sha256) || target_pending_hash=
+  target_required_source_hashes "$ROOT" || fail 'Cannot hash canonical profile files.'
+  [ -z "$target_profile_hash" ] || [ "$target_profile_hash" = "$TARGET_SOURCE_PROFILE_HASH" ] || fail 'Formal target was built from a different profile version.'
+  [ -z "$target_progress_hash" ] || [ "$target_progress_hash" = "$TARGET_SOURCE_PROGRESS_HASH" ] || fail 'Formal target was built from a different progress version.'
+  [ -z "$target_pending_hash" ] || [ "$target_pending_hash" = "$TARGET_SOURCE_PENDING_HASH" ] || fail 'Formal target was built from different pending information.'
+  # If already active with this migration, make the command idempotent.
+  if [ -f "$ROOT/.hello-state" ] && grep -q '^layout=target$' "$ROOT/.hello-state" 2>/dev/null; then
+    active_id=$(target_marker_value "$ROOT/.hello-state" migration_id) || active_id=
+    if [ "$active_id" = "$switch_id" ]; then
+      validate_target_space "$ROOT" || fail "Active target is invalid: $TARGET_VALIDATION_ISSUES"
+      printf '{"ok":true,"command":"switch-layout","root":"%s","target_root":"%s","migration_id":"%s","idempotent":true}\n' \
+        "$(json_escape "$ROOT")" "$(json_escape "$TARGET_PATH")" "$(json_escape "$switch_id")"
+      return
+    fi
+    fail 'Canonical root already uses a different target migration.'
+  fi
+  create_layout_snapshot "$ROOT" "$switch_id" "$EXPECTED_VERSION" || fail 'Cannot create canonical rollback snapshot.'
+  switch_snapshot=$SNAPSHOT_PATH
+  write_layout_transaction "$ROOT" "$switch_id" "$switch_snapshot" "$TARGET_PATH" || fail 'Cannot create layout transaction marker.'
+  if ! copy_target_content_for_switch "$TARGET_PATH" "$ROOT"; then
+    restore_layout_snapshot_internal "$ROOT" "$switch_snapshot" "$switch_id" >/dev/null 2>&1 || true
+    fail 'Cannot copy formal target into canonical root; snapshot retained for rollback.'
+  fi
+  target_package=$(target_marker_value "$target_marker" package_id) || target_package=pkg-local
+  target_subject=$(target_marker_value "$target_marker" subject_id) || target_subject=subject-local
+  if ! write_target_marker "$ROOT" target "$switch_id" "$target_package" "$target_subject" "$STATE_VERSION" "$STATE_PROGRESS" \
+      "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$(utc_now)"; then
+    restore_layout_snapshot_internal "$ROOT" "$switch_snapshot" "$switch_id" >/dev/null 2>&1 || true
+    fail 'Cannot write active target marker; snapshot retained for rollback.'
+  fi
+  if ! sync_target_compat_state "$ROOT"; then
+    restore_layout_snapshot_internal "$ROOT" "$switch_snapshot" "$switch_id" >/dev/null 2>&1 || true
+    fail 'Cannot write active target compatibility state; snapshot retained for rollback.'
+  fi
+  write_target_manifest "$ROOT" target "$switch_id" "$target_package" "$target_subject" "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$(utc_now)" "$STATE_VERSION" "$STATE_PROGRESS" || {
+    restore_layout_snapshot_internal "$ROOT" "$switch_snapshot" "$switch_id" >/dev/null 2>&1 || true
+    fail 'Cannot write active target manifest; snapshot retained for rollback.'
+  }
+  [ "$SIMULATE_FAILURE" = false ] || fail 'Simulated layout switch failure; run rollback-layout with the migration id.'
+  if ! validate_target_space "$ROOT"; then
+    fail "Switched canonical target is invalid: $TARGET_VALIDATION_ISSUES"
+  fi
+  remove_layout_transaction "$ROOT"
+  printf '{"ok":true,"command":"switch-layout","root":"%s","target_root":"%s","migration_id":"%s","snapshot":"%s","idempotent":false}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$TARGET_PATH")" "$(json_escape "$switch_id")" "$(json_escape "$switch_snapshot")"
+}
+
+rollback_layout_command() {
+  require_confirmed
+  [ -n "$MIGRATION_ID" ] || fail 'rollback-layout requires --migration-id.'
+  safe_migration_id "$MIGRATION_ID" || fail 'Invalid migration id.'
+  snapshot_candidate=
+  if [ -f "$ROOT/.hello-layout-transaction" ]; then
+    validate_marker_syntax "$ROOT/.hello-layout-transaction" || fail 'Invalid layout transaction marker.'
+    transaction_id=$(state_value "$ROOT/.hello-layout-transaction" migration_id) || transaction_id=
+    [ "$transaction_id" = "$MIGRATION_ID" ] || fail 'Interrupted transaction migration_id does not match.'
+    transaction_snapshot=$(state_value "$ROOT/.hello-layout-transaction" snapshot) || transaction_snapshot=
+    case $transaction_snapshot in ''|/*|../*|*/../*|*/..) fail 'Layout transaction snapshot path is unsafe.' ;; esac
+    snapshot_candidate=$ROOT/$transaction_snapshot
+  else
+    # Snapshot names include the guarded compatibility version. Resolve a
+    # single matching directory without accepting a user-controlled glob/path.
+    for rollback_candidate in "$ROOT"/历史版本/compat-v*-$MIGRATION_ID; do
+      [ -d "$rollback_candidate" ] || continue
+      if [ -n "$snapshot_candidate" ]; then fail 'Multiple rollback snapshots found for migration id.'; fi
+      snapshot_candidate=$rollback_candidate
+    done
+  fi
+  [ -d "$snapshot_candidate" ] || fail 'Rollback snapshot not found.'
+  [ -f "$snapshot_candidate/snapshot.json" ] || fail 'Rollback snapshot metadata is missing.'
+  snapshot_metadata_compact=$(tr -d '\r\n' < "$snapshot_candidate/snapshot.json")
+  snapshot_metadata_migration=$(printf '%s' "$snapshot_metadata_compact" | sed -n 's/.*"migration_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  [ "$snapshot_metadata_migration" = "$MIGRATION_ID" ] || fail 'Rollback snapshot migration_id does not match.'
+  snapshot_metadata_version=$(printf '%s' "$snapshot_metadata_compact" | sed -n 's/.*"profile_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  is_positive_decimal "$snapshot_metadata_version" || fail 'Rollback snapshot profile_version is invalid.'
+  [ -f "$snapshot_candidate/.hello-state" ] || fail 'Rollback snapshot state is missing.'
+  snapshot_schema=$(state_value "$snapshot_candidate/.hello-state" schema_version) || snapshot_schema=
+  case $snapshot_schema in 1|2) ;; *) fail 'Rollback snapshot must contain a compatibility schema-1/2 state.' ;; esac
+  if ! restore_layout_snapshot_internal "$ROOT" "$snapshot_candidate" "$MIGRATION_ID"; then
+    fail 'Rollback failed; snapshot and current files were retained.'
+  fi
+  if ! validate_space true; then
+    fail "Rollback restored files but canonical validation failed: $VALIDATION_ISSUES"
+  fi
+  printf '{"ok":true,"command":"rollback-layout","root":"%s","migration_id":"%s","snapshot":"%s","recovery_trash":"%s"}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$MIGRATION_ID")" "$(json_escape "$snapshot_candidate")" "$(json_escape "$RESTORED_LAYOUT_TRASH")"
+}
+
 assert_cli_parser_error() {
   expected_command=$1
   shift
@@ -1230,8 +2434,33 @@ self_test() {
   assert_cli_parser_error status status --root /tmp/hello-one --root /tmp/hello-two
   assert_cli_parser_error status status --
   assert_cli_parser_error init init --confirmed
+  assert_cli_parser_error target-validate target-validate
+  assert_cli_parser_error migrate-plan migrate-plan --root /tmp/hello-source --confirmed
+  assert_cli_parser_error migrate-apply migrate-apply --root /tmp/hello-source --target /tmp/hello-draft --confirmed
+  assert_cli_parser_error switch-layout switch-layout --root /tmp/hello-source --target /tmp/hello-formal --confirmed
+  assert_cli_parser_error rollback-layout rollback-layout --root /tmp/hello-source --confirmed
+  export HELLO_SELF_TEST_ACTIVE=1
   temporary=$(mktemp -d "${TMPDIR:-/tmp}/hello-self-test.XXXXXX") || fail 'Cannot create self-test directory.'
-  trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+  # Keep cleanup owned by the top-level self-test shell.  Bash runs EXIT traps
+  # in command-substitution subshells; without this guard a nested probe such
+  # as `status=$(sh "$0" ...)` can remove the fixture while the parent is still
+  # using it.  `BASHPID` is optional so native POSIX shells retain the same
+  # behavior when they do not expose it.
+  self_test_main_bashpid=${BASHPID-}
+  self_test_cleanup() {
+    # Bash command substitutions increment BASH_SUBSHELL even when the
+    # compatibility `sh` wrapper reports the same BASHPID.  Use that stable
+    # signal first; otherwise a nested probe such as `status=$(sh "$0" ...)`
+    # can run the parent EXIT trap and remove the fixture mid-test.
+    if [ "${BASH_SUBSHELL-0}" -ne 0 ]; then
+      return 0
+    fi
+    if [ -n "${self_test_main_bashpid-}" ] && [ "${BASHPID-}" != "$self_test_main_bashpid" ]; then
+      return 0
+    fi
+    rm -rf "$temporary"
+  }
+  trap 'self_test_cleanup' EXIT
   if is_iso_utc '2030-01-01T00:00:00+08:00'; then fail 'Self-test accepted a non-UTC timestamp.'; fi
   if is_iso_utc '2030-02-30T00:00:00Z'; then fail 'Self-test accepted an invalid calendar timestamp.'; fi
   if is_iso_utc '0000-01-01T00:00:00Z'; then fail 'Self-test accepted year zero.'; fi
@@ -1446,8 +2675,35 @@ kind=record-turn'; do
   mv "$root/待确认信息.md.crlf" "$root/待确认信息.md"
   sh "$0" withdraw --root "$root" --id "$staged_id" --confirmed >/dev/null || fail 'Self-test withdraw failed for CRLF pending data.'
   validation=$(sh "$0" validate --root "$root" 2>&1) || fail "Self-test final validation failed: $validation"
+
+  # Target-layout migration fixture: all content is synthetic and isolated
+  # under the self-test temporary directory.  Exercise the full plan -> apply
+  # -> index -> switch -> status -> rollback path, plus the version fence.
+  target_source=$temporary/target-source
+  target_draft=$temporary/target-draft
+  target_formal=$temporary/target-formal
+  sh "$0" init --root "$target_source" --confirmed >/dev/null || fail 'Self-test target source init failed.'
+  target_required_source_hashes "$target_source" || fail 'Self-test target source hashing failed.'
+  target_saved_root=${ROOT-}; ROOT=$target_source
+  target_init_draft "$target_draft" self-test-layout 1 1 "$TARGET_SOURCE_PROFILE_HASH" "$TARGET_SOURCE_PROGRESS_HASH" "$TARGET_SOURCE_PENDING_HASH" "$(utc_now)" pkg-self-test subject-self-test || fail 'Self-test target draft fixture creation failed.'
+  ROOT=$target_saved_root
+  target_plan=$(sh "$0" migrate-plan --root "$target_source" --target "$target_draft" --migration-id self-test-layout) || fail 'Self-test migrate-plan failed.'
+  printf '%s' "$target_plan" | grep -q '"migration_id":"self-test-layout"' || fail 'Self-test migrate-plan id missing.'
+  sh "$0" target-validate --root "$target_draft" >/dev/null || fail 'Self-test target draft validation failed.'
+  if sh "$0" migrate-apply --root "$target_source" --target "$target_draft" --destination "$target_formal" --expected-version 2 --expected-progress-version 1 --confirmed >/dev/null 2>&1; then
+    fail 'Self-test migration version fence did not fail.'
+  fi
+  sh "$0" migrate-apply --root "$target_source" --target "$target_draft" --destination "$target_formal" --expected-version 1 --expected-progress-version 1 --confirmed >/dev/null || fail 'Self-test migrate-apply failed.'
+  sh "$0" target-validate --root "$target_formal" >/dev/null || fail 'Self-test formal target validation failed.'
+  sh "$0" rebuild-index --root "$target_formal" --confirmed >/dev/null || fail 'Self-test rebuild-index failed.'
+  sh "$0" switch-layout --root "$target_source" --target "$target_formal" --expected-version 1 --expected-progress-version 1 --confirmed >/dev/null || fail 'Self-test switch-layout failed.'
+  target_status=$(sh "$0" status --root "$target_source") || fail 'Self-test target status failed.'
+  printf '%s' "$target_status" | grep -q '"layout":"target"' || fail 'Self-test target status did not expose layout.'
+  sh "$0" rollback-layout --root "$target_source" --migration-id self-test-layout --confirmed >/dev/null || fail 'Self-test rollback-layout failed.'
+  sh "$0" validate --root "$target_source" >/dev/null || fail 'Self-test post-rollback validation failed.'
   rm -rf "$temporary"
   trap - EXIT HUP INT TERM
+  unset HELLO_SELF_TEST_ACTIVE
   printf '%s\n' '{"ok":true,"command":"self-test"}'
 }
 
@@ -1457,6 +2713,23 @@ if [ "$COMMAND" = self-test ]; then
 fi
 
 resolve_root
+
+# Resolve secondary target/destination roots only for the target-layout
+# commands.  They never inherit HELLO_HOME and are checked for independence
+# inside each command before any write occurs.
+case $COMMAND in
+  target-validate)
+    # For target-validate --root itself is the target root.
+    ;;
+  migrate-plan|migrate-apply|switch-layout)
+    resolve_explicit_path "$TARGET_ARG" '--target'
+    TARGET_PATH=$SECONDARY_PATH
+    if [ "$COMMAND" = migrate-apply ] && [ "$DESTINATION_ARG_SET" = true ]; then
+      resolve_explicit_path "$DESTINATION_ARG" '--destination'
+      DESTINATION_PATH=$SECONDARY_PATH
+    fi
+    ;;
+esac
 
 # Serialize every public operation that touches a profile space.  `init`
 # creates its root only after the confirmation guard, then contends for the
@@ -1511,4 +2784,10 @@ case $COMMAND in
   apply) apply_profile ;;
   record-turn) record_turn ;;
   withdraw) withdraw_candidate ;;
+  target-validate) target_validate_command ;;
+  migrate-plan) migrate_plan_command ;;
+  migrate-apply) migrate_apply_command ;;
+  rebuild-index) rebuild_index_command ;;
+  switch-layout) switch_layout_command ;;
+  rollback-layout) rollback_layout_command ;;
 esac
