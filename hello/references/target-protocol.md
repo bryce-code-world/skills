@@ -28,6 +28,7 @@ migrate-apply --root <source-root> --target <target-draft> --destination <formal
 rebuild-index --root <target-root> --confirmed
 switch-layout --root <canonical-root> --target <formal-target> --expected-version <n> --expected-progress-version <n> --confirmed
 rollback-layout --root <canonical-root> --migration-id <id> --confirmed
+resolve-candidate --root <target-root> --id <candidate-id> --disposition accepted|corrected|merged|rejected|withdrawn|expired --reason <text> [--merge-target <entity-id>] --confirmed
 ```
 
 - `target-validate`、`migrate-plan` 是只读检查；不创建目录、不读取未授权目录。
@@ -36,11 +37,12 @@ rollback-layout --root <canonical-root> --migration-id <id> --confirmed
 - `rebuild-index` 从权威条目确定性重建 `权威/声明索引.json` 和 freshness 元数据；索引不是第二事实源。
 - `switch-layout` 要求两个根互不为对方的父子目录，检查源版本/哈希和目标映射，取得两个根的锁后创建不可覆盖的事务标记。旧 canonical 文件先完整快照到 `历史版本/compat-v<version>-<migration_id>/`，再原子写入目标包并将 marker 改为 `layout=target`。写后双读校验失败时自动回退并保留事务材料。
 - `rollback-layout` 只从已验证的迁移快照恢复；没有匹配快照、版本不符或路径越界时拒绝操作，不删除未知文件。
+- `resolve-candidate` 将指定候选块原子移入 `.trash/candidates/`，并在根目录创建或更新 `候选处置索引.json`。索引记录处置状态、原因、合并目标、时间和归档路径；整个操作与待确认区、状态文件共用可恢复事务。它只关闭候选收件箱，不会把任何 `draft` 权威条目静默提升为 `confirmed`。
 - 所有会改变任一根的命令必须显式给出准确的 `--root`，并带 `--confirmed`；`HELLO_HOME` 只可用于只读探针。`--expected-version` 和 `--expected-progress-version` 保留乐观锁护栏。
 
 ## 旧资料迁移边界
 
-正式运行的 `status`、访谈和写入只接受 `layout=target`，走目标校验、覆盖矩阵和目标事务。旧 schema 2/1 只允许作为迁移命令的只读输入；迁移完成后，旧根级文件只作为 `历史版本` 快照，不再是详细事实的 owner。当前三套适配器已提供目标布局的迁移、索引、切换和回退；目标实体的逐条确认、撤回/合并审计和完整机器 `resume_cursor` 写入口仍按后续冻结范围执行。正式切换后的 `authority_status=active-pending-review` 只表示实体仍待逐条复核，不表示物理布局尚未获确认。目标草稿不得交给旧 `apply`；正式目标只能走目标入口或明确失败。
+正式运行的 `status`、访谈和写入只接受 `layout=target`，走目标校验、覆盖矩阵和目标事务。旧 schema 2/1 只允许作为迁移命令的只读输入；迁移完成后，旧根级文件只作为 `历史版本` 快照，不再是详细事实的 owner。当前三套适配器已提供目标布局的迁移、索引、切换、回退和候选处置审计；目标实体的逐条确认、撤回/合并变更和完整机器 `resume_cursor` 写入口仍按后续冻结范围执行。正式切换后的 `authority_status=active-pending-review` 只表示实体仍待逐条复核，不表示物理布局尚未获确认。目标草稿不得交给旧 `apply`；正式目标只能走目标入口或明确失败。
 
 ## 失败恢复与幂等
 

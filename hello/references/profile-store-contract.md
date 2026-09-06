@@ -29,6 +29,7 @@ migrate-apply --root <source-root> --target <target-draft> --destination <formal
 rebuild-index --root <target-root> --confirmed
 switch-layout --root <canonical-root> --target <formal-target> --expected-version <n> --expected-progress-version <n> --confirmed
 rollback-layout --root <canonical-root> --migration-id <id> --confirmed
+resolve-candidate --id <candidate-id> --disposition accepted|corrected|merged|rejected|withdrawn|expired --reason <text> [--merge-target <entity-id>] --confirmed --root <path>
 self-test
 ```
 
@@ -117,6 +118,10 @@ last_capture_disclosed_mode=<empty or auto-stage|prompt|explicit; mode recorded 
 ```
 
 原始轮次文件不可覆盖；`session-id + turn-id` 是幂等键。相同键已成功写入时返回 `idempotent: true`，其他碰撞失败。进度使用独立乐观锁 `expected-progress-version`，不消耗主档案版本。
+
+### 候选处置
+
+`resolve-candidate` 只处理用户已经逐条决定的候选。它把原候选块移入 `.trash/candidates/`，并以 `候选处置索引.json` 记录 `candidate_id`、`disposition`、`reason`、可选 `merge_target`、处置时间和归档路径；待确认区、索引和 `.hello-state` 在同一可恢复事务中更新。重复调用同一候选返回幂等结果。该命令不改变权威条目的 `draft`/`confirmed` 状态。
 
 ## 六、事务与恢复
 

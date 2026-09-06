@@ -24,6 +24,9 @@ EXPECTED_VERSION=
 KIND=
 SOURCE=
 CANDIDATE_ID=
+DISPOSITION=
+REASON=
+MERGE_TARGET=
 CAPTURE_MODE=
 CAPTURE_MODE_SET=false
 NEXT_REVIEW_AT=
@@ -91,7 +94,7 @@ while [ "$#" -gt 0 ]; do
   case $1 in
     --confirmed) [ "$CONFIRMED_SEEN" = false ] || fail 'Duplicate option: --confirmed'; OPTION_NAMES="$OPTION_NAMES confirmed"; CONFIRMED=true; CONFIRMED_SEEN=true; shift ;;
     --simulate-failure) [ "$SIMULATE_FAILURE_SEEN" = false ] || fail 'Duplicate option: --simulate-failure'; OPTION_NAMES="$OPTION_NAMES simulate-failure"; SIMULATE_FAILURE=true; SIMULATE_FAILURE_SEEN=true; shift ;;
-    --root|--input|--summary-input|--expected-version|--kind|--source|--id|--capture-mode|--next-review-at|--review-stage|--session-id|--turn-id|--progress-input|--expected-progress-version|--target|--destination|--migration-id)
+    --root|--input|--summary-input|--expected-version|--kind|--source|--id|--disposition|--reason|--merge-target|--capture-mode|--next-review-at|--review-stage|--session-id|--turn-id|--progress-input|--expected-progress-version|--target|--destination|--migration-id)
       [ "$#" -ge 2 ] || fail "Missing value for $1"
       case $2 in
         --*) fail "Missing value for $1" ;;
@@ -108,6 +111,9 @@ while [ "$#" -gt 0 ]; do
         --kind) KIND=$2 ;;
         --source) SOURCE=$2 ;;
         --id) CANDIDATE_ID=$2 ;;
+        --disposition) DISPOSITION=$2 ;;
+        --reason) REASON=$2 ;;
+        --merge-target) MERGE_TARGET=$2 ;;
         --capture-mode) CAPTURE_MODE=$2; CAPTURE_MODE_SET=true ;;
         --next-review-at) NEXT_REVIEW_AT=$2; NEXT_REVIEW_AT_SET=true ;;
         --review-stage) REVIEW_STAGE=$2; REVIEW_STAGE_SET=true ;;
@@ -125,7 +131,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 case $COMMAND in
-  resolve-root|init|validate|status|configure|record-disclosure|diff|stage|apply|withdraw|record-turn|recover|self-test|target-validate|migrate-plan|migrate-apply|rebuild-index|switch-layout|rollback-layout) ;;
+  resolve-root|init|validate|status|configure|record-disclosure|diff|stage|apply|withdraw|resolve-candidate|record-turn|recover|self-test|target-validate|migrate-plan|migrate-apply|rebuild-index|switch-layout|rollback-layout) ;;
   *) fail "Unknown command: $COMMAND" ;;
 esac
 
@@ -140,6 +146,7 @@ validate_command_arguments() {
       apply:root|apply:input|apply:summary-input|apply:expected-version|apply:simulate-failure) ;;
       record-turn:root|record-turn:input|record-turn:progress-input|record-turn:session-id|record-turn:turn-id|record-turn:expected-progress-version|record-turn:simulate-failure) ;;
       withdraw:root|withdraw:id) ;;
+      resolve-candidate:root|resolve-candidate:id|resolve-candidate:disposition|resolve-candidate:reason|resolve-candidate:merge-target) ;;
       recover:root) ;;
       target-validate:root) ;;
       migrate-plan:root|migrate-plan:target|migrate-plan:migration-id|migrate-plan:confirmed) ;;
@@ -147,7 +154,7 @@ validate_command_arguments() {
       rebuild-index:root|rebuild-index:confirmed) ;;
       switch-layout:root|switch-layout:target|switch-layout:expected-version|switch-layout:expected-progress-version|switch-layout:migration-id|switch-layout:confirmed|switch-layout:simulate-failure) ;;
       rollback-layout:root|rollback-layout:migration-id|rollback-layout:confirmed) ;;
-      init:confirmed|configure:confirmed|record-disclosure:confirmed|stage:confirmed|apply:confirmed|record-turn:confirmed|withdraw:confirmed|recover:confirmed) ;;
+      init:confirmed|configure:confirmed|record-disclosure:confirmed|stage:confirmed|apply:confirmed|record-turn:confirmed|withdraw:confirmed|resolve-candidate:confirmed|recover:confirmed) ;;
       *) fail "Option --$option is not valid for $COMMAND." ;;
     esac
   done
@@ -160,7 +167,7 @@ validate_command_arguments() {
     *) [ "$SIMULATE_FAILURE" = false ] || fail "Option --simulate-failure is not valid for $COMMAND." ;;
   esac
   case $COMMAND in
-    init|configure|record-disclosure|stage|apply|record-turn|withdraw|recover|migrate-apply|rebuild-index|switch-layout|rollback-layout)
+    init|configure|record-disclosure|stage|apply|record-turn|withdraw|resolve-candidate|recover|migrate-apply|rebuild-index|switch-layout|rollback-layout)
       [ "$ROOT_ARG_SET" = true ] || fail 'Mutating commands require an explicit --root.' ;;
   esac
   if [ "$COMMAND" = migrate-plan ] && [ "$CONFIRMED" = true ] && [ "$ROOT_ARG_SET" != true ]; then
@@ -994,14 +1001,15 @@ validate_transaction_requirements() {
   case $marker_kind in
     apply) required_fields='profile_backup log_backup state_backup' ;;
     record-turn) required_fields='progress_backup state_backup record_path record_created' ;;
+    resolve-candidate) required_fields='pending_backup state_backup archive_path archive_created index_created' ;;
     *) return 1 ;;
   esac
   for required_field in $required_fields; do
     required_value=$(state_value "$marker" "$required_field") || return 1
     [ -n "$required_value" ] || return 1
-    if [ "$required_field" = record_created ]; then
+    case $required_field in record_created|archive_created|index_created)
       case $required_value in true|false) ;; *) return 1 ;; esac
-    fi
+    esac
   done
   return 0
 }
@@ -1559,7 +1567,7 @@ restore_from_marker() {
   RESTORED_JSON=[]
   # Preflight every referenced backup and path before copying any target.  A
   # malformed/incomplete marker must not leave a half-restored tree.
-  for pair in profile:profile_backup log:log_backup state:state_backup progress:progress_backup; do
+  for pair in profile:profile_backup log:log_backup state:state_backup progress:progress_backup pending:pending_backup index:index_backup; do
     backup_key=${pair#*:}
     backup_value=$(state_value "$marker" "$backup_key") || backup_value=
     [ -n "$backup_value" ] || continue
@@ -1568,7 +1576,7 @@ restore_from_marker() {
   done
   record_value=$(state_value "$marker" record_path) || record_value=
   case $record_value in /*|../*|*/../*|*/..) return 1 ;; esac
-  for pair in profile:profile_backup log:log_backup state:state_backup progress:progress_backup; do
+  for pair in profile:profile_backup log:log_backup state:state_backup progress:progress_backup pending:pending_backup index:index_backup; do
     target_key=${pair%%:*}; backup_key=${pair#*:}
     backup_value=$(state_value "$marker" "$backup_key") || backup_value=
     [ -n "$backup_value" ] || continue
@@ -1578,6 +1586,8 @@ restore_from_marker() {
       log) target=$ROOT/迭代日志.md ;;
       state) target=$ROOT/.hello-state ;;
       progress) target=$ROOT/访谈进度.md ;;
+      pending) target=$ROOT/待确认信息.md ;;
+      index) target=$ROOT/候选处置索引.json ;;
     esac
     cp "$ROOT/$backup_value" "$target" || return 1
     target_name=$(basename "$target")
@@ -1594,12 +1604,22 @@ restore_from_marker() {
       rm -f "$ROOT/$record_value" || return 1
     fi
   fi
+  index_created=$(state_value "$marker" index_created) || index_created=false
+  if [ "$index_created" = true ] && [ -z "$(state_value "$marker" index_backup 2>/dev/null || true)" ]; then
+    rm -f "$ROOT/候选处置索引.json" || return 1
+  fi
+  archive_created=$(state_value "$marker" archive_created) || archive_created=false
+  archive_value=$(state_value "$marker" archive_path) || archive_value=
+  if [ "$archive_created" = true ] && [ -n "$archive_value" ]; then
+    case $archive_value in /*|../*|*/../*|*/..) return 1 ;; esac
+    rm -f "$ROOT/$archive_value" || return 1
+  fi
   return 0
 }
 
 cleanup_transaction_backups() {
   validate_marker_syntax "$ROOT/.hello-transaction" || return 1
-  for backup_key in profile_backup log_backup state_backup progress_backup; do
+  for backup_key in profile_backup log_backup state_backup progress_backup pending_backup index_backup; do
     backup_value=$(state_value "$ROOT/.hello-transaction" "$backup_key") || backup_value=
     [ -n "$backup_value" ] || continue
     case $backup_value in /*|../*|*/../*|*/..) return 1 ;; esac
@@ -1869,6 +1889,98 @@ withdraw_candidate() {
   write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || fail 'Cannot write state file.'
   printf '{"ok":true,"command":"withdraw","root":"%s","candidate_id":"%s","trash":"%s"}\n' \
     "$(json_escape "$ROOT")" "$CANDIDATE_ID" "$(json_escape "$trash")"
+}
+
+resolve_candidate() {
+  require_confirmed
+  require_valid
+  [ -n "$CANDIDATE_ID" ] || fail 'resolve-candidate requires --id.'
+  printf '%s\n' "$CANDIDATE_ID" | grep -Eq '^C-[0-9TZ-]+$' || fail 'Invalid candidate id.'
+  case $DISPOSITION in accepted|corrected|merged|rejected|withdrawn|expired) ;; *) fail 'Invalid candidate disposition.' ;; esac
+  [ -n "$REASON" ] || fail 'resolve-candidate requires --reason.'
+  if [ "$DISPOSITION" = merged ] && [ -z "$MERGE_TARGET" ]; then fail 'Merged candidates require --merge-target.'; fi
+  pending=$ROOT/待确认信息.md
+  index=$ROOT/候选处置索引.json
+  # Safe retry: a previously resolved candidate is reported without creating
+  # another archive or changing the profile state.
+  if ! grep -q "^## $CANDIDATE_ID[[:space:]]*$" "$pending" 2>/dev/null; then
+    if [ -f "$index" ] && grep -q '"candidate_id":"'"$CANDIDATE_ID"'"' "$index"; then
+      printf '{"ok":true,"command":"resolve-candidate","root":"%s","candidate_id":"%s","disposition":"%s","idempotent":true}\n' \
+        "$(json_escape "$ROOT")" "$(json_escape "$CANDIDATE_ID")" "$(json_escape "$DISPOSITION")"
+      return 0
+    fi
+    fail "Candidate not found: $CANDIDATE_ID"
+  fi
+  tmp_pending=$ROOT/.resolve-candidate.$$.pending.tmp
+  tmp_archive=$ROOT/.resolve-candidate.$$.archive.tmp
+  tmp_index=$ROOT/.resolve-candidate.$$.index.tmp
+  cleanup_resolve_tmp() { rm -f "$tmp_pending" "$tmp_archive" "$tmp_index"; }
+  trap 'cleanup_resolve_tmp' HUP INT TERM
+  tr -d '\r' < "$pending" | awk -v target="## $CANDIDATE_ID" -v archive="$tmp_archive" '
+    BEGIN { inside=0; found=0 }
+    $0 == target { inside=1; found=1 }
+    inside && $0 != target && /^## C-[0-9TZ-]+[[:space:]]*$/ { inside=0 }
+    { if (inside) print > archive; else print }
+    END { if (!found) exit 3 }
+  ' > "$tmp_pending"
+  code=$?
+  [ "$code" -eq 0 ] || { cleanup_resolve_tmp; trap - HUP INT TERM; fail "Candidate not found: $CANDIDATE_ID"; }
+  if ! grep -q '^## C-[0-9TZ-][0-9TZ-]*[[:space:]]*$' "$tmp_pending"; then
+    printf '\n当前没有待确认信息。\n' >> "$tmp_pending"
+  fi
+  trash_dir=$ROOT/.trash/candidates
+  mkdir -p "$trash_dir" || { cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Cannot create candidate trash.'; }
+  unique_target "$trash_dir" "$CANDIDATE_ID.md"
+  archive_path=$UNIQUE_TARGET
+  archive_rel=$(relative_path "$archive_path")
+  pending_backup_dir=$ROOT/.backups/transactions
+  mkdir -p "$pending_backup_dir" || { cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Cannot create transaction directory.'; }
+  unique_target "$pending_backup_dir" "$(file_stamp)-candidate-$CANDIDATE_ID-pending.md"; pending_backup=$UNIQUE_TARGET
+  cp "$pending" "$pending_backup" || { cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Cannot back up pending candidates.'; }
+  unique_target "$pending_backup_dir" "$(file_stamp)-candidate-$CANDIDATE_ID-state"; state_backup=$UNIQUE_TARGET
+  cp "$ROOT/.hello-state" "$state_backup" || { rm -f "$pending_backup"; cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Cannot back up state.'; }
+  index_created=false
+  index_backup=
+  if [ -f "$index" ]; then
+    unique_target "$pending_backup_dir" "$(file_stamp)-candidate-$CANDIDATE_ID-index.json"; index_backup=$UNIQUE_TARGET
+    cp "$index" "$index_backup" || { rm -f "$pending_backup" "$state_backup"; cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Cannot back up candidate index.'; }
+  else
+    index_created=true
+  fi
+  reason_json=$(json_escape "$REASON")
+  merge_json=$(json_escape "$MERGE_TARGET")
+  resolved_at=$(utc_now)
+  new_entry="{\"candidate_id\":\"$(json_escape "$CANDIDATE_ID")\",\"disposition\":\"$(json_escape "$DISPOSITION")\",\"reason\":\"$reason_json\",\"merge_target\":\"$merge_json\",\"resolved_at\":\"$resolved_at\",\"confirmed_by\":\"user\",\"archive_path\":\"$(json_escape "$archive_rel")\"}"
+  if [ -f "$index" ]; then
+    existing_entries=$(sed -n 's/.*"entries":\[\(.*\)\].*/\1/p' "$index" | head -n 1)
+    if [ -z "$existing_entries" ] && ! grep -q '"entries"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' "$index"; then
+      rm -f "$pending_backup" "$state_backup" "$index_backup"; cleanup_resolve_tmp; trap - HUP INT TERM; fail 'Existing candidate index is invalid.'
+    fi
+    if [ -n "$existing_entries" ]; then
+      printf '{"schema_version":1,"entries":[%s,%s]}\n' "$existing_entries" "$new_entry" > "$tmp_index"
+    else
+      printf '{"schema_version":1,"entries":[%s]}\n' "$new_entry" > "$tmp_index"
+    fi
+  else
+    printf '{"schema_version":1,"entries":[%s]}\n' "$new_entry" > "$tmp_index"
+  fi
+  if [ -n "$index_backup" ]; then
+    begin_transaction resolve-candidate pending_backup "$pending_backup" state_backup "$state_backup" archive_path "$archive_rel" archive_created true index_created false index_backup "$index_backup"
+  else
+    begin_transaction resolve-candidate pending_backup "$pending_backup" state_backup "$state_backup" archive_path "$archive_rel" archive_created true index_created true
+  fi
+  mv -f "$tmp_archive" "$archive_path" || rollback_fail 'Cannot archive candidate.'
+  mv -f "$tmp_pending" "$pending" || rollback_fail 'Cannot replace pending candidates.'
+  mv -f "$tmp_index" "$index" || rollback_fail 'Cannot write candidate disposition index.'
+  current=$(utc_now)
+  write_state "$ROOT/.hello-state" "$STATE_SCHEMA" "$STATE_VERSION" "$STATE_CAPTURE" "$STATE_CREATED" "$current" "$STATE_CONFIRMED" "$STATE_REVIEW" "$STATE_STAGE" "$STATE_INTERVIEW" "$STATE_PROGRESS" "$STATE_SESSION" "$STATE_TURN" "$STATE_DISCLOSED" "$STATE_DISCLOSED_MODE" || rollback_fail 'Cannot write state file.'
+  if ! validate_space true; then rollback_fail "Post-write validation failed: $VALIDATION_ISSUES"; fi
+  cleanup_transaction_backups || rollback_fail 'Cannot clear transaction backups.'
+  rm -f "$ROOT/.hello-transaction" || rollback_fail 'Cannot clear transaction marker.'
+  trap - HUP INT TERM
+  pending_count=$(grep -Ec '^## C-[0-9TZ-]+[[:space:]]*$' "$pending" 2>/dev/null || true)
+  printf '{"ok":true,"command":"resolve-candidate","root":"%s","candidate_id":"%s","disposition":"%s","reason":"%s","merge_target":"%s","resolved_at":"%s","archive_path":"%s","pending_candidates":%s,"idempotent":false}\n' \
+    "$(json_escape "$ROOT")" "$(json_escape "$CANDIDATE_ID")" "$(json_escape "$DISPOSITION")" "$reason_json" "$merge_json" "$resolved_at" "$(json_escape "$archive_rel")" "$pending_count"
 }
 
 target_prepare_dirs() {
@@ -2784,6 +2896,7 @@ case $COMMAND in
   apply) apply_profile ;;
   record-turn) record_turn ;;
   withdraw) withdraw_candidate ;;
+  resolve-candidate) resolve_candidate ;;
   target-validate) target_validate_command ;;
   migrate-plan) migrate_plan_command ;;
   migrate-apply) migrate_apply_command ;;

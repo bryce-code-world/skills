@@ -30,6 +30,8 @@ $script:ProgressSections = @('## 已覆盖主题', '## 待补充主题', '## 暂
 $script:SummaryFields = @('触发原因', '信息来源', '更新类型', '更新位置', '更新摘要', '用户确认状态', '执行工具')
 $script:TargetRequiredFiles = @('.hello-state', 'manifest.json', 'README.md', '个人全景档案.md', '主题覆盖矩阵.md', '待确认信息.md', '访谈进度.md', '资料索引.md', '迭代日志.md')
 $script:TargetRequiredDirectories = @('原始访谈', '来源', '权威', '派生', '历史版本', '.backups', '.trash')
+$script:TargetCandidateIndex = '候选处置索引.json'
+$script:CandidateDispositions = @('accepted','corrected','merged','rejected','withdrawn','expired')
 
 function Write-Json([hashtable]$Value) {
     [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -49,7 +51,8 @@ function Parse-Arguments([string[]]$Items) {
     $valueNames = @(
         'root', 'input', 'summary-input', 'expected-version', 'kind', 'source', 'id',
         'capture-mode', 'next-review-at', 'review-stage', 'progress-input', 'session-id',
-        'turn-id', 'expected-progress-version', 'target', 'destination', 'migration-id'
+        'turn-id', 'expected-progress-version', 'target', 'destination', 'migration-id',
+        'disposition', 'reason', 'merge-target'
     )
     for ($index = 0; $index -lt $Items.Count; $index++) {
         $token = $Items[$index]
@@ -90,6 +93,7 @@ function Validate-CommandArguments([string]$Name,[System.Collections.IDictionary
         'apply' = @('root','input','summary-input','expected-version')
         'record-turn' = @('root','input','progress-input','session-id','turn-id','expected-progress-version')
         'withdraw' = @('root','id')
+        'resolve-candidate' = @('root','id','disposition','reason','merge-target')
         'recover' = @('root')
         'target-validate' = @('root','target')
         'migrate-plan' = @('root','target','migration-id')
@@ -512,6 +516,23 @@ function Test-TargetTextFiles([string]$Root,[System.Collections.Generic.List[str
     } catch { $Issues.Add("Cannot enumerate target files: $($_.Exception.Message)") }
 }
 
+function Test-CandidateDispositionIndex([string]$Root,[System.Collections.Generic.List[string]]$Issues) {
+    $path=Join-Path $Root $script:TargetCandidateIndex
+    if(-not [IO.File]::Exists($path)){return}
+    try{$index=(Read-Text $path)|ConvertFrom-Json -ErrorAction Stop}catch{$Issues.Add("Invalid candidate disposition index: $script:TargetCandidateIndex");return}
+    if(-not (Has-JsonProperty $index 'entries') -or -not ($index.entries -is [System.Collections.IEnumerable])){$Issues.Add("Candidate disposition index must contain entries: $script:TargetCandidateIndex");return}
+    $seen=@{}
+    foreach($entry in @($index.entries)){
+        if($null -eq $entry){$Issues.Add('Candidate disposition index contains a null entry.');continue}
+        $id=[string]$entry.candidate_id
+        if($id -cnotmatch '^C-[0-9TZ-]+$'){$Issues.Add('Candidate disposition index contains an invalid candidate_id.')}
+        if($seen.ContainsKey($id)){$Issues.Add("Candidate disposition index contains duplicate candidate_id: $id")};$seen[$id]=$true
+        if($script:CandidateDispositions -cnotcontains [string]$entry.disposition){$Issues.Add("Candidate disposition index contains an invalid disposition: $id")}
+        $archive=[string]$entry.archive_path
+        if(-not [string]::IsNullOrWhiteSpace($archive)){try{$target=Resolve-TransactionPath $Root $archive;if(-not [IO.File]::Exists($target)){$Issues.Add("Candidate archive is missing: $archive")}}catch{$Issues.Add($_.Exception.Message)}}
+    }
+}
+
 function Target-Validate-Core([string]$Root) {
     $issues = New-Object Collections.Generic.List[string]
     $marker = $null; $manifest = $null
@@ -537,6 +558,7 @@ function Target-Validate-Core([string]$Root) {
             }
         }
         Test-TargetTextFiles $Root $issues
+        Test-CandidateDispositionIndex $Root $issues
     }
     $layout = if ($null -ne $marker) { [string]$marker['layout'] } else { '' }
     $migration = if ($null -ne $marker) { [string]$marker['migration_id'] } else { '' }
@@ -1531,19 +1553,20 @@ function Copy-Unique([string]$Source,[string]$Directory,[string]$Name) {
 
 function Relative-ToRoot([string]$Root,[string]$Path) { $rootFull=[IO.Path]::GetFullPath($Root).TrimEnd('\')+'\'; $full=[IO.Path]::GetFullPath($Path); if(-not $full.StartsWith($rootFull,[StringComparison]::OrdinalIgnoreCase)){Fail "Transaction path escapes profile root: $Path"}; return $full.Substring($rootFull.Length).Replace('\','/') }
 function Resolve-TransactionPath([string]$Root,[string]$Relative) { $rootFull=[IO.Path]::GetFullPath($Root).TrimEnd('\')+'\'; $full=[IO.Path]::GetFullPath((Join-Path $Root $Relative)); if(-not $full.StartsWith($rootFull,[StringComparison]::OrdinalIgnoreCase)){Fail 'Transaction backup path escapes profile root.'}; return $full }
-function Remove-TransactionBackups([string]$Root,[System.Collections.IDictionary]$Values) { foreach($key in @('profile_backup','log_backup','state_backup','progress_backup')) { if($Values.Contains($key)-and -not [string]::IsNullOrWhiteSpace([string]$Values[$key])) { $backup=Resolve-TransactionPath $Root ([string]$Values[$key]); if([IO.File]::Exists($backup)){[IO.File]::Delete($backup)} } } }
+function Remove-TransactionBackups([string]$Root,[System.Collections.IDictionary]$Values) { foreach($key in @('profile_backup','log_backup','state_backup','progress_backup','pending_backup','index_backup')) { if($Values.Contains($key)-and -not [string]::IsNullOrWhiteSpace([string]$Values[$key])) { $backup=Resolve-TransactionPath $Root ([string]$Values[$key]); if([IO.File]::Exists($backup)){[IO.File]::Delete($backup)} } } }
 function Validate-TransactionMarker([System.Collections.IDictionary]$Values) {
     if(-not $Values.Contains('schema_version') -or [string]$Values['schema_version'] -cne '1'){Fail 'Transaction marker schema_version must be 1.'}
     if(-not $Values.Contains('kind')){Fail 'Missing transaction marker field: kind'}
     switch -CaseSensitive ([string]$Values['kind']) {
         'apply' { $required=@('profile_backup','log_backup','state_backup') }
         'record-turn' { $required=@('progress_backup','state_backup','record_path','record_created') }
+        'resolve-candidate' { $required=@('pending_backup','state_backup','archive_path','archive_created','index_created') }
         default { Fail "Unknown transaction marker kind: $($Values['kind'])" }
     }
     $missing=New-Object Collections.Generic.List[string]
     foreach($key in $required){if(-not $Values.Contains($key)-or [string]::IsNullOrWhiteSpace([string]$Values[$key])){[void]$missing.Add($key)}}
     if($missing.Count -gt 0){Fail ('Missing transaction marker field: '+($missing -join ', '))}
-    if([string]$Values['kind'] -ceq 'record-turn' -and @('true','false') -cnotcontains [string]$Values['record_created']){Fail 'Transaction marker record_created must be true or false.'}
+    foreach($flag in @('record_created','archive_created','index_created')){if($Values.Contains($flag)-and @('true','false') -cnotcontains [string]$Values[$flag]){Fail "Transaction marker $flag must be true or false."}}
 }
 function Finish-Transaction([string]$Root) { $marker=Join-Path $Root $script:TransactionFile; $values=Read-KeyValues $marker; Remove-TransactionBackups $Root $values; [IO.File]::Delete($marker) }
 
@@ -1555,7 +1578,7 @@ function Begin-Transaction([string]$Root,[System.Collections.IDictionary]$Values
 
 function Recover-Transaction-Core([string]$Root,[bool]$Confirmed) {
     Require-Confirmed $Confirmed; $marker=Join-Path $Root $script:TransactionFile; if(-not [IO.File]::Exists($marker)){Fail 'No interrupted transaction exists.'}; $values=Read-KeyValues $marker; Validate-TransactionMarker $values
-    $map=[ordered]@{'profile_backup'='个人全景档案.md';'log_backup'='迭代日志.md';'state_backup'=$script:StateFile;'progress_backup'='访谈进度.md'}; $restorePlan=New-Object Collections.Generic.List[object]; $restored=New-Object Collections.Generic.List[string]
+    $map=[ordered]@{'profile_backup'='个人全景档案.md';'log_backup'='迭代日志.md';'state_backup'=$script:StateFile;'progress_backup'='访谈进度.md';'pending_backup'='待确认信息.md';'index_backup'=$script:TargetCandidateIndex}; $restorePlan=New-Object Collections.Generic.List[object]; $restored=New-Object Collections.Generic.List[string]
     # Preflight every referenced backup and path before copying any target. A
     # malformed/incomplete marker must not leave a half-restored tree.
     foreach($key in $map.Keys){if($values.Contains($key)-and -not [string]::IsNullOrWhiteSpace([string]$values[$key])){$backup=Resolve-TransactionPath $Root $values[$key];if(-not [IO.File]::Exists($backup)){Fail "Missing transaction backup: $($values[$key])"};$restorePlan.Add(@($key,$backup))}}
@@ -1563,6 +1586,9 @@ function Recover-Transaction-Core([string]$Root,[bool]$Confirmed) {
     if(-not [string]::IsNullOrWhiteSpace($recordPathValue)){$recordTarget=Resolve-TransactionPath $Root $recordPathValue}
     foreach($plan in $restorePlan){$key=$plan[0];$backup=$plan[1];Write-Atomic (Join-Path $Root $map[$key]) (Read-Text $backup);$restored.Add($map[$key])}
     if($null -ne $recordTarget -and $values['record_created'] -ceq 'true'){if([IO.File]::Exists($recordTarget)){[IO.File]::Delete($recordTarget)}}
+    $indexTarget=Join-Path $Root $script:TargetCandidateIndex
+    if($values.Contains('index_created') -and [string]$values['index_created'] -ceq 'true' -and [IO.File]::Exists($indexTarget)){[IO.File]::Delete($indexTarget)}
+    $archivePath=if($values.Contains('archive_path')){[string]$values['archive_path']}else{''};if(-not [string]::IsNullOrWhiteSpace($archivePath) -and $values.Contains('archive_created') -and [string]$values['archive_created'] -ceq 'true'){$archiveTarget=Resolve-TransactionPath $Root $archivePath;if([IO.File]::Exists($archiveTarget)){[IO.File]::Delete($archiveTarget)}}
     # Validate while the marker and backups are still present.  If the
     # restored tree is invalid, retain both so an explicit retry remains
     # possible instead of deleting the only recovery material first.
@@ -1688,6 +1714,30 @@ function Record-Turn([string]$Root,[string]$InputPath,[string]$ProgressInput,[st
 function Withdraw-Candidate-Core([string]$Root,[string]$CandidateId,[bool]$Confirmed){Require-Confirmed $Confirmed;$state=Require-Valid $Root;Require-ActiveLayout $Root $state 'withdraw';if($CandidateId-cnotmatch'^C-[0-9TZ-]+$'){Fail 'Invalid candidate id.'};$pendingPath=Join-Path $Root '待确认信息.md';$content=Read-Text $pendingPath;$pattern='(?ms)^## '+[regex]::Escape($CandidateId)+'\s*\r?\n.*?(?=^## C-[0-9TZ-]+\s*$|\z)';$match=[regex]::Match($content,$pattern);if(-not$match.Success){Fail "Candidate not found: $CandidateId"};$trashDir=Join-Path $Root '.trash\candidates';[IO.Directory]::CreateDirectory($trashDir)|Out-Null;$trash=Join-Path $trashDir ($CandidateId+'.md');if([IO.File]::Exists($trash)){$trash=Join-Path $trashDir ($CandidateId+'-'+(File-Stamp)+'.md')};Write-Atomic $trash ($match.Value.TrimEnd()+"`n");$remaining=($content.Remove($match.Index,$match.Length)).TrimEnd()+"`n";if($remaining-cnotmatch'(?m)^## C-[0-9TZ-]+\s*$'){$remaining=$remaining.TrimEnd()+"`n`n当前没有待确认信息。`n"};Write-Atomic $pendingPath $remaining;$state['updated_at']=Utc-Now;Write-State (Join-Path $Root $script:StateFile) $state;return @{'ok'=$true;'command'='withdraw';'root'=$Root;'candidate_id'=$CandidateId;'trash'=$trash}}
 
 function Withdraw-Candidate([string]$Root,[string]$CandidateId,[bool]$Confirmed){ return Invoke-WithProfileLock $Root { Withdraw-Candidate-Core $Root $CandidateId $Confirmed } }
+
+function Resolve-Candidate-Core([string]$Root,[string]$CandidateId,[string]$Disposition,[string]$Reason,[string]$MergeTarget,[bool]$Confirmed){
+    Require-Confirmed $Confirmed;$state=Require-Valid $Root
+    if([string]$state['layout'] -cne 'target'){Fail 'resolve-candidate requires a formal target layout.'}
+    if($CandidateId-cnotmatch '^C-[0-9TZ-]+$'){Fail 'Invalid candidate id.'}
+    if($script:CandidateDispositions -cnotcontains $Disposition){Fail 'Invalid candidate disposition.'}
+    $reason=Clean-Label $Reason '';if([string]::IsNullOrWhiteSpace($reason)){Fail 'resolve-candidate requires --reason.'}
+    $mergeTarget=if([string]::IsNullOrWhiteSpace($MergeTarget)){''}else{Clean-Label $MergeTarget ''};if($Disposition -ceq 'merged' -and [string]::IsNullOrWhiteSpace($mergeTarget)){Fail 'Merged candidates require --merge-target.'}
+    $pendingPath=Join-Path $Root '待确认信息.md';$content=Read-Text $pendingPath;$pattern='(?ms)^## '+[regex]::Escape($CandidateId)+'\s*\r?\n.*?(?=^## C-[0-9TZ-]+\s*$|\z)';$match=[regex]::Match($content,$pattern)
+    $indexPath=Join-Path $Root $script:TargetCandidateIndex
+    if(-not $match.Success -and [IO.File]::Exists($indexPath)){try{$existing=(Read-Text $indexPath)|ConvertFrom-Json -ErrorAction Stop}catch{Fail "Invalid candidate disposition index: $script:TargetCandidateIndex"};foreach($entry in @($existing.entries)){if([string]$entry.candidate_id -ceq $CandidateId -and [string]$entry.disposition -ceq $Disposition -and [string]$entry.reason -ceq $reason -and [string]$entry.merge_target -ceq $mergeTarget){return @{'ok'=$true;'command'='resolve-candidate';'root'=$Root;'candidate_id'=$CandidateId;'disposition'=$Disposition;'reason'=$reason;'merge_target'=$mergeTarget;'resolved_at'=[string]$entry.resolved_at;'archive_path'=[string]$entry.archive_path;'pending_candidates'=([regex]::Matches((Read-Text $pendingPath),'(?m)^## C-[0-9TZ-]+\s*$')).Count;'idempotent'=$true}}}}
+    if(-not $match.Success){Fail "Candidate not found: $CandidateId"}
+    $entries=New-Object Collections.Generic.List[object];$indexExisted=[IO.File]::Exists($indexPath)
+    if($indexExisted){try{$index=(Read-Text $indexPath)|ConvertFrom-Json -ErrorAction Stop}catch{Fail "Invalid candidate disposition index: $script:TargetCandidateIndex"};if(-not(Has-JsonProperty $index 'entries')){Fail "Candidate disposition index must contain entries: $script:TargetCandidateIndex"};foreach($entry in @($index.entries)){if([string]$entry.candidate_id -ceq $CandidateId){Fail "Candidate already resolved: $CandidateId"};$entries.Add($entry)}}
+    $archivePath=Join-Path $Root ('.trash\candidates\'+$CandidateId+'.md');if([IO.File]::Exists($archivePath)){$archivePath=Join-Path $Root ('.trash\candidates\'+$CandidateId+'-'+(File-Stamp)+'.md')}
+    $remaining=($content.Remove($match.Index,$match.Length)).TrimEnd()+([char]10);if($remaining -notmatch '(?m)^## C-[0-9TZ-]+\s*$'){$remaining=$remaining.TrimEnd()+([char]10)+([char]10)+'当前没有待确认信息。'+([char]10)}
+    $current=Utc-Now;$entry=[ordered]@{'candidate_id'=$CandidateId;'disposition'=$Disposition;'reason'=$reason;'merge_target'=$mergeTarget;'resolved_at'=$current;'confirmed_by'='user';'archive_path'=(Relative-ToRoot $Root $archivePath)};$entries.Add($entry)
+    $indexText=(([ordered]@{'schema_version'=1;'entries'=$entries.ToArray()}|ConvertTo-Json -Depth 20)-replace ([char]13+[char]10),([char]10))+([char]10);$transactionDir=Join-Path $Root '.backups\transactions';$tag=File-Stamp;$pendingBackup=Copy-Unique $pendingPath $transactionDir "$tag-$CandidateId-待确认信息.md";$stateBackup=Copy-Unique (Join-Path $Root $script:StateFile) $transactionDir "$tag-$CandidateId-hello-state";$indexBackup=$null;if($indexExisted){$indexBackup=Copy-Unique $indexPath $transactionDir "$tag-$CandidateId-候选处置索引.json"}
+    $values=[ordered]@{'kind'='resolve-candidate';'pending_backup'=(Relative-ToRoot $Root $pendingBackup);'state_backup'=(Relative-ToRoot $Root $stateBackup);'archive_path'=(Relative-ToRoot $Root $archivePath);'archive_created'='true';'index_created'=($(if($indexExisted){'false'}else{'true'}))};if($null -ne $indexBackup){$values['index_backup']=(Relative-ToRoot $Root $indexBackup)}
+    try{Begin-Transaction $Root $values}catch{foreach($backup in @($pendingBackup,$stateBackup,$indexBackup)){if($null -ne $backup -and [IO.File]::Exists($backup)){[IO.File]::Delete($backup)}};throw}
+    try{Write-Atomic $archivePath (($match.Value).TrimEnd()+([char]10));Write-Atomic $pendingPath $remaining;Write-Atomic $indexPath $indexText;$state['updated_at']=$current;Write-State (Join-Path $Root $script:StateFile) $state;$valid=Validate-Space $Root $true;if(-not$valid.ok){Fail ('Post-write validation failed: '+($valid.issues -join '; '))}}catch{Rollback-Failure $Root $_.Exception}
+    Finish-Transaction $Root;return @{'ok'=$true;'command'='resolve-candidate';'root'=$Root;'candidate_id'=$CandidateId;'disposition'=$Disposition;'reason'=$reason;'merge_target'=$mergeTarget;'resolved_at'=$current;'archive_path'=$archivePath;'pending_candidates'=([regex]::Matches($remaining,'(?m)^## C-[0-9TZ-]+\s*$')).Count;'idempotent'=$false}
+}
+function Resolve-Candidate([string]$Root,[string]$CandidateId,[string]$Disposition,[string]$Reason,[string]$MergeTarget,[bool]$Confirmed){return Invoke-WithProfileLock $Root {Resolve-Candidate-Core $Root $CandidateId $Disposition $Reason $MergeTarget $Confirmed}}
 
 function SelfTest-Summary{return "- 触发原因：自测。`n- 信息来源：隔离测试。`n- 更新类型：新增。`n- 更新位置：当前起点。`n- 更新摘要：验证存储事务。`n- 用户确认状态：自测确认。`n- 执行工具：hello self-test。`n"}
 
@@ -1838,12 +1888,12 @@ function Invoke-SelfTest {
 }
 
 try {
-    if([string]::IsNullOrWhiteSpace($Command)){Fail 'Command is required.'};$allowed=@('resolve-root','init','validate','status','configure','record-disclosure','diff','stage','apply','record-turn','withdraw','recover','target-validate','migrate-plan','migrate-apply','rebuild-index','switch-layout','rollback-layout','self-test');if($allowed-cnotcontains$Command){Fail ('Unknown command: '+$Command)}
+    if([string]::IsNullOrWhiteSpace($Command)){Fail 'Command is required.'};$allowed=@('resolve-root','init','validate','status','configure','record-disclosure','diff','stage','apply','record-turn','withdraw','resolve-candidate','recover','target-validate','migrate-plan','migrate-apply','rebuild-index','switch-layout','rollback-layout','self-test');if($allowed-cnotcontains$Command){Fail ('Unknown command: '+$Command)}
     if($Command-ceq'self-test'){
         if($null -ne $Remaining -and $Remaining.Count -gt 0){Fail "Unexpected argument: $($Remaining[0])"}
         Write-Json (Invoke-SelfTest);exit 0
     };$parsed=Parse-Arguments $Remaining;$values=$parsed.values;$confirmed=[bool]$parsed.flags.confirmed;$simulateFailure=[bool]$parsed.flags['simulate-failure'];Validate-CommandArguments $Command $values $parsed.flags
-    if(@('init','configure','record-disclosure','stage','apply','record-turn','withdraw','recover','migrate-apply','rebuild-index','switch-layout','rollback-layout') -ccontains $Command -and -not $values.ContainsKey('root')){Fail "$Command requires --root for mutating operations."}
+    if(@('init','configure','record-disclosure','stage','apply','record-turn','withdraw','resolve-candidate','recover','migrate-apply','rebuild-index','switch-layout','rollback-layout') -ccontains $Command -and -not $values.ContainsKey('root')){Fail "$Command requires --root for mutating operations."}
     if($Command -ceq 'migrate-plan' -and $confirmed -and -not $values.ContainsKey('root')){Fail 'Confirmed migrate-plan requires --root.'}
     if (@('target-validate','rebuild-index') -ccontains $Command -and $values.ContainsKey('target')) {
         if ($values.ContainsKey('root')) { Fail "$Command accepts either --root or --target, not both." }
@@ -1863,6 +1913,7 @@ try {
         'apply'{foreach($name in @('input','summary-input','expected-version')){if(-not$values.ContainsKey($name)){Fail "apply requires --$name."}};if(-not(Test-PositiveDecimal ([string]$values['expected-version']))){Fail '--expected-version must be a positive decimal integer.'};Write-Json (Apply-Profile $root ([IO.Path]::GetFullPath($values['input'])) ([IO.Path]::GetFullPath($values['summary-input'])) ([string]$values['expected-version']) $confirmed $simulateFailure);exit 0}
         'record-turn'{foreach($name in @('input','progress-input','session-id','turn-id','expected-progress-version')){if(-not$values.ContainsKey($name)){Fail "record-turn requires --$name."}};if(-not(Test-PositiveDecimal ([string]$values['expected-progress-version']))){Fail '--expected-progress-version must be a positive decimal integer.'};Write-Json (Record-Turn $root ([IO.Path]::GetFullPath($values['input'])) ([IO.Path]::GetFullPath($values['progress-input'])) $values['session-id'] $values['turn-id'] ([string]$values['expected-progress-version']) $confirmed $simulateFailure);exit 0}
         'withdraw'{if(-not$values.ContainsKey('id')){Fail 'withdraw requires --id.'};Write-Json (Withdraw-Candidate $root $values['id'] $confirmed);exit 0}
+        'resolve-candidate'{foreach($name in @('id','disposition','reason')){if(-not$values.ContainsKey($name)){Fail "resolve-candidate requires --$name."}};Write-Json (Resolve-Candidate $root $values['id'] $values['disposition'] $values['reason'] $values['merge-target'] $confirmed);exit 0}
         'recover'{Write-Json (Recover-Transaction $root $confirmed);exit 0}
         'target-validate'{$result=Target-Validate $root;Write-Json $result;if($result.ok){exit 0}else{exit 1}}
         'migrate-plan'{foreach($name in @('target')){if(-not$values.ContainsKey($name)){Fail "migrate-plan requires --$name."}};$target=Resolve-ExplicitPath $values['target'] 'target';$migrationId=if($values.ContainsKey('migration-id')){[string]$values['migration-id']}else{'hello-migration-'+(Get-Date).ToUniversalTime().ToString('yyyyMMdd')};Write-Json (Migrate-Plan $root $target $migrationId $confirmed);exit 0}

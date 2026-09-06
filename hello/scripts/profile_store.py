@@ -42,6 +42,7 @@ TARGET_CORE_FILES = (
 )
 TARGET_COMPAT_FILES = ("待确认信息.md", "访谈进度.md", "资料索引.md", "迭代日志.md")
 TARGET_REQUIRED_DIRS = ("原始访谈", "来源", "权威", "派生", "历史版本", ".backups", ".trash")
+TARGET_CANDIDATE_INDEX = "候选处置索引.json"
 TARGET_METADATA_KEYS = ("layout", "layout_version", "schema_version", "migration_id", "package_id", "subject_id")
 CAPTURE_MODES = {"auto-stage", "prompt", "explicit"}
 CAPTURE_STRATEGIES = {"auto-stage": "自动暂存", "prompt": "提示确认", "explicit": "仅显式"}
@@ -53,6 +54,7 @@ MUTATING_COMMANDS = {
     "apply",
     "record-turn",
     "withdraw",
+    "resolve-candidate",
     "recover",
     "migrate-apply",
     "rebuild-index",
@@ -61,6 +63,7 @@ MUTATING_COMMANDS = {
 }
 REVIEW_STAGES = {"baseline", "first-review", "stable"}
 UPDATE_TYPES = {"新增", "状态变化", "事实纠正", "解释变化", "假设验证", "撤回隐藏"}
+CANDIDATE_DISPOSITIONS = {"accepted", "corrected", "merged", "rejected", "withdrawn", "expired"}
 CANDIDATE_ID = re.compile(r"^C-[0-9TZ-]+$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SESSION_ID = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}[A-Za-z0-9._-]{0,117}$")
@@ -168,6 +171,9 @@ VALUE_OPTIONS = {
     "destination",
     "target",
     "migration-id",
+    "disposition",
+    "reason",
+    "merge-target",
 }
 FLAG_OPTIONS = {"confirmed", "simulate-failure"}
 
@@ -720,6 +726,41 @@ def _target_entry_count(root: Path) -> int:
     return count
 
 
+def _validate_candidate_resolution_index(root: Path) -> list[str]:
+    path = root / TARGET_CANDIDATE_INDEX
+    if not path.is_file():
+        return []
+    try:
+        value = json.loads(read_text(path))
+    except (StoreError, json.JSONDecodeError):
+        return [f"Invalid candidate disposition index: {TARGET_CANDIDATE_INDEX}"]
+    if not isinstance(value, dict) or not isinstance(value.get("entries"), list):
+        return [f"Candidate disposition index must contain entries: {TARGET_CANDIDATE_INDEX}"]
+    issues: list[str] = []
+    ids: set[str] = set()
+    for entry in value["entries"]:
+        if not isinstance(entry, dict):
+            issues.append("Candidate disposition index contains a non-object entry.")
+            continue
+        candidate_id = str(entry.get("candidate_id", ""))
+        if not CANDIDATE_ID.fullmatch(candidate_id):
+            issues.append("Candidate disposition index contains an invalid candidate_id.")
+        if candidate_id in ids:
+            issues.append(f"Candidate disposition index contains duplicate candidate_id: {candidate_id}")
+        ids.add(candidate_id)
+        if entry.get("disposition") not in CANDIDATE_DISPOSITIONS:
+            issues.append(f"Candidate disposition index contains an invalid disposition: {candidate_id}")
+        archive_path = str(entry.get("archive_path", ""))
+        if archive_path:
+            try:
+                archive = transaction_target(root, archive_path)
+                if not archive.is_file():
+                    issues.append(f"Candidate archive is missing: {archive_path}")
+            except StoreError as exc:
+                issues.append(str(exc))
+    return issues
+
+
 def _target_validate_unlocked(root: Path, expected_layout: str | None = None) -> Tuple[dict, int]:
     issues: list[str] = []
     marker: Dict[str, str] = {}
@@ -800,6 +841,7 @@ def _target_validate_unlocked(root: Path, expected_layout: str | None = None) ->
                     issues.append("Authority index JSON must be an object.")
             except (StoreError, json.JSONDecodeError):
                 issues.append("Invalid authority index JSON: 权威/声明索引.json")
+        issues.extend(_validate_candidate_resolution_index(root))
     pending = 0
     if (root / "待确认信息.md").is_file():
         try:
@@ -2062,7 +2104,7 @@ def progress_summary(content: str) -> dict:
 
 
 def cleanup_transaction_backups(root: Path, values: Dict[str, str]) -> None:
-    for key in ("profile_backup", "log_backup", "state_backup", "progress_backup"):
+    for key in ("profile_backup", "log_backup", "state_backup", "progress_backup", "pending_backup", "index_backup"):
         relative = values.get(key)
         if not relative:
             continue
@@ -2380,6 +2422,7 @@ def validate_transaction_marker(values: Dict[str, str]) -> None:
     required = {
         "apply": ("profile_backup", "log_backup", "state_backup"),
         "record-turn": ("progress_backup", "state_backup", "record_path", "record_created"),
+        "resolve-candidate": ("pending_backup", "state_backup", "archive_path", "archive_created", "index_created"),
     }.get(kind)
     if required is None:
         if not kind:
@@ -2388,8 +2431,9 @@ def validate_transaction_marker(values: Dict[str, str]) -> None:
     missing = [key for key in required if not values.get(key)]
     if missing:
         raise StoreError("Missing transaction marker field: " + ", ".join(missing))
-    if kind == "record-turn" and values["record_created"] not in {"true", "false"}:
-        raise StoreError("Transaction marker record_created must be true or false.")
+    for flag in ("record_created", "archive_created", "index_created"):
+        if flag in values and values[flag] not in {"true", "false"}:
+            raise StoreError(f"Transaction marker {flag} must be true or false.")
 
 
 @locked
@@ -2405,6 +2449,8 @@ def recover_transaction(root: Path, confirmed: bool) -> dict:
         "log_backup": root / "迭代日志.md",
         "state_backup": root / STATE_FILE,
         "progress_backup": root / "访谈进度.md",
+        "pending_backup": root / "待确认信息.md",
+        "index_backup": root / TARGET_CANDIDATE_INDEX,
     }
     # Preflight every referenced backup and path before restoring any target;
     # a malformed/incomplete marker must not leave a half-restored tree.
@@ -2425,6 +2471,13 @@ def recover_transaction(root: Path, confirmed: bool) -> dict:
     if record_target is not None and values["record_created"] == "true":
         if record_target.is_file():
             record_target.unlink()
+    index_target = root / TARGET_CANDIDATE_INDEX
+    if values.get("index_created") == "true" and index_target.is_file():
+        index_target.unlink()
+    archive_path = values.get("archive_path")
+    archive_target = transaction_target(root, archive_path) if archive_path else None
+    if archive_target is not None and values.get("archive_created") == "true" and archive_target.is_file():
+        archive_target.unlink()
     # Keep the marker and every backup until the restored tree has passed
     # validation.  A failed validation must leave enough material for a
     # second, explicit recovery attempt; deleting first would turn a
@@ -2754,6 +2807,139 @@ def withdraw_candidate(root: Path, candidate_id: str, confirmed: bool) -> dict:
         "root": str(root),
         "candidate_id": candidate_id,
         "trash": str(trash),
+    }
+
+
+@locked
+def resolve_candidate(
+    root: Path,
+    candidate_id: str,
+    disposition: str,
+    reason: str,
+    merge_target: str | None,
+    confirmed: bool,
+) -> dict:
+    require_confirmed(confirmed)
+    state = require_valid(root)
+    if state.get("layout") != "target":
+        raise StoreError("resolve-candidate requires a formal target layout.")
+    if not CANDIDATE_ID.fullmatch(candidate_id):
+        raise StoreError("Invalid candidate id.")
+    if disposition not in CANDIDATE_DISPOSITIONS:
+        raise StoreError("Invalid candidate disposition.")
+    reason = clean_label(reason, "")
+    if not reason:
+        raise StoreError("resolve-candidate requires --reason.")
+    merge_target = clean_label(merge_target, "") if merge_target else ""
+    if disposition == "merged" and not merge_target:
+        raise StoreError("Merged candidates require --merge-target.")
+
+    pending_path = root / "待确认信息.md"
+    content = read_text(pending_path)
+    pattern = re.compile(rf"(?ms)^## {re.escape(candidate_id)}\s*\n.*?(?=^## C-[0-9TZ-]+\s*$|\Z)")
+    match = pattern.search(content)
+    if not match:
+        index_path = root / TARGET_CANDIDATE_INDEX
+        if index_path.is_file():
+            try:
+                existing = json.loads(read_text(index_path))
+            except (StoreError, json.JSONDecodeError):
+                existing = {}
+            for entry in existing.get("entries", []) if isinstance(existing, dict) else []:
+                if isinstance(entry, dict) and entry.get("candidate_id") == candidate_id:
+                    if (
+                        entry.get("disposition") == disposition
+                        and entry.get("reason") == reason
+                        and entry.get("merge_target", "") == merge_target
+                    ):
+                        return {"ok": True, "command": "resolve-candidate", "root": str(root), **entry, "idempotent": True}
+        raise StoreError(f"Candidate not found: {candidate_id}")
+
+    index_path = root / TARGET_CANDIDATE_INDEX
+    index_existed = index_path.is_file()
+    entries: list[dict] = []
+    if index_existed:
+        try:
+            index_value = json.loads(read_text(index_path))
+        except (StoreError, json.JSONDecodeError) as exc:
+            raise StoreError(f"Invalid candidate disposition index: {TARGET_CANDIDATE_INDEX}") from exc
+        if not isinstance(index_value, dict) or not isinstance(index_value.get("entries"), list):
+            raise StoreError(f"Candidate disposition index must contain entries: {TARGET_CANDIDATE_INDEX}")
+        entries = [entry for entry in index_value["entries"] if isinstance(entry, dict)]
+        for entry in entries:
+            if entry.get("candidate_id") == candidate_id:
+                raise StoreError(f"Candidate already resolved: {candidate_id}")
+
+    archive_path = root / ".trash" / "candidates" / f"{candidate_id}.md"
+    if archive_path.exists():
+        archive_path = archive_path.with_name(f"{candidate_id}-{stamp()}.md")
+    remaining = (content[: match.start()] + content[match.end() :]).rstrip() + "\n"
+    if not re.search(r"(?m)^## C-[0-9TZ-]+\s*$", remaining):
+        remaining = remaining.rstrip() + "\n\n当前没有待确认信息。\n"
+    current = now_utc()
+    entry = {
+        "candidate_id": candidate_id,
+        "disposition": disposition,
+        "reason": reason,
+        "merge_target": merge_target,
+        "resolved_at": current,
+        "confirmed_by": "user",
+        "archive_path": relative_to_root(root, archive_path),
+    }
+    entries.append(entry)
+    index_content = serialize_json({"schema_version": 1, "entries": entries})
+    transaction_dir = root / ".backups" / "transactions"
+    file_stamp = stamp()
+    pending_backup = copy_unique(pending_path, transaction_dir, f"{file_stamp}-{candidate_id}-待确认信息.md")
+    state_backup = copy_unique(root / STATE_FILE, transaction_dir, f"{file_stamp}-{candidate_id}-hello-state")
+    index_backup = None
+    if index_existed:
+        index_backup = copy_unique(index_path, transaction_dir, f"{file_stamp}-{candidate_id}-候选处置索引.json")
+    values = {
+        "kind": "resolve-candidate",
+        "pending_backup": relative_to_root(root, pending_backup),
+        "state_backup": relative_to_root(root, state_backup),
+        "archive_path": relative_to_root(root, archive_path),
+        "archive_created": "true",
+        "index_created": "true" if not index_existed else "false",
+    }
+    if index_backup is not None:
+        values["index_backup"] = relative_to_root(root, index_backup)
+    try:
+        begin_transaction(root, values)
+    except Exception:
+        for backup in (pending_backup, state_backup, index_backup):
+            if backup is not None:
+                try:
+                    backup.unlink()
+                except FileNotFoundError:
+                    pass
+        raise
+    try:
+        atomic_write(archive_path, match.group(0).rstrip() + "\n")
+        atomic_write(pending_path, remaining)
+        atomic_write(index_path, index_content)
+        state["updated_at"] = current
+        write_state(root / STATE_FILE, state)
+        payload, code = validate_space(root, ignore_transaction=True)
+        if code:
+            raise StoreError("Post-write validation failed: " + "; ".join(payload["issues"]))
+    except Exception as exc:
+        rollback_after_failure(root, exc)
+    finish_transaction(root)
+    pending_count = len(re.findall(r"(?m)^## C-[0-9TZ-]+\s*$", remaining))
+    return {
+        "ok": True,
+        "command": "resolve-candidate",
+        "root": str(root),
+        "candidate_id": candidate_id,
+        "disposition": disposition,
+        "reason": reason,
+        "merge_target": merge_target,
+        "resolved_at": current,
+        "archive_path": str(archive_path),
+        "pending_candidates": pending_count,
+        "idempotent": False,
     }
 
 
@@ -3206,6 +3392,13 @@ def build_parser() -> argparse.ArgumentParser:
     root_argument(item)
     item.add_argument("--id", required=True)
     item.add_argument("--confirmed", action="store_true")
+    item = sub.add_parser("resolve-candidate")
+    root_argument(item)
+    item.add_argument("--id", required=True)
+    item.add_argument("--disposition", required=True)
+    item.add_argument("--reason", required=True)
+    item.add_argument("--merge-target")
+    item.add_argument("--confirmed", action="store_true")
     item = sub.add_parser("recover")
     root_argument(item)
     item.add_argument("--confirmed", action="store_true")
@@ -3332,6 +3525,9 @@ def main(argv: Iterable[str] | None = None) -> int:
             return 0
         if args.command == "withdraw":
             emit(withdraw_candidate(root, args.id, args.confirmed))
+            return 0
+        if args.command == "resolve-candidate":
+            emit(resolve_candidate(root, args.id, args.disposition, args.reason, args.merge_target, args.confirmed))
             return 0
         if args.command == "recover":
             emit(recover_transaction(root, args.confirmed))
