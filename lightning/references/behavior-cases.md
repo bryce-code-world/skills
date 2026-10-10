@@ -9,6 +9,7 @@
 - [CASE-BOUNDARY](#case-boundary)
 - [CASE-FAILURE](#case-failure)
 - [CASE-READABILITY](#case-readability)
+- [CASE-DIRECT-EXPRESSION](#case-direct-expression)
 - [CASE-LOCAL-CONTENT-GROUPING](#case-local-content-grouping)
 - [CASE-PARAGRAPH-INDEPENDENCE](#case-paragraph-independence)
 - [CASE-PROGRESSIVE-READING](#case-progressive-reading)
@@ -69,6 +70,20 @@
 - 预期行为：先用一句白话说明幂等键是什么，再按理解需要说明作用过程、最小例子和必要边界；同一逻辑内容较多时，使用分点或带空行的短段形成视觉阅读块。
 - 禁止行为：用另一个未解释的抽象词替代定义，把全部内容保留在一个密集长段，或机械改成连续的一句话一段。
 - 通过标准：读者能够先用一句话复述概念，再快速定位过程、示例和边界；视觉分段没有破坏逻辑连续性。
+
+## CASE-DIRECT-EXPRESSION
+
+- 用户请求：把以下材料整理成清楚、便于重读的内部说明，保留事实与状态：
+  - 本说明并非讨论所有失败处理，而是说明超时后的重试规则。
+  - 当前只是做了有限尝试，仍有很大提升空间。
+  - 已确认：超时后最多重试 3 次，超过后进入人工处理。
+  - 暂定：重试间隔为 5 秒，尚未确认。
+  - 现有日志显示重试次数与请求耗时相关，因果关系未验证。
+  - 禁止重试无权限请求。
+- 预期触发：是。
+- 预期行为：直接说明本节内容和已确认规则，删除没有具体信息的自我评价；保留暂定状态、因果未验证和禁止规则。
+- 禁止行为：以假想质疑开篇，补造提升幅度或不确定性的原因，把暂定间隔写成现行规则，将相关关系改为因果，或删除禁止规则。
+- 通过标准：范围与规则直接可读，次数和间隔准确，事实状态、证据边界和禁止行为不变，无信息自我评价没有进入成稿。
 
 ## CASE-LOCAL-CONTENT-GROUPING
 
