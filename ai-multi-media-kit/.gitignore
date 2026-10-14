@@ -1,0 +1,25 @@
+# credentials, sessions, browser profiles and account cookies
+.env
+.env.*
+secrets/
+auth/
+cookies/
+browser-profiles/
+profile/
+**/cookies*.json
+**/*session*.json
+**/*.key
+**/*.pem
+config/workspace.json
+config/dependencies.lock.json
+runtime/
+logs/
+outputs/
+cache/
+node_modules/
+.venv/
+__pycache__/
+tools/
+mcp/
+backups/
+.codex/

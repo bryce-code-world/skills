@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "uv": {
+    "version": "0.12.19",
+    "source": "https://releases.astral.sh/github/uv/releases/download/0.12.19",
+    "assets": {
+      "windows-x64": {"file": "uv-x86_64-pc-windows-msvc.zip", "sha256": "6dbb02d79e419522f1c500f0adb1cddcff0cda7d59b0d66ea7f5e3b4a1b2f5f0"},
+      "windows-arm64": {"file": "uv-aarch64-pc-windows-msvc.zip", "sha256": "115b54cb823bc48260670f5782001add6067ac8d98d18c8263a833704e287de9"},
+      "linux-x64": {"file": "uv-x86_64-unknown-linux-gnu.tar.gz", "sha256": "23bf5552d220e0842b65c862097b2ebaeba0064b74eda5e565e77fd25969d8c8"},
+      "linux-arm64": {"file": "uv-aarch64-unknown-linux-gnu.tar.gz", "sha256": "0804e9b164c64b6914182d5920c08551958a095986f10a3731056df701126436"},
+      "macos-x64": {"file": "uv-x86_64-apple-darwin.tar.gz", "sha256": "cb5fa57bafe68fc0fb94b17f06bee0b0b9a7feb94ccbd110445afa0696e39273"},
+      "macos-arm64": {"file": "uv-aarch64-apple-darwin.tar.gz", "sha256": "a9a8df1eedeb192f2e47e40e2faabfb387db4b850209118786d42f89dde3e0ba"}
+    }
+  },
+  "python": {"version": "3.12", "provider": "uv-managed-python", "notes": "具体补丁版本以 uv 0.12.19 管理的发行版为准。"},
+  "mingit": {
+    "version": "2.56.0.2",
+    "source": "https://github.com/git-for-windows/git-snapshots/releases/download/2.56.0.2",
+    "assets": {
+      "windows-x64": {"file": "MinGit-2.56.0.2-64-bit.zip", "sha256": "ab2543fea7eebdc8476b63af2ff8acec10fce72fc9f72a40c9123df94c6ac1ae"},
+      "windows-arm64": {"file": "MinGit-2.56.0.2-arm64.zip", "sha256": "38b33dc6024026e3315cf88ab2cfea65205bbd7bb3a8e824bd21c8ad4fe609a7"}
+    }
+  },
+  "ffmpeg": {
+    "version": "n8.1.2-1",
+    "source": "https://github.com/shaka-project/static-ffmpeg-binaries/releases/download/n8.1.2-1",
+    "license": "GPL; verify downstream redistribution needs",
+    "assets": {
+      "windows-x64": [
+        {"file": "ffmpeg-win-x64.exe", "output": "ffmpeg.exe", "sha256": "4044b3924c977ad31229d504c5d5b8685f9553124fbaff6e9c99048b42830341"},
+        {"file": "ffprobe-win-x64.exe", "output": "ffprobe.exe", "md5": "1878fcf3170bbd8d0b8be86daeec62ec"}
+      ],
+      "linux-x64": [
+        {"file": "ffmpeg-linux-x64", "output": "ffmpeg", "sha256": "9eac5b2b5076db5ff853a6fa0dcd6b8de7d0cac8481eadda6c47cd935825f1ee"},
+        {"file": "ffprobe-linux-x64", "output": "ffprobe", "md5": "1f4a239658ac95b5203df0a8ebb6612b"}
+      ],
+      "linux-arm64": [
+        {"file": "ffmpeg-linux-arm64", "output": "ffmpeg", "sha256": "6e7b1d7d1aa8c35e3fedd78a140aa0968717aeb7386ecfb0ee00773d9f0a4503"},
+        {"file": "ffprobe-linux-arm64", "output": "ffprobe", "sha256": "fd2aca1456f0261cabef4514b6d97a70fa342003347f51b39c473dd364328089"}
+      ],
+      "macos-x64": [
+        {"file": "ffmpeg-osx-x64", "output": "ffmpeg", "sha256": "62c87854d851f202fc4a29bdda0fe7b6ebcddd37b863482ce1bdc81151b03fe4"},
+        {"file": "ffprobe-osx-x64", "output": "ffprobe", "md5": "35f9e075152f3593c8e7ebf9ed622287"}
+      ],
+      "macos-arm64": [
+        {"file": "ffmpeg-osx-arm64", "output": "ffmpeg", "sha256": "e7b9fcd97f95f333512d6e8b8ac24d9dbc08f189f36047695499bd7b57214b22"},
+        {"file": "ffprobe-osx-arm64", "output": "ffprobe", "md5": "792377d4c185ac95b5203df0a8ebb7b5"}
+      ]
+    }
+  }
+}

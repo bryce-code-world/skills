@@ -1,0 +1,11 @@
+version: 1
+approval_before_publish: true
+default_publish_mode: draft_or_prepare
+platforms:
+  xiaohongshu: {priority: 1, content: video, route: sau, fallback: manual}
+  douyin:      {priority: 1, content: video, route: sau, fallback: manual}
+  tencent:     {priority: 1, content: video, route: sau, fallback: manual}
+  bilibili:    {priority: 1, content: video, route: sau, fallback: manual}
+  kuaishou:    {priority: 1, content: video, route: sau, fallback: manual}
+  wechat_oa:   {priority: 2, content: article_from_video, route: baoyu-post-to-wechat, fallback: manual}
+  zhihu:       {priority: 2, content: article_or_pin_from_video, route: experimental_zhihu_publisher, fallback: manual}

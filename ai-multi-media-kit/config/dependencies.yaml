@@ -1,0 +1,71 @@
+# AI Media Studio V2 approved candidate registry (not proof of tested installation)
+# Initial setup pins actual working Git SHA and tool versions into config/dependencies.lock.json.
+# Nothing should be executed just because its name appears here.
+version: 2
+created_on: 2026-10-12
+approval_policy: explicit-before-first-execution
+version_policy: pin-reviewed-commit-or-version
+third_party_code_bundled: false
+candidates:
+  - id: marketingskills
+    tier: required
+    type: skill_source
+    repo: https://github.com/coreyhaines31/marketingskills
+    select_skills: [product-marketing, content-strategy, social, copywriting, copy-editing, video]
+    license: MIT
+    notes: Marketing methods are not specifically Chinese platforms; adapt to local company guidance.
+  - id: baoyu-skills
+    tier: required-for-wechat
+    type: skill_source
+    repo: https://github.com/JimLiu/baoyu-skills
+    select_skills: [baoyu-post-to-wechat, baoyu-cover-image, baoyu-xhs-images]
+    optional_skills: [baoyu-article-illustrator]
+    license: MIT
+    notes: WeChat publishing uses Official Account API or Chrome login; image skills may need image provider setup.
+  - id: social-auto-upload
+    tier: required-for-video-platforms
+    type: cli_and_skill
+    repo: https://github.com/dreammis/social-auto-upload
+    cli: sau
+    platforms: [douyin, xiaohongshu, tencent, bilibili, kuaishou]
+    select_skills: [douyin-upload, xiaohongshu-upload, bilibili-upload, kuaishou-upload]
+    license: MIT
+    notes: Active rework; Patchright Chromium installed after CLI unless --skip-browser; browser UI automation, pin and test before use. Avoid exposing upstream unauthenticated web dashboard. Tencent uses CLI, no first-party skill here.
+  - id: MoneyPrinterTurbo
+    tier: required-for-video-render
+    type: cli
+    repo: https://github.com/harry0703/MoneyPrinterTurbo
+    entry: cli.py
+    license: MIT
+    notes: Prefer local video materials + Codex-generated script. Online material providers may require keys; keep its own uv lock.
+  - id: ffmpeg
+    tier: required-for-media
+    type: executable
+    homepage: https://ffmpeg.org/
+    commands: [ffmpeg, ffprobe]
+    license: distribution-dependent-LGPL-or-GPL
+    notes: Check binary distribution and codecs licensing.
+  - id: xiaohongshu-mcp
+    tier: optional-for-ops
+    type: mcp
+    repo: https://github.com/xpzouying/xiaohongshu-mcp
+    url: http://127.0.0.1:18060/mcp
+    license: Apache-2.0
+    notes: Search and comment; optional at V1. May store login cookies, requires authorization.
+  - id: ZhihuPublisher
+    tier: experimental-for-zhihu
+    type: skill
+    repo: https://github.com/zhihu/ZhihuPublisher
+    scopes: [article, pin, question]
+    license: MIT (as declared upstream; recheck at pinned commit)
+    notes: Very new upstream with unclear redistribution license; requires Zhihu OpenAPI credentials. Manual import/export fallback always available.
+  - id: PySceneDetect
+    tier: optional-after-v1
+    type: cli
+    repo: https://github.com/Breakthrough/PySceneDetect
+    notes: Real video shot segmentation; does not solve semantic matching.
+  - id: FunASR
+    tier: optional-after-v1
+    type: library_or_service
+    repo: https://github.com/modelscope/FunASR
+    notes: Chinese speech recognition; extra resources required.
