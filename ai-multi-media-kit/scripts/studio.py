@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """AI Media Studio: deterministic content state machine and local publishing guardrails.
 
-The AI work (ideas, script writing, qualitative review) belongs to Codex following
+The AI work (ideas, script writing, qualitative review) belongs to 当前 AI Agent following
 .agents/skills instructions. This CLI validates and persists state; it never calls
 an LLM or an external publishing API without explicit user action.
 """
@@ -129,7 +129,7 @@ def cmd_new(a):
     save(d/'content.json', data)
     (d/'brief.md').write_text('# '+a.title+'\n\n目标用户：\n\n证据与参考：\n\n创作角度：\n', encoding='utf-8')
     save(d/'script.template.json', {'content_id': a.id, 'title': a.title, 'duration_seconds': 30,
-          'narration': '请由 Codex 完成真实口播稿', 'shots': [{'seconds': 10, 'visual': '实拍镜头', 'voiceover': '示例'}],
+          'narration': '请由 当前 AI Agent 完成真实口播稿', 'shots': [{'seconds': 10, 'visual': '实拍镜头', 'voiceover': '示例'}],
           'platforms': {p: {'title': '', 'description': '', 'tags': []} for p in PLATFORMS},
           'article_markdown': '公众号/知乎衍生图文（如适用）'})
     save(d/'review.template.json', {'result': 'REVISE', 'score': 0,
@@ -137,7 +137,7 @@ def cmd_new(a):
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
          'facts_to_verify': ['尚待人工查证'], 'issues': ['请先填写真实审核意见']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
-    print(f'CREATED {d}\n下一步：Codex 读取知识库完成 brief.md / script.json / review.json，运行 hash/check')
+    print(f'CREATED {d}\n下一步：当前 AI Agent 读取知识库完成 brief.md / script.json / review.json，运行 hash/check')
 
 
 def cmd_hash(a):
@@ -145,7 +145,7 @@ def cmd_hash(a):
     d = paths(root, a.id)
     sj = d/'script.json'
     if not sj.is_file():
-        fail('请先由 Codex 创建 script.json')
+        fail('请先由 当前 AI Agent 创建 script.json')
     print(json.dumps({'script_sha256':filehash(sj),
           'review_standard_sha256':filehash(knowledge/'review-rules.md')}, ensure_ascii=False, indent=2))
 
@@ -153,7 +153,7 @@ def cmd_hash(a):
 def check_script(root, knowledge, d):
     script_path = d/'script.json'
     if not script_path.is_file():
-        fail('缺少 script.json（不是 script.template.json），请由 Codex 生成')
+        fail('缺少 script.json（不是 script.template.json），请由 当前 AI Agent 生成')
     j=load(script_path)
     if j.get('content_id') != d.name: fail('script.json 的 content_id 与目录不一致')
     for field in ('title','narration'):
@@ -189,7 +189,7 @@ def cmd_check(a):
 
 
 def approve_prompt(expected):
-    print('确认将写入不可自动撤销的人工审批记录，Codex 不得代替真实用户确认。')
+    print('确认将写入不可自动撤销的人工审批记录，当前 AI Agent 不得代替真实用户确认。')
     typed=input(f'请由本人输入 {expected} ：').strip()
     if typed!=expected: fail('审批确认文本不匹配，已取消')
 
@@ -206,7 +206,7 @@ def cmd_approve(a):
             fail('审核不是全项 PASS')
         if review.get('facts_to_verify'): fail('存在待核事实，不能审批')
         if review.get('script_sha256')!=filehash(d/'script.json') or review.get('review_standard_sha256')!=filehash(k/'review-rules.md'):
-            fail('审核 hash 不匹配，请 Codex 重新审核')
+            fail('审核 hash 不匹配，请 当前 AI Agent 重新审核')
         stage_data={'script_sha256': filehash(d/'script.json'), 'review_sha256':filehash(r)}
     elif a.stage=='video':
         ensure_approved_script(d,k)
@@ -388,7 +388,7 @@ def cmd_package(a):
         if article is not None:
             doc=target/'article.md'
             if doc.exists() and not a.replace: fail(f'{p} 文章已存在，使用 --replace 才能覆盖')
-            doc.write_text(article or '(请由 Codex 提供公众号/知乎适配图文)',encoding='utf-8')
+            doc.write_text(article or '(请由 当前 AI Agent 提供公众号/知乎适配图文)',encoding='utf-8')
             pack['article_path']=str(doc)
         # Content must not silently overwrite previous platform variant/approval.
         dest=target/'package.json'

@@ -34,7 +34,7 @@ def main():
     if rc:return rc
     print('\n完成。后续操作：')
     print('① 在知识库内完善 brand.md/audience.md/review-rules.md。')
-    print(f'② 从 {dest} 打开 Codex 或运行 start-codex.cmd。')
+    print(f'② 在支持 SKILL.md 且可运行终端的本地 AI Agent 中打开 {dest}。Codex 可选用 start-codex.cmd。')
     print(f'③ 若要安装外部工具：RUN-STUDIO-WINDOWS.ps1 -Task installer --profile core --install # 或 ./run-studio.sh installer "{dest}" --profile core --install')
     print('④ 如要用 FFmpeg 合成视频，需具备可运行的 FFmpeg 或手动导入本地二进制。')
     return 0

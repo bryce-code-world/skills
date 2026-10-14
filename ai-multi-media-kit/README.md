@@ -1,88 +1,90 @@
-# ai-multi-media-kit — AI 新媒体生产 Skill
+# ai-multi-media-kit — 跨 AI Agent 新媒体生产 Skill
 
-基于 **Codex + Skills + CLI/MCP + 自有企业知识库**，完成选题、脚本、审核、素材匹配、短视频成片和多平台发布准备。面向小红书、抖音、微信视频号、B站、快手、微信公众号和知乎；**短视频优先**。
+遵循 [Agent Skills / SKILL.md](https://agentskills.io/specification) 目录格式，以**企业自有知识库 + 本地可复用脚本/CLI/MCP**完成中文短视频选题、脚本、AI 审核、素材匹配、成片及七平台发布准备。适用于**具备相应能力的** Codex、Claude Code 或其他兼容 Agent Skills 的客户端；不依赖特定模型或厂商。
 
-这是给 AI Agent 使用的 Skill，不是需要下载安装的桌面软件。**推荐直接把 GitHub 地址发给 Codex，让它安装并引导配置。**
+支持：小红书、抖音、微信视频号、B站、快手、微信公众号、知乎。短视频优先，公众号和知乎主要为图文衍生流程。
 
-## 推荐安装：直接把地址发给 Codex
+## 安装：把 GitHub 地址交给当前 AI Agent
 
-在已可用的 Codex CLI、Codex IDE 或其他支持 GitHub Skills 的 Agent 中，发送以下消息：
+在已经能安装 Agent Skills 的 AI Agent 中直接发送：
 
 ```text
-请安装并初始化这个 Skill：
+请使用你自身支持的 Skill 安装方式安装并初始化：
 https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
-使用 Agent 的标准 Skill 安装方式安装完整目录（包含 SKILL.md、scripts、docs 和子 Skills），检查 Skill 是否被识别。
-随后阅读 SKILL.md 和 docs/START_HERE.md，检查本机环境，引导我指定：
-1. 工具及运行环境安装目录（Python、uv、Git、FFmpeg、缓存等尽量放在此目录）。
-2. 独立的企业知识库目录（品牌、内容规则、自有视频素材）。
-
-由你调用 Skill 自带的初始化脚本，先展示需要安装的外部依赖、来源和可能产生的费用；得到我的授权后，再安装缺失的依赖并运行自检。
-不要让我手动下载 ZIP 或预装 Python，不要修改系统级 PATH，也不要擅自登录媒体账号、启用付费 API 或公开发布。
+请获取完整的 SKILL.md、scripts、docs、knowledge-templates 和子 Skills，
+先确认本 Agent 是否能读取本机文件、执行本地命令、联网下载依赖。
+如果可以，请读取 SKILL.md 和 docs/AGENT_COMPATIBILITY.md：
+- 先检查本机是否已有这套 Skill 的共享工具工作区；
+- 已存在则复用，不要重新下载 Python、FFmpeg 或改动知识库；
+- 不存在则引导我选一次工具安装目录、独立企业知识库目录，并经授权调用安装脚本。
+不要修改系统级 PATH、擅自安装付费 API、登录媒体账号或公开发布。
+如果当前 Agent 无本地执行能力，请明确只能进行哪部分工作。
 ```
 
-**两件事要区分：** 安装 Skill 是把它放到 Codex 可发现的 Skill 目录；首次初始化才会配置独立工作区和工具依赖。Skill 安装完成不代表 MoneyPrinterTurbo、MCP 或视频发布工具也已经安装、连通。
+**不需要先下载 ZIP，也不需要自己预装 Python。** 安装 Skill 和初始化运行环境是两件事：由当前 Agent 的 Skill 安装能力取得源码；引导器负责准备套件内的 Python/uv、Git、FFmpeg（受平台与网络限制）。第三方 Skills、MoneyPrinterTurbo、发布工具仅在用户明确授权后按需配置。
 
-首次使用要求当前 Agent 可以读取 GitHub 仓库、访问本地终端并获准写入相关目录。若 Agent 不支持 GitHub Skill 安装或网络不可用，应明确报告阻塞，再采用下文的手动备用方式。安装后若暂时无法识别 Skill，可重新打开 Codex 会话并检查安装位置。
+> 注意：`SKILL.md` 是开放的**指令文件格式**，不保证每个品牌、客户端或具体版本都支持 GitHub 地址导入、本地磁盘、Shell、Python 或平台登录。没有本地终端权限的云端 Agent 可以做文字策划，但不能直接操控用户电脑中的素材或合成视频。见 [Agent 兼容与能力分级](docs/AGENT_COMPATIBILITY.md)。
 
-**安装路径会被记住：** 初始化成功后，安装器自动在主 Skill 目录的 `config/local-install.json` 保存工具目录及知识库目录（本机私有，已 Git 忽略）。日后从其他项目、新的 Codex 会话调用时，AI 从 Skill 所在目录读取并核对这条记录，然后调用工作区内的绝对路径启动器。无需重复填写目录，也无需修改系统 PATH。Skill 被删除重装或安装目录迁移后，记录可能丢失/失效；这时应重新登记已有工作区，而不是自动重装或覆盖数据。
+## 首次配置与日常使用
 
-## 初始化成功后怎么用
+首次真正运行时，需要指定**两个不互相嵌套的目录**：
 
-在 Codex 中直接对话即可，不需要每天运行命令：
+| 目录 | 内容 |
+| --- | --- |
+| 工具工作区 | Python/uv、FFmpeg、工具/Skills、运行缓存、审批与视频产物 |
+| 企业知识库 | 品牌、目标用户、审核标准、历史内容、原创视频素材 |
+
+**不同 Agent 可以复用同一套已安装工具。** 安装成功后，本机会保存一份不含密钥的路径索引：
+
+- Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
+- macOS/Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
+
+这是**同一设备/操作系统用户**下共享的一份小型配置，不是云同步服务。路径信息可能占用系统盘少量空间，真正的工具及素材依然使用你选定的位置；不修改系统 PATH。新 Agent 读取共享索引、核对 `config/workspace.json` 后用绝对路径启动工具；索引不存在时可读取旧版 Skill 目录中的 `config/local-install.json`。路径失效时需确认原位置并重新登记，不自动覆盖或迁移用户内容。
+
+配置完成后，日常只需对当前 Agent 说：
 
 ```text
-使用 $ai-multi-media-kit，读取我的企业知识库，策划 10 条适合抖音和小红书的短视频选题，
-按审核标准生成脚本。先让我确认，不要自动发布或调用收费 API。
+使用 ai-multi-media-kit，结合我的企业知识库，规划 10 条适合抖音和小红书的短视频，
+完成选题、脚本和 AI 审核。先给我确认，不要自动发布或启用收费服务。
 ```
 
-也可以让 AI 按需调用主 Skill 中的 `ai-media-topics`、`ai-media-scripts`、`ai-media-review`、`ai-media-materials`、`ai-media-video`、`ai-media-publish` 子 Skill。**Codex 负责创作和判断；本地脚本、FFmpeg、MoneyPrinterTurbo 与平台 CLI/MCP 负责执行。**
+## 内容生产流程
 
-第一次初始化时，AI 会引导选择两个互不嵌套的目录：
+**选题 → 脚本 → AI 审核 → 真人批准 → 视频素材匹配 → FFmpeg/MoneyPrinterTurbo 成片 → 真人验片 → 七平台发布包 → 授权发布及状态核验。**
 
-| 目录 | 保存什么 |
-|---|---|
-| 工具工作区 | 自有运行脚本、Python/uv、Git、FFmpeg、第三方 Skills/CLI/MCP、缓存和产出 |
-| 企业知识库 | 品牌定位、目标用户、创作方法、审核标准、优秀案例及自有素材 |
+素材优先来自企业本地目录、NAS/共享目录、临时视频；素材不足时可以使用**已经授权并验证的**外部素材来源，例如 MPT 的 Pexels/Pixabay/Coverr。当前支持文本索引与人工/Agent 检查画面，**不应把关键词匹配说成视频语义识别**。未经核实使用许可的素材不能直接用于公开发布。
 
-已有资料不会因重复初始化被自动覆盖。工具尽量集中安装，不要求预装系统 Python、uv 或 Git；操作系统自身的少量缓存无法保证完全不使用系统盘。
+Agent 负责选题、脚本、内容检查和镜头判断；现成脚本、FFmpeg、MoneyPrinterTurbo、平台 CLI/MCP 负责确定性操作。AI **不能代替用户输入批准或投稿确认短语**。平台上传工具退出正常并不代表真实审核或公开发布成功。
 
-## 已有能力与边界
+## 宿主环境的能力边界
 
-- **内容工作流：** 批量选题、脚本、AI 审核、人工批准、成片、七个平台发布包。
-- **素材来源：** 企业本地目录、NAS/共享目录、单次视频、合法下载的网络素材；支持索引、搜索、人工标注、授权记录。缺素材时可以在授权后调用 MoneyPrinterTurbo 的 Pexels / Pixabay / Coverr 来源。
-- **视频工具：** 优先使用 FFmpeg 处理已准备好的本地素材；需要额外的配音和自动成片流程时可按需调用 MoneyPrinterTurbo。素材检索不等于自动精确视觉理解。
-- **平台发布：** 五个短视频平台优先采用 `social-auto-upload`；微信公众号、知乎走各自的图文/文章发布能力。默认仅生成待发布内容，不会擅自投稿。
-- **数据自主：** 企业知识库独立保存，可导出内容与素材来源索引。外接盘/NAS 原片不会被自动复制进导出包。
+| Agent 实际可用工具 | 可用功能 |
+| --- | --- |
+| 只会加载 Skill/生成文本 | 选题、草稿、建议；无本地成片和真实平台发布 |
+| 可读写本机文件且可执行命令 | 独立工作区初始化、素材索引、审核记录、合成视频、导出发布包 |
+| 另有经授权的媒体账号、CLI/MCP 或 API | 按平台和账号单独确认后尝试投稿，并核验结果 |
 
-**人工审批不可跳过。** 脚本批准、成片验收和真正发帖是不同关口。账号登录、Cookie、MCP 授权、第三方素材许可及 API 费用也需要分别核实；**ChatGPT 订阅额度不等于第三方模型/素材 API 额度**。
+`start-codex.cmd` / `start-codex.sh` 是 Codex CLI 的**可选快捷方式**；`scripts/configure_mcp.py` 当前只负责 Codex 项目级 MCP 配置。其他 Agent 不需要它们：使用当前宿主自己的启动、MCP 注册和授权方式即可，不影响通用脚本。
 
-## 手动备用安装（正常用户可跳过）
+## 手动安装（备用）
 
-仅在 Agent 无法完成原生 Skill 安装，或需要手动部署时，才下载/复制本项目的完整目录并运行内置引导器；这些脚本**不是安装 Skill 的必要前置步骤**。引导器仍可能需要联网下载工具，因此不承诺断网机器能直接运行。
-
-Windows 10/11：在本目录运行 `SETUP-WINDOWS.cmd`，或使用 PowerShell：
+只有 Agent 不能自动导入 Skill 时，才把本目录完整复制到宿主能识别的 Skill 目录，然后使用脚本配置**运行环境**，无需下载额外的“Skill 安装包”：
 
 ```powershell
+# Windows PowerShell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1
 ```
 
-macOS / Linux（受支持架构）：
-
 ```bash
+# macOS / Linux
 bash ./SETUP-UNIX.sh
 ```
 
-引导器询问工具目录和知识库目录，将 Python、uv 及可用的基础工具尽量装到指定目录。第三方 Skills、MoneyPrinterTurbo、发布 CLI/MCP 则按需检查、展示安装计划，用户授权后才安装。系统需具备相应的 PowerShell/Bash、HTTPS 下载及解压/校验能力；无法连接分发源时会报错。详细平台支持和具体限制见 [首次使用说明](docs/START_HERE.md)。
+初次安装运行时可能需要网络、HTTPS、解压工具和用户目录权限；工具下载失败应修复原因后再尝试。当前版本不保证 Windows ARM64 的 FFmpeg 或 Linux musl 自动安装。企业知识库和既有成果应始终保留。
 
-## 维护与验收
+## 参考
 
-- AI 定位环境：先从主 Skill 目录读取 Git 忽略的 `config/local-install.json`，核对工作区的 `config/workspace.json`；不能依赖当前终端所在目录。
-- AI 检查环境：使用定位到的工作区绝对路径调用 `doctor`。
-- AI 安装缺失能力：先运行 `installer` 的预览模式，确认来源/权限后执行。
-- 账号与发布测试：必须逐个平台验证，CLI 安装成功不代表可以稳定投稿。
-- 知识库、内容成果与来源索引独立于第三方工具；升级 Skill 不应覆盖它们。
+[Agent 兼容及共享环境](docs/AGENT_COMPATIBILITY.md) · [首次初始化](docs/START_HERE.md) · [素材源](docs/MATERIAL_SOURCES.md) · [内容与审批](docs/CONTENT_SCHEMA.md) · [工具选型](docs/TOOLCHAIN.md) · [验收矩阵](docs/ACCEPTANCE_V3.md)
 
-工程参考：[素材源管理](docs/MATERIAL_SOURCES.md) · [工具选型](docs/TOOLCHAIN.md) · [内容结构与审批](docs/CONTENT_SCHEMA.md) · [验收矩阵](docs/ACCEPTANCE_V3.md)。
-
-**当前验收边界：** 已验证部分本地脚本、审批与素材索引流程；首次 GitHub Skill 安装、第三方工具联网安装、真实素材下载和七平台账号投稿需在目标用户环境逐项验收，不应称为已全部打通。
+目前已实现本地运行脚本、审批和素材索引等能力；**不同 Agent 的原生安装、真实在线素材获取、MoneyPrinterTurbo 成片以及各平台账号发布仍需分别在目标环境验收**，不能把源码兼容性当成实际能力验收。

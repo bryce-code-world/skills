@@ -39,7 +39,7 @@ bash ./run-studio.sh materials search --query "宠物"
 
 ## 2. 给视频补充可检索信息
 
-先检索文件名。需要镜头理解时用 `preview` 调用本地 FFmpeg 提取预览帧，再由 Codex（如支持图片读取）或人工检查画面，明确场景、主体、可用镜头片段后标注。**纯 CLI 不会自动做视觉模型理解，文本检索也不是向量语义检索。**
+先检索文件名。需要镜头理解时用 `preview` 调用本地 FFmpeg 提取预览帧，再由当前 AI Agent（如支持图片读取）或人工检查画面，明确场景、主体、可用镜头片段后标注。**纯 CLI 不会自动做视觉模型理解，文本检索也不是向量语义检索。**
 
 ```powershell
 .\RUN-STUDIO-WINDOWS.ps1 -Task materials preview --id <素材ID>
@@ -56,7 +56,7 @@ bash ./run-studio.sh materials search --query "宠物"
 
 ## 3. 按脚本匹配、人工复核并成片
 
-Codex 读取脚本的 `shots[].visual`，在索引中按名称/标签/描述筛选候选素材；必要时逐个 `preview` 看画面，再按脚本顺序选择 ID。镜头匹配是 Codex/人工的判断，不是文件名匹配天然正确。
+当前 AI Agent 读取脚本的 `shots[].visual`，在索引中按名称/标签/描述筛选候选素材；必要时逐个 `preview` 看画面，再按脚本顺序选择 ID。镜头匹配是当前 AI Agent/人工的判断，不是文件名匹配天然正确。
 
 **脚本经 AI 审核并由用户批准后**：
 
@@ -81,7 +81,7 @@ Codex 读取脚本的 `shots[].visual`，在索引中按名称/标签/描述筛�
 .\RUN-STUDIO-WINDOWS.ps1 -Task materials fetch-online --id <内容ID> --provider pexels --terms "pet eating, feeding bowl" --execute
 ```
 
-可改选 `pixabay` / `coverr`。内部调用 MPT `--video-script` + `--video-terms` + `--stop-at materials`，避免由 MPT 再调用 LLM 生成脚本和搜索词。部分素材商仍要求 API Key 或有额度/许可限制，**ChatGPT/Codex 订阅不会抵扣这些 API 调用**。MPT 返回成功仅说明素材阶段完成；下载后的文件必须检查画面、来源及许可并用 `add-file` 登记为本地素材，才能进入受控成片。
+可改选 `pixabay` / `coverr`。内部调用 MPT `--video-script` + `--video-terms` + `--stop-at materials`，避免由 MPT 再调用 LLM 生成脚本和搜索词。部分素材商仍要求 API Key 或有额度/许可限制，**当前 AI Agent 的订阅不会自动抵扣这些第三方 API 调用**。MPT 返回成功仅说明素材阶段完成；下载后的文件必须检查画面、来源及许可并用 `add-file` 登记为本地素材，才能进入受控成片。
 
 素材源配置与索引会进入 `export_assets.py` 生成的 `materials/sources.json`、`materials/index.json`，但 **NAS、外接盘、知识库以外的原视频不会被打包**，迁移电脑时需自行转移和重新映射路径。导出前审核含本机路径的索引是否适合对外共享。
 

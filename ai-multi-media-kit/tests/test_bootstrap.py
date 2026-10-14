@@ -56,6 +56,8 @@ class BootstrapRegression(unittest.TestCase):
         # Simulates uv and Python provider in an offline sandbox. Does NOT claim actual Python 3.12 download.
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp)
+            env=os.environ.copy()
+            env['XDG_CONFIG_HOME']=str(base/'isolated-user-config')
             # Run setup from an isolated Skill installation so tests cannot overwrite
             # the user's real source-local installation pointer.
             isolated_skill=base/'skill-src'
@@ -70,7 +72,7 @@ class BootstrapRegression(unittest.TestCase):
             fakeuv.write_text('#!/bin/sh\ncase "$1 $2" in\n  "--version "*) echo "uv 0.12.19";;\n  "python install") mkdir -p "$UV_PYTHON_INSTALL_DIR/stub";;\n  "python find") echo "'+str(fakepy)+'";;\n  *) exit 2;;\nesac\n',encoding='utf-8')
             fakeuv.chmod(0o755)
             args=['bash',str(isolated_skill/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(knowledge),'--non-interactive','--skip-ffmpeg']
-            first=subprocess.run(args,text=True,capture_output=True,timeout=30)
+            first=subprocess.run(args,text=True,capture_output=True,timeout=30,env=env)
             self.assertEqual(first.returncode,0,first.stdout+'\n'+first.stderr)
             cfg=json.loads((root/'config/workspace.json').read_text('utf-8'))
             self.assertEqual(cfg['knowledge_root'],str(knowledge))
@@ -79,15 +81,17 @@ class BootstrapRegression(unittest.TestCase):
             self.assertTrue((root/'config/bootstrap-assets.json').exists())
             locator=json.loads((isolated_skill/'config/local-install.json').read_text('utf-8'))
             self.assertEqual(locator['install_root'],str(root))
+            shared=json.loads((Path(env['XDG_CONFIG_HOME'])/'ai-multi-media-kit/local-install.json').read_text('utf8'))
+            self.assertEqual(shared['install_root'],str(root))
             self.assertFalse((root/'config/local-install.json').exists())
             (knowledge/'brand.md').write_text('自有内容不覆盖',encoding='utf-8')
-            second=subprocess.run(args,text=True,capture_output=True,timeout=30)
+            second=subprocess.run(args,text=True,capture_output=True,timeout=30,env=env)
             self.assertEqual(second.returncode,0,second.stderr)
             self.assertEqual((knowledge/'brand.md').read_text('utf-8'),'自有内容不覆盖')
             doctor=subprocess.run(['bash',str(root/'run-studio.sh'),'doctor','--scope','core','--strict'],text=True,capture_output=True,timeout=30)
             self.assertEqual(doctor.returncode,0,doctor.stdout+'\n'+doctor.stderr)
             nested=base/'nested'
-            bad=subprocess.run(['bash',str(isolated_skill/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(root/'nested'),'--non-interactive','--skip-ffmpeg'],text=True,capture_output=True,timeout=15)
+            bad=subprocess.run(['bash',str(isolated_skill/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(root/'nested'),'--non-interactive','--skip-ffmpeg'],text=True,capture_output=True,timeout=15,env=env)
             self.assertEqual(bad.returncode,2)
             self.assertFalse((root/'nested').exists())
 

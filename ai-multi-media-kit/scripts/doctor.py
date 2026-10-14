@@ -44,8 +44,8 @@ def main():
     check('素材来源登记',(root/'config/material-sources.json').is_file())
     check('素材索引（可按需扫描）',(root/'runtime/materials-index.json').is_file(),essential=False)
     check('依赖安装器',(root/'scripts/installer.py').is_file())
-    # Codex launch may be inside an IDE, so report environment status, not core workflow scripts broken.
-    check('Codex CLI / IDE',bool(shutil.which('codex')),shutil.which('codex') or '可以从已登录 Codex IDE 打开此文件夹',scope='all',essential=False)
+    # The active Agent host may be an IDE, cloud service or CLI; this local checker
+    # verifies only the media workspace, never assumes a particular agent executable.
     uvbin=root/'runtime/bootstrap/uv'/('uv.exe' if os.name=='nt' else 'uv')
     check('本地 uv (无需系统安装)', uvbin.is_file(),uvbin,scope='core')
     check('本地 Python 3.12 (uv-managed)', (root/'runtime/uv-python').is_dir() and any((root/'runtime/uv-python').iterdir()) if (root/'runtime/uv-python').is_dir() else False,root/'runtime/uv-python',scope='core')
@@ -66,7 +66,7 @@ def main():
     selected={'bootstrap':{'core'},'core':{'core'},'video':{'core','video'},'publish':{'core','publish'},'all':{'core','video','publish','all'}}[a.scope]
     missing=[c['name'] for c in checks if not c['ok'] and c['essential'] and c['scope'] in selected]
     result={'readiness':not missing,'missing':missing,'checks':checks,'scope':'presence_only_not_platform_acceptance',
-         'profile':a.scope,'warning':'只验证本地结构及工具存在，不代表账号已经登录/真实发帖成功'}
+         'profile':a.scope,'warning':'只验证本地结构及工具存在；无法检测宿主 AI Agent 的文件/终端权限，也不代表账号已登录或发帖成功'}
     if a.json_output:
         p=Path(a.json_output).resolve();p.parent.mkdir(parents=True,exist_ok=True)
         p.write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')

@@ -1,53 +1,64 @@
-# V3 首次使用与初始化
+# 初次安装、共享工具环境与手动备用流程
 
-**推荐方式：** 在 Codex 中发送 `https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit`，请 AI 按原生 Skill 安装方式获取完整目录并引导初始化。无需用户自己下载 ZIP、预装 Python 或手动执行下面的命令。首次使用由 AI 检查 Skill 是否可发现、询问工具/企业知识库路径、展示外部依赖计划，并经授权后调用安装器。安装过程与正常业务使用的区别见 [项目 README](../README.md)。
+## 推荐：交给当前 AI Agent
 
-**以后如何自动找回路径：** SETUP-WINDOWS.ps1 / SETUP-UNIX.sh 成功完成后，会在**主 Skill 所在目录**的 `config/local-install.json` 写入默认工具和知识库路径（本机私有、Git 忽略）。新 Codex 会话不管从哪个项目调用，都应先基于已安装的 `SKILL.md` 找到这份索引，核对 `<install_root>/config/workspace.json` 后通过绝对路径调用工作区启动器。无须系统级 PATH。索引缺失或路径无效时询问原工作区位置，确认后重新登记，不猜测路径、不自动迁移或覆盖资产。原生 Skill 更新如清除本地文件，也需要重新登记。
+把下面 GitHub Skill 地址发给你正在使用的**兼容 Agent Skills 的 AI Agent**，让它采用自身可用的 Skill 安装方式获取完整目录，不需要用户先下载 ZIP：
 
-下面是 **Agent 无法自动安装或需要手动部署时的备用步骤**（下载安装运行时依赖仍可能需要联网）：
+`https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit`
 
-1. 解压 ZIP。Windows 双击 `SETUP-WINDOWS.cmd`（本体 `SETUP-WINDOWS.ps1`）；Linux/macOS 执行 `bash SETUP-UNIX.sh`。无需事先安装 Python / uv / Git。
-2. 交互输入两个**不嵌套**的目录：工具工作区、企业知识库。Python 3.12/uv、Windows 便携 Git、FFmpeg/FFprobe、临时缓存优先集中放在工具工作区。网络下载失败会报错，可修复网络后原位置重跑；已经校验的安装会跳过。
-3. 用系统内置启动器运行 `doctor`。Windows：`powershell -File RUN-STUDIO-WINDOWS.ps1 -Task doctor --scope core --strict`；macOS/Linux：`bash ./run-studio.sh doctor --scope core --strict`。
-4. 改知识库目录下的 `brand.md`、`audience.md`、`review-rules.md`。在 Codex 中打开工具工作区，调用 `ai-media-studio` 生成选题/脚本。内容状态操作通过 `RUN-STUDIO-WINDOWS.ps1 -Task studio` 或 `run-studio.sh studio`，**不要假设全局 python 命令存在**。
-5. 素材库默认是企业知识库 `materials/`。用 `materials add-source --name nas --path <共享盘已挂载路径>` 增加来源，之后 `materials scan`、`materials search --query <关键词>`；需要的话 `materials preview/annotate` 标注内容与授权，再 `studio render --material-ids`。见 `docs/MATERIAL_SOURCES.md`。缺素材时可先审查 `materials fetch-online` 计划。
-6. 核心创作不强制任何第三方模型 Key；若希望安装第三方 Skills、MoneyPrinterTurbo、发布 CLI，先运行 `installer --profile core` 看计划，再 `installer --profile core --install` 明确批准联网获取未审计上游代码。实际平台发布还需账号登录和人工确认。
+先让宿主检查它是否具备当前任务所需的本机文件、终端和网络权限；**能读取 SKILL.md 不等于有权访问本机电脑**。详见 [Agent 兼容指南](AGENT_COMPATIBILITY.md)。有本地命令能力时，首次选择独立的工具目录和企业知识库目录，再调用 `SETUP-WINDOWS.ps1`（Windows）或 `SETUP-UNIX.sh`（macOS/Linux）；第三方依赖先审查来源和费用后经用户授权按需安装。不改变系统级 PATH。
 
-## 边界和风险
+## 不同 Agent 如何复用之前的工具环境
 
-- Windows x64、Windows ARM64、Linux glibc x64/ARM64、macOS Intel/Apple Silicon 的 uv 启动程序有固定校验清单。FFmpeg 自动下载不覆盖 Windows ARM64；该平台先用自己的已审核媒体二进制。
-- 系统基础命令（PowerShell、Bash、curl/wget、tar/解压、SHA256 命令）属于引导器的最小依赖。缺少则要由操作系统提供，不能由不存在的 Python 解决。
-- macOS/Linux Git 不强制预装：安装器没找到 git 时走 GitHub ZIP Commit 包获取。Windows 尽量使用工作区内的 MinGit。
-- 发布平台界面改版、验证码、Cookies 过期、实际许可和接口权限不能通过安装脚本保证。
-- Windows 执行策略设置只限启动的 PowerShell 进程，不修改机器策略；Mac 可能会要求确认已下载的二进制。
-- 密钥、Cookie、企业资料留在用户工作区或外部知识库，不写入 Git 或导出的安装套件。
+首次成功初始化后，工具目录与知识库目录会登记到**当前操作系统用户共享**的安装索引：
 
-## 重登记已有工作区（例如重装 Skill 后）
+- Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
+- macOS/Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
 
-AI 读取已知工具目录的 `config/workspace.json`，核对其中的 `install_root` 与 `knowledge_root` 都存在且一致后，可使用该工作区自带的 Python 3.12 执行主 Skill 的 `scripts/workspace_locator.py register --install-root "<已存在工具目录>"`，无需重新下载工具，也不会移动或覆盖企业数据。`show` 命令只读并校验已登记路径；安装记录只是索引，不能替代 `doctor` 依赖健康检查。
+另一款 Agent 只要以**相同的系统用户身份且有本地文件权限**运行，就可读取这个路径索引；再与工具目录的 `config/workspace.json` 核对，不需要重新安装 Python 和 FFmpeg。共享索引只是小型元数据（可能位于系统盘），工具、浏览器运行环境、缓存、输出仍在用户选定的工作区。
 
-## 运行命令举例
+旧版 V0.3 使用主 Skill 目录 `config/local-install.json` 的索引，仅在共享索引缺失时回退读取；若共享索引损坏或路径失效，停止并询问原工作区路径，不进行磁盘扫描或自动重装。可使用已可用的 Python 运行主 Skill 内 `scripts/workspace_locator.py show` 查看路径和来源；需显式恢复时执行 `scripts/workspace_locator.py register --install-root <已有工具目录>`。纯云端隔离 Agent 无法分享用户本地的这个索引。
 
-Windows (PowerShell，在工作区内)：
+## 手动备用安装
+
+如果当前 AI Agent 不支持从 GitHub 直接导入 Skill，请将本目录复制到该宿主能发现的 Skill 位置，再通过内置引导器初始化**运行环境**，不是另外安装一套 Skill：
+
+Windows（需要 PowerShell 5.1+）：
 
 ```powershell
-.\RUN-STUDIO-WINDOWS.ps1 -Task doctor --scope video --strict
-.\RUN-STUDIO-WINDOWS.ps1 -Task installer --component mpt
-.\RUN-STUDIO-WINDOWS.ps1 -Task installer --component mpt --install
-.\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id sample-001 --title "一个短视频选题"
+powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1
 ```
 
 macOS/Linux：
 
 ```bash
-bash ./run-studio.sh doctor --scope video --strict
-bash ./run-studio.sh installer --component mpt
-bash ./run-studio.sh installer --component mpt --install
-bash ./run-studio.sh studio new --id sample-001 --title '一个短视频选题'
+bash ./SETUP-UNIX.sh
 ```
 
-脚本生成和审核需要 Codex 读取企业知识库；参考 `docs/CONTENT_SCHEMA.md` 生成结构化数据，并经过人工明确授权才能剪辑和发布。
+按提示输入两个互不嵌套的目录：工具工作区、企业知识库。引导器将可用的 Python 3.12/uv、便携 Git（Windows）与 FFmpeg/FFprobe、各类缓存尽量放在工具目录。再次运行只复用符合校验的现有工具和知识库内容，不自动覆盖。下载需网络/证书和系统基础解压工具；Windows ARM64 的 FFmpeg、Linux musl 等需单独检查支持情况。少量系统配置、下载安全日志可能仍位于系统盘。
 
-## 作为源码 Skill 存放在 bryce-skills 时
+## 日常命令（由具备终端能力的 Agent 调用）
 
-当前项目目录名为 `ai-multi-media-kit`。若由 Codex 发现并加载，入口为本目录的 `SKILL.md`；在 Skill 目录运行引导安装后，会将生产工作区及子 Skills 安装到用户选定的其他目录（不可与企业知识库目录嵌套）。对父仓库不会做全局环境变更。
+在**已经初始化的工具工作区**，可通过绝对路径调用：
+
+Windows：
+
+```powershell
+.\RUN-STUDIO-WINDOWS.ps1 -Task doctor --scope core --strict
+.\RUN-STUDIO-WINDOWS.ps1 -Task materials sources
+.\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id demo-001 --title "我的第一条视频"
+.\RUN-STUDIO-WINDOWS.ps1 -Task installer --component mpt # 仅显示安装计划
+```
+
+macOS/Linux：
+
+```bash
+bash ./run-studio.sh doctor --scope core --strict
+bash ./run-studio.sh materials sources
+bash ./run-studio.sh studio new --id demo-001 --title "我的第一条视频"
+bash ./run-studio.sh installer --component mpt  # 仅显示安装计划
+```
+
+然后由当前 Agent 读企业知识库的 `brand.md`、`audience.md`、`review-rules.md`，调用内部 `ai-media-*` Skill 生产脚本、执行审查和选材。真正视频制作需 FFmpeg/MPT 已装且可用；真实平台发布需用户针对账号、平台、内容版本独立批准。参见 [内容结构](CONTENT_SCHEMA.md)、[素材源](MATERIAL_SOURCES.md)、[工具依赖](TOOLCHAIN.md)。
+
+仅需文本回答的 Agent 可以跳过全部本地命令，绝不能把无法执行的视频渲染、浏览器登录或投稿说成已经完成。

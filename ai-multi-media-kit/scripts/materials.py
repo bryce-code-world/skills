@@ -293,7 +293,7 @@ def cmd_fetch_online(a, root, knowledge):
     script = studio.ensure_approved_script(d, knowledge)
     terms = a.terms.strip()
     if not terms or len(terms) > 400 or "\n" in terms or "\r" in terms:
-        fail("素材检索关键词必须是 1～400 字符的单行文本，优先由 Codex 从分镜生成")
+        fail("素材检索关键词必须是 1～400 字符的单行文本，优先由 当前 AI Agent 从分镜生成")
     cmd_preview = ["<mpt-managed-python>", "cli.py", "--video-script", "<approved-script>",
                    "--video-terms", terms, "--video-source", a.provider,
                    "--voice-name", "no-voice", "--no-subtitle-enabled", "--stop-at", "materials"]
@@ -367,7 +367,7 @@ def parse():
     s = subs.add_parser("fetch-online")
     s.add_argument("--id", required=True, help="已经人工批准的脚本 ID")
     s.add_argument("--provider", required=True, choices=("pexels", "pixabay", "coverr"))
-    s.add_argument("--terms", required=True, help="Codex 从分镜生成的素材关键词")
+    s.add_argument("--terms", required=True, help="当前 AI Agent 从分镜生成的素材关键词")
     s.add_argument("--execute", action="store_true", help="联网操作；另需用户本人交互确认")
     s.set_defaults(func=cmd_fetch_online)
     a = parser.parse_args()

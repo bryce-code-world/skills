@@ -1,6 +1,6 @@
 # 内容数据结构与审批约束
 
-对一个内容 ID，运行 `studio new` 后，会生成 `script.template.json` 和 `review.template.json`，由 Codex 参考模板生成以下正式文件：
+对一个内容 ID，运行 `studio new` 后，会生成 `script.template.json` 和 `review.template.json`，由 当前 AI Agent 参考模板生成以下正式文件：
 
 `outputs/<ID>/script.json`：
 

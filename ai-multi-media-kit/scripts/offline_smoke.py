@@ -163,7 +163,7 @@ def main() -> int:
                   'synthetic 3-clip media generation', 'offline synthetic test audio and Chinese SRT',
                   'real ffmpeg 9:16 30 second MP4', '7 platform content packages prepared',
                   'no publish credentials or calls'],
-       'not_proven': ['Codex/Skills actual invocation', 'MoneyPrinterTurbo execution',
+       'not_proven': ['Agent Skills actual invocation', 'MoneyPrinterTurbo execution',
                       'social-auto-upload execution', 'any MCP operation',
                       'genuine review quality', 'external platform login or posting'],
        'commands': trace, 'generated_at_utc': datetime.now(timezone.utc).isoformat()}

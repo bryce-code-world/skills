@@ -16,7 +16,7 @@ This repository follows the standard `SKILL.md` directory structure.
 
 | Skill | Purpose |
 |---|---|
-| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Codex-based Chinese social-media toolkit with independent local/NAS footage catalogs, content production, review, and Python-free bootstrap. |
+| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Agent-agnostic Chinese social-media skill with shared local runtime, owned footage catalogs, review, video rendering, and Python-free bootstrap. |
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled, layered personal profile package through ongoing interviews and cross-session candidate discovery; the panorama file is an aggregate index in the target layout, while compatibility spaces still keep the legacy single-file body. |
 | [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |
@@ -63,7 +63,7 @@ For Distribution, replace the link or directory name with `distribution`.
 
 For Skill Release Auditor, replace the link or directory name with `skill-release-auditor`.
 
-The twelve skills can be installed independently. Except for the allowlisted dependencies below, business skills do not install missing capabilities at runtime; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
+The thirteen skills can be installed independently. Except for the allowlisted dependencies below, business skills do not install missing capabilities at runtime; add or update skills through the source repository, a plugin, or an explicit user-requested installation flow.
 
 Architecture automatically installs only the allowlisted dependencies declared in its `dependencies.md`, and only when the current task needs them. Unknown or changed sources, unverifiable versions, and dependency updates are never installed automatically.
 
