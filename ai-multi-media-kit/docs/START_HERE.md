@@ -1,4 +1,8 @@
-# V3 从下载到第一次创作
+# V3 首次使用与初始化
+
+**推荐方式：** 在 Codex 中发送 `https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit`，请 AI 按原生 Skill 安装方式获取完整目录并引导初始化。无需用户自己下载 ZIP、预装 Python 或手动执行下面的命令。首次使用由 AI 检查 Skill 是否可发现、询问工具/企业知识库路径、展示外部依赖计划，并经授权后调用安装器。安装过程与正常业务使用的区别见 [项目 README](../README.md)。
+
+下面是 **Agent 无法自动安装或需要手动部署时的备用步骤**（下载安装运行时依赖仍可能需要联网）：
 
 1. 解压 ZIP。Windows 双击 `SETUP-WINDOWS.cmd`（本体 `SETUP-WINDOWS.ps1`）；Linux/macOS 执行 `bash SETUP-UNIX.sh`。无需事先安装 Python / uv / Git。
 2. 交互输入两个**不嵌套**的目录：工具工作区、企业知识库。Python 3.12/uv、Windows 便携 Git、FFmpeg/FFprobe、临时缓存优先集中放在工具工作区。网络下载失败会报错，可修复网络后原位置重跑；已经校验的安装会跳过。

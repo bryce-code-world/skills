@@ -61,9 +61,19 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装分发时，将链接或目录名替换为 `distribution`。
 
+**AI 多媒体生产套件**直接把以下地址发送给 Codex，请 AI 使用原生 Skill 安装能力下载完整目录，并按引导在独立位置初始化工具和企业知识库（无需提前下载 ZIP 或安装 Python）：
+
+```text
+帮我安装并初始化这个 Skill：
+https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
+安装 Skill 后，请先检查环境并询问工具安装目录与企业知识库目录，授权后再配置缺失依赖。
+```
+
+完整说明见 [ai-multi-media-kit README](./ai-multi-media-kit/README.md)。
+
 安装 Skill 发布后校验时，将链接或目录名替换为 `skill-release-auditor`。
 
-十二个 Skill 可以独立安装。除下述白名单依赖外，业务 Skill 不在运行过程中安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
+十三个 Skill 可以独立安装。除下述白名单依赖外，业务 Skill 不在运行过程中安装缺失能力；需要新增或更新 Skill 时，使用源码仓库、插件或用户显式安装流程。
 
 架构图只对其 `dependencies.md` 声明的白名单依赖执行按需自动安装，不再询问。未知来源、来源变化、版本无法核验和依赖更新不自动执行。
 
