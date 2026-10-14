@@ -50,6 +50,10 @@ bash "$HOME/AI Media Studio/run-studio.sh" studio new --id demo-001 --title "我
 
 源仓库以 `SKILL.md` 为入口；独立工作区中以 `AGENTS.md` 和 `.agents/skills/ai-media-studio/SKILL.md` 编排。默认无模型 API Key 要求，但 Codex 本身的使用仍需正常登录和额度；其他视频/素材/配音服务的收费 API 独立计费。
 
+## 多来源视频素材库
+
+默认会把企业知识库的 `materials/` 设为第一个素材源。可以通过 `RUN-STUDIO-WINDOWS.ps1 -Task materials add-source` 添加本地磁盘、NAS 等目录，`scan/search/preview/annotate` 建立可重复使用的素材索引；临时文件或外部工具下载的授权素材用 `add-file` 登记。视频生成可直接用 `studio render --material-ids`，不再要求手工反复复制完整路径。缺素材时，可按授权通过 MoneyPrinterTurbo 的 Pexels/Pixabay/Coverr 检索，仅执行到素材阶段；其他 AI 生成服务仍需用户选择并自行授权。详见 [素材源手册](docs/MATERIAL_SOURCES.md)。
+
 ## 额外的现成 Skills、视频工具、发布 CLI
 
 自举安装器负责准备基础环境（Python / uv / Git / FFmpeg）；不会未经同意运行陌生仓库的安装脚本。需要内容生产第三方 Skills、MoneyPrinterTurbo 或平台发布 CLI 时，先预览计划，再授权：
@@ -73,6 +77,7 @@ Windows 用 `RUN-STUDIO-WINDOWS.ps1 -Task installer` 替换上面的 `bash ./run
 | `config/bootstrap-assets.json` | 基础可执行程序固定版本、URL 和文件哈希 |
 | `scripts/bootstrap_assets.py` | 在指定目录安装受校验的 MinGit、FFmpeg/FFprobe |
 | `scripts/installer.py` | 第三方 Skills / CLI / MCP 按需安装并锁定 Commit |
+| `scripts/materials.py` | 素材来源目录登记、索引检索、版权标注、预览和按授权在线补充 |
 | `scripts/studio.py` | 内容、审核、视频成片、七平台发布包及人审闸门 |
 | `scripts/doctor.py` | 分层检查，不把“工具存在”等同“已业务验收” |
 | `knowledge-templates/` | 独立知识库模板，首装复制，重跑不覆盖 |

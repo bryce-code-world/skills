@@ -1,12 +1,16 @@
 ---
 name: ai-media-video
-description: 把人工批准的短视频脚本结合有授权的本地素材，通过 FFmpeg CLI 或 MoneyPrinterTurbo 生成 9:16 视频、字幕和配音。
+description: 将已审核的短视频脚本、经过来源与授权核对的本地/企业/NAS/网上补充素材，通过 FFmpeg 或 MoneyPrinterTurbo 组合成竖屏成片，并保留素材使用记录。
 ---
+
 # 视频制作 Skill
 
-- 先用 `studio check` 验证脚本已审核且已人工批准；检查素材本地路径及来源授权。未经批准拒绝任何视频生成。
-- 优先选择可复现的 FFmpeg CLI，适用于用户已有实际镜头和配音音频。命令：`python scripts/studio.py --root . render --id <id> --engine ffmpeg --materials <video1.mp4> <video2.mp4> --audio <voice.mp3> --subtitles <captions.srt> --rights-confirmed`。
-- 未提供音频时，FFmpeg 输出静音视频；不能声称自动生成配音。可使用 MPT `--engine mpt`，优先用本地素材和 Codex 的现成口播稿，Edge TTS 无单独 API Key，但需要对上游实际环境进行测试。
-- MPT 输出可能保存在第三方存储目录。找到实际成片后用 `studio import-video --id <id> --file <path>` 导入工作区。不能把 MPT 命令退出码直接当作已生成作品。
-- FFmpeg 字幕脚本需为 UTF-8 SRT；有权使用的音乐/音频才可使用。自动镜头切割不等于语义匹配，建议人工验片。
-- 成片完成后请用户自己运行 `approve --stage video`，再准备七个平台内容。
+- 先用 `studio check` 核验脚本 AI 审核及真人批准。素材由 `ai-media-materials` 提供，详见 `docs/MATERIAL_SOURCES.md`；不要将 MoneyPrinterTurbo 当作唯一素材源。
+- 按分镜查找本地素材：`materials scan` -> `materials search --query <关键词>` -> 必要时 `materials preview --id <素材ID>` 并由 Codex/人工核对画面 -> `materials annotate` 记录描述/授权。
+- 优先以 `studio render --id <内容ID> --engine ffmpeg --material-ids <ID1> <ID2> --rights-confirmed --dry-run` 检查计划，确认后移除 `--dry-run` 执行。索引已变化、授权未核实或素材丢失时会拒绝执行；原有 `--materials <file1> <file2>` 仍可处理临时视频。
+- 本地 FFmpeg 适合剪辑已有真实片段：`--audio <voice.mp3>` 和 `--subtitles <captions.srt>` 可选。未提供配音音频时为静音，不可声称“自动 AI 配音”。当前默认拼接整个片段，精确镜头裁剪需先用确定性工具准备片段。
+- 如果需要 MPT 配音和成片：使用 `studio render --engine mpt`，默认依旧从已确认的**本地**素材导入；MPT 生成的结果需用 `studio import-video` 纳入受控工作区。不能把退出码当成作品验收。
+- 如果缺少素材，按用户同意使用 `materials fetch-online`，仅执行到 MPT 的 `materials` 阶段，然后核对实际视频/授权并导入本地索引。未经允许不调用付费 API、不调用可灵/即梦等外部生成服务，不自动投稿。
+- 最后按 `studio approve --stage video` 由用户自己人工验片并确认。代码不能代填确认口令。
+
+Windows 命令统一使用 `RUN-STUDIO-WINDOWS.ps1 -Task materials/studio ...`，Linux/macOS 使用 `bash ./run-studio.sh materials/studio ...`，无需预装系统 Python。

@@ -42,6 +42,8 @@
 
 如果存在待核实事实或未通过检查，result 必须为 `REVISE`/`BLOCK`，不允许 PASS。
 
+素材选型信息不直接混入 `script.json` 的审核哈希：由 `materials scan/search/preview` 从多来源选视频、`materials annotate` 记录来源和授权，使用 `studio render --material-ids <ID...>` 时校验索引的新鲜度及许可。成片后 `video/materials-used.json` 记录素材 ID、原始路径、授权状态及成片哈希（只复制元数据，不复制企业原片）。使用原有 `--materials` 仍可临时传入本地文件，并由使用者显式确认其权利。详见 [MATERIAL_SOURCES.md](MATERIAL_SOURCES.md)。
+
 人工关口绑定最新哈希：
 
 1. 脚本人工确认：需审核 PASS 且无待核事实。本人在终端输入 `APPROVE:<ID>:script`。

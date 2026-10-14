@@ -52,7 +52,9 @@ def main():
     for file, label in ((root/'AGENTS.md','skill/AGENTS.md'),
                         (root/'.agents/skills/ai-media-studio/SKILL.md','skill/SKILL.md'),
                         (root/'config/dependencies.yaml','skill/dependencies.yaml'),
-                        (root/'config/platforms.yaml','skill/platforms.yaml')):
+                        (root/'config/platforms.yaml','skill/platforms.yaml'),
+                        (root/'config/material-sources.json','materials/sources.json'),
+                        (root/'runtime/materials-index.json','materials/index.json')):
         if file.is_file() and not file.is_symlink():
             items.append((file,label))
     # Owned wrapper scripts and bundled business skills are portable; external Git clones are not.
@@ -63,6 +65,7 @@ def main():
                 if label=='skill/skills' and not rel.parts[0].startswith('ai-media-'):
                     continue
                 items.append((file, f'{label}/{rel.as_posix()}'))
+    # External/NAS source clips are not copied; only their index and provenance are exported.
     # Backward-compatible main skill at skill/SKILL.md remains included above.
     out.parent.mkdir(parents=True, exist_ok=True)
     manifest = {'format': 'ai-media-studio-owner-export-v1', 'contains_credentials': 'not_verified_by_content_scan',

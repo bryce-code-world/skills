@@ -17,6 +17,10 @@
 - 知乎：将内容衍生为文章/想法，使用 ZhihuPublisher；其 README 明确当前发布流程不支持视频上传，需要凭证和人工确认。
 - 评论、运营数据：**V2 不承诺全平台互通**。有合法官方 API 或经用户授权的小红书 MCP 才做；否则保存人工导入文件进行分析。
 
+## 多来源真实视频素材
+
+素材入口不绑定 MoneyPrinterTurbo：`materials.py` 支持默认企业素材目录、其他本地/NAS 共享目录、单次提供文件及外部合法下载文件的索引、标签、来源 URL 与授权说明。在线素材由已安装 MPT 执行 Pexels/Pixabay/Coverr 的 `--stop-at materials`，必须有人工确认和提供商 API 凭证（如适用）；从外部 AI 视频生成服务获得的文件可按单次文件导入，V3 不默认调用收费服务。详细操作见 [MATERIAL_SOURCES.md](MATERIAL_SOURCES.md)。
+
 ## 为什么不将全部 MCP 默认启用？
 
 只要 CLI 现成脚本可完成稳定上传，就无需多余 MCP。MCP 只是连接协议，底层官方 API/浏览器自动化的可靠性、账号风险和授权范围各不相同。管理 Cookie 的 MCP 必须用户确认并独立登录。

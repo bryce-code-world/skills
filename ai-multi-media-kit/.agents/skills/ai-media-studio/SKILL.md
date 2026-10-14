@@ -12,8 +12,8 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 - Windows 通过 `RUN-STUDIO-WINDOWS.ps1 -Task <tool>`，macOS/Linux 通过 `bash ./run-studio.sh <tool>` 调用本地工具。引导安装分别使用 `SETUP-WINDOWS.ps1` 和 `SETUP-UNIX.sh`，**不要求全局 Python / uv / Git**。
 - 工作区为当前目录，先确认 `config/workspace.json` 存在。若不存在，按 `docs/START_HERE.md` 执行初始化。
 - 本地资产始终以 `config/workspace.json` 中 `knowledge_root` 为源；**不要**把企业知识副本偷偷放在第三方工具配置里。
-- 先看本地 `.agents/skills/` 中现有的 `ai-media-topics`、`ai-media-scripts`、`ai-media-review`、`ai-media-video`、`ai-media-publish` 子 Skill。按需加载，不要一次性读完整第三方仓库。
-- 非确定性环节（选题、脚本、优劣审核、镜头选择）由 Codex 处理；确定性环节交给 `scripts/studio.py`、`scripts/installer.py`、FFmpeg 和上游 CLI。
+- 先看本地 `.agents/skills/` 中现有的 `ai-media-topics`、`ai-media-scripts`、`ai-media-review`、`ai-media-materials`、`ai-media-video`、`ai-media-publish` 子 Skill。按需加载，不要一次性读完整第三方仓库。
+- 非确定性环节（选题、脚本、优劣审核、镜头选择）由 Codex 处理；确定性环节交给 `scripts/studio.py`、`scripts/materials.py`、`scripts/installer.py`、FFmpeg 和上游 CLI。
 - 已存在、已验证的第三方 Skills 优先用；缺失时先检查 `run-studio.sh installer --profile core`（Windows 改 `RUN-STUDIO-WINDOWS.ps1 -Task installer`） 的安装计划，再在用户授权后运行 `--install`。网络不可用应明确说明，不要伪装完成。
 
 ## 常见用户指令映射
@@ -25,7 +25,7 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 | 生成脚本 | `studio new` -> `ai-media-scripts` -> 写 `brief.md`、`script.json` | 避免生成虚构事实 |
 | 自动审核 | `ai-media-review` -> 生成 `review.json` -> `studio check` | 有待核实时不得 PASS |
 | 准备拍剪 | 提醒用户自行执行 `studio approve --stage script` | 真人明确批准 |
-| 合成视频 | `ai-media-video` -> `studio render --engine ffmpeg/mpt` 或 `import-video` | 审核通过 + 素材有权使用 |
+| 选择视频素材 | `ai-media-materials` -> 配置本地/NAS/临时来源 -> `materials scan/search/preview/annotate`；不足时按授权调用已有线上素材工具 | 不假定文件名等于视频内容；必须记录来源与使用授权 |\n| 合成视频 | `ai-media-video` -> `studio render --material-ids` / `--materials`，或 `import-video` | 审核通过 + 素材有权使用 |
 | 确认成片 | 提醒用户执行 `studio approve --stage video` | 真人验片 |
 | 七平台待发布 | `studio package` -> 人工校对标题、封面、标签 | 不等于投稿 |
 | 真正投稿 | 用户自己执行 `studio approve --stage publish` -> `studio publish --execute` | 平台、账号、内容版本逐项明确确认 |
@@ -35,7 +35,7 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 
 `outputs/<content_id>/` 中应有 `brief.md`、`script.json`、`review.json`、`approvals/*`、`video/master.mp4`、`platforms/<platform>/package.json` 和 `publish-ledger.json`。具体字段参考 `docs/CONTENT_SCHEMA.md` 和 `scripts/studio.py` 的 `new` 模板。
 
-脚本创作步骤：
+素材来源独立于 MoneyPrinterTurbo：默认 `knowledge_root/materials`；用户还可添加本地/NAS 路径或临时文件。Codex 先按分镜检索已登记素材并查看预览帧，缺素材时再经用户许可调用 MPT 的 Pexels/Pixabay/Coverr `--stop-at materials`；外部 AI 生成服务只可作为显式授权扩展。详情见 `docs/MATERIAL_SOURCES.md`。\n\n脚本创作步骤：
 1. 从知识库读取品牌/用户/审核方法/优秀案例与过往成果，明确事实来源和镜头素材。
 2. `run-studio.sh studio new --id <ID> --title "<题目>"`，在产物目录生成真实 `script.json`（不是模板）。
 3. 通过 `run-studio.sh studio hash --id <ID>` 获取 script_sha256 和审核标准哈希，按 `ai-media-review` 生成 `review.json`。
@@ -58,5 +58,5 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 
 - `docs/START_HERE.md`：新手开始、Codex 提示词、Windows 安装。
 - `docs/CONTENT_SCHEMA.md`：Script/Review/审批字段及调用实例。
-- `docs/TOOLCHAIN.md`：选型理由、MPT/Social CLI/MCP 接入方式。
+- `docs/TOOLCHAIN.md`：选型理由、MPT/Social CLI/MCP 接入方式。\n- `docs/MATERIAL_SOURCES.md`：多素材源配置、素材索引/检索、预览、许可与联网素材补充。
 - `docs/ACCEPTANCE_V3.md`：离线、依赖安装、真实平台验收矩阵。

@@ -4,7 +4,8 @@
 2. 交互输入两个**不嵌套**的目录：工具工作区、企业知识库。Python 3.12/uv、Windows 便携 Git、FFmpeg/FFprobe、临时缓存优先集中放在工具工作区。网络下载失败会报错，可修复网络后原位置重跑；已经校验的安装会跳过。
 3. 用系统内置启动器运行 `doctor`。Windows：`powershell -File RUN-STUDIO-WINDOWS.ps1 -Task doctor --scope core --strict`；macOS/Linux：`bash ./run-studio.sh doctor --scope core --strict`。
 4. 改知识库目录下的 `brand.md`、`audience.md`、`review-rules.md`。在 Codex 中打开工具工作区，调用 `ai-media-studio` 生成选题/脚本。内容状态操作通过 `RUN-STUDIO-WINDOWS.ps1 -Task studio` 或 `run-studio.sh studio`，**不要假设全局 python 命令存在**。
-5. 核心创作不强制任何第三方模型 Key；若希望安装第三方 Skills、MoneyPrinterTurbo、发布 CLI，先运行 `installer --profile core` 看计划，再 `installer --profile core --install` 明确批准联网获取未审计上游代码。实际平台发布还需账号登录和人工确认。
+5. 素材库默认是企业知识库 `materials/`。用 `materials add-source --name nas --path <共享盘已挂载路径>` 增加来源，之后 `materials scan`、`materials search --query <关键词>`；需要的话 `materials preview/annotate` 标注内容与授权，再 `studio render --material-ids`。见 `docs/MATERIAL_SOURCES.md`。缺素材时可先审查 `materials fetch-online` 计划。
+6. 核心创作不强制任何第三方模型 Key；若希望安装第三方 Skills、MoneyPrinterTurbo、发布 CLI，先运行 `installer --profile core` 看计划，再 `installer --profile core --install` 明确批准联网获取未审计上游代码。实际平台发布还需账号登录和人工确认。
 
 ## 边界和风险
 

@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $python)) { throw 'Managed 
 switch ($Task) {
     doctor { & $python (Join-Path $root 'scripts\doctor.py') --install-root $root @TaskArgs }
     test { Push-Location $root;try { & $python -m unittest discover -s tests -p 'test_*.py' -v } finally { Pop-Location } }
-    {$_ -in @('studio','installer','bootstrap_assets','configure_mcp','offline_smoke')} { & $python (Join-Path $root "scripts\$Task.py") --root $root @TaskArgs }
+    {$_ -in @('studio','materials','installer','bootstrap_assets','configure_mcp','offline_smoke')} { & $python (Join-Path $root "scripts\$Task.py") --root $root @TaskArgs }
     export_assets { & $python (Join-Path $root 'scripts\export_assets.py') --install-root $root @TaskArgs }
     upgrade_core { & $python (Join-Path $root 'scripts\upgrade_core.py') --root $root @TaskArgs }
     default { throw "Unknown command: $Task" }

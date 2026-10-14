@@ -93,6 +93,12 @@ def main() -> int:
             return 2
         print("PRESERVED:", config_path)
 
+    # The source registry belongs to the user workspace, not the distributable Skill.
+    # Re-running setup never overwrites user-managed source paths or rights metadata.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from materials import ensure_registry
+    ensure_registry(install, knowledge)
+
     lock = install / "config" / "dependencies.lock.json"
     if not lock.exists():
         lock.write_text(json.dumps({"schema": 1, "status": "not_installed", "verified_dependencies": {}}, indent=2) + "\n", encoding="utf-8")

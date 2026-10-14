@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-LOCAL = ['ai-media-studio','ai-media-topics','ai-media-scripts','ai-media-review','ai-media-video','ai-media-publish']
+LOCAL = ['ai-media-studio','ai-media-topics','ai-media-scripts','ai-media-review','ai-media-materials','ai-media-video','ai-media-publish']
 PLATFORMS=['xiaohongshu','douyin','tencent','bilibili','kuaishou','wechat_oa','zhihu']
 
 
@@ -40,6 +40,9 @@ def main():
     for sk in LOCAL:
         check('自带 Skill '+sk, (root/'.agents/skills'/sk/'SKILL.md').is_file())
     check('内容工作流 CLI',(root/'scripts/studio.py').is_file())
+    check('素材管理 CLI',(root/'scripts/materials.py').is_file())
+    check('素材来源登记',(root/'config/material-sources.json').is_file())
+    check('素材索引（可按需扫描）',(root/'runtime/materials-index.json').is_file(),essential=False)
     check('依赖安装器',(root/'scripts/installer.py').is_file())
     # Codex launch may be inside an IDE, so report environment status, not core workflow scripts broken.
     check('Codex CLI / IDE',bool(shutil.which('codex')),shutil.which('codex') or '可以从已登录 Codex IDE 打开此文件夹',scope='all',essential=False)

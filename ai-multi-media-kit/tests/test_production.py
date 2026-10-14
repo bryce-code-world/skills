@@ -94,11 +94,19 @@ class StudioProductionTests(unittest.TestCase):
                 '-c:v','libx264','-pix_fmt','yuv420p',dest],capture_output=True,timeout=30)
             self.assertEqual(resp.returncode,0,resp.stderr.decode(errors='replace'))
             clips.append(str(dest))
+        asset_ids=[]
+        for clip in clips:
+            added=pyth('materials.py','--root',self.root,'add-file','--path',clip,
+                       '--rights','owned','--license-note','test-generated original clip')
+            self.assertEqual(added.returncode,0,added.stderr)
+            asset_ids.append(json.loads(added.stdout)['id'])
         srt=self.root/'demo.srt';srt.write_text('1\n00:00:00,000 --> 00:00:01,000\n中文字幕\n\n',encoding='utf-8')
-        p=self.call('render','--id',self.id,'--engine','ffmpeg','--materials',*clips,
+        p=self.call('render','--id',self.id,'--engine','ffmpeg','--material-ids',*asset_ids,
             '--subtitles',srt,'--rights-confirmed','--width','180','--height','320',timeout=150)
         self.assertEqual(p.returncode,0,p.stderr)
         v=self.d/'video/master.mp4';self.assertTrue(v.exists())
+        used=json.loads((self.d/'video/materials-used.json').read_text(encoding='utf-8'))
+        self.assertEqual([x['id'] for x in used['assets']],asset_ids)
         q=subprocess.run(['ffprobe','-v','error','-show_entries','stream=codec_type,width,height',
                          '-of','json',v],capture_output=True,text=True,timeout=20)
         self.assertEqual(q.returncode,0,q.stderr)

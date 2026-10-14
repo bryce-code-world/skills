@@ -20,7 +20,7 @@ PYTHON="$("$UV" python find --managed-python 3.12)"
 TASK="${1:-doctor}"; [ "$#" -eq 0 ] || shift
 case "$TASK" in
   doctor) exec "$PYTHON" "$ROOT/scripts/doctor.py" --install-root "$ROOT" "$@";;
-  studio|installer|bootstrap_assets|configure_mcp|offline_smoke|upgrade_core)
+  studio|materials|installer|bootstrap_assets|configure_mcp|offline_smoke|upgrade_core)
     exec "$PYTHON" "$ROOT/scripts/$TASK.py" --root "$ROOT" "$@";;
   export_assets) exec "$PYTHON" "$ROOT/scripts/export_assets.py" --install-root "$ROOT" "$@";;
   test) cd "$ROOT";exec "$PYTHON" -m unittest discover -s tests -p 'test_*.py' -v;;

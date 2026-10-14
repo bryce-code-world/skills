@@ -300,14 +300,35 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
 def cmd_render(a):
     root,k=workspace(a.root); d=paths(root,a.id)
     script=ensure_approved_script(d,k)
-    files=[Path(x).expanduser().resolve() for x in (a.materials or [])]
-    if not files: fail('请用 --materials 指定一个或多个本地视频文件')
-    # Do not use materials without provenance info, unless user consciously supplies right-to-use.
+    if a.material_ids and a.materials:
+        fail('--material-ids 与 --materials 只能选择一种')
+    selected = []
+    if a.material_ids:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from materials import resolve_ids
+        selected = resolve_ids(root, a.material_ids)
+        files = [Path(x['path']) for x in selected]
+    else:
+        files = [Path(x).expanduser().resolve() for x in (a.materials or [])]
+    if not files: fail('请指定 --material-ids（从素材库选择）或 --materials（临时本地文件）')
+    # Both managed and ad-hoc assets need a deliberate rights acknowledgement.
     if not a.rights_confirmed: fail('必须传入 --rights-confirmed 表示已核对素材来源/授权（不代表工具自动校验版权）')
+    for clip in files:
+        if not clip.is_file(): fail('素材不存在：' + str(clip))
+    if a.dry_run and a.engine == 'ffmpeg':
+        print('DRY_RUN_NO_RENDER:', json.dumps({'engine': a.engine,
+              'clips': [str(p) for p in files], 'indexed_assets': [x['id'] for x in selected]},
+              ensure_ascii=False))
+        return
     if a.engine=='ffmpeg':
         render_ffmpeg.allow_replace=a.replace
         result=render_ffmpeg(root,d,files,Path(a.audio).expanduser().resolve() if a.audio else None,
             Path(a.subtitles).expanduser().resolve() if a.subtitles else None, a.width,a.height)
+        save(d/'video'/'materials-used.json',
+             {'video_sha256': filehash(result), 'rights_acknowledged': True,
+              'assets': selected if selected else
+              [{'source': 'manual', 'path': str(p), 'rights': 'user-confirmed-no-index'}
+               for p in files]})
         print('RENDERED:',result,'\n备注：未提供 audio 时为静音视频。FFmpeg 不会自动生成 TTS。')
     else:
         mpt=root/'tools'/'MoneyPrinterTurbo'
@@ -480,7 +501,9 @@ def parse():
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
     ap=sub.add_parser('approve');ap.add_argument('--id',required=True);ap.add_argument('--stage',required=True,choices=['script','video','publish']);ap.add_argument('--platform',choices=PLATFORMS);ap.add_argument('--account');ap.add_argument('--who',required=True);ap.set_defaults(func=cmd_approve)
     ren=sub.add_parser('render');ren.add_argument('--id',required=True);ren.add_argument('--engine',choices=['ffmpeg','mpt'],default='ffmpeg');
-    ren.add_argument('--materials',nargs='+',required=True);ren.add_argument('--audio');ren.add_argument('--subtitles');ren.add_argument('--rights-confirmed',action='store_true');ren.add_argument('--no-voice',action='store_true');ren.add_argument('--width',type=int,default=720);ren.add_argument('--height',type=int,default=1280);ren.add_argument('--replace',action='store_true');ren.add_argument('--dry-run',action='store_true');ren.set_defaults(func=cmd_render)
+    ren.add_argument('--materials',nargs='+',help='手动指定本地视频，兼容原流程')
+    ren.add_argument('--material-ids',nargs='+',help='从 materials search 返回的素材 ID 按指定顺序剪辑')
+    ren.add_argument('--audio');ren.add_argument('--subtitles');ren.add_argument('--rights-confirmed',action='store_true');ren.add_argument('--no-voice',action='store_true');ren.add_argument('--width',type=int,default=720);ren.add_argument('--height',type=int,default=1280);ren.add_argument('--replace',action='store_true');ren.add_argument('--dry-run',action='store_true');ren.set_defaults(func=cmd_render)
     ip=sub.add_parser('import-video');ip.add_argument('--id',required=True);ip.add_argument('--file',required=True);ip.add_argument('--replace',action='store_true');ip.set_defaults(func=cmd_import_video)
     pkg=sub.add_parser('package');pkg.add_argument('--id',required=True);pkg.add_argument('--platform',choices=['all',*PLATFORMS],default='all');pkg.add_argument('--replace',action='store_true');pkg.set_defaults(func=cmd_package)
     pub=sub.add_parser('publish');pub.add_argument('--id',required=True);pub.add_argument('--platform',required=True,choices=PLATFORMS);pub.add_argument('--account',required=True);pub.add_argument('--tid',help='B站视频分区ID');pub.add_argument('--execute',action='store_true');pub.set_defaults(func=cmd_publish)
