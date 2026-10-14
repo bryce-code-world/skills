@@ -11,6 +11,8 @@ profile/
 **/*.key
 **/*.pem
 config/workspace.json
+config/local-install.json
+config/.local-install-*.tmp
 config/dependencies.lock.json
 runtime/
 logs/

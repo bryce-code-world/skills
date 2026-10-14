@@ -4,6 +4,7 @@
 
 - **数据归属**：企业知识库由 `config/workspace.json` 的 `knowledge_root` 指定。不要自动覆盖、迁移、上传企业数据；除授权范围内必要文本外，不将企业内部文件发给第三方平台。不得将 Cookie、API Key、密码、`.env` 复制到提示词或产物。
 - **初始化**：不存在配置时引导使用 `SETUP-WINDOWS.cmd` / `SETUP-WINDOWS.ps1` 或 `bash SETUP-UNIX.sh`（自动安装套件内 Python，不要求系统安装）。依赖安装先用 `RUN-STUDIO-WINDOWS.ps1 -Task installer` / `bash run-studio.sh installer` 展示计划；用户批准后安装，逐个锁定 Git SHA，不假定已安装或已功能验证。
+- **路径记忆**：首次成功执行 SETUP 引导器后，安装位置记录在主 Skill 所在目录的 `config/local-install.json`（Git 忽略）；新会话通过 Skill 的绝对路径查此索引，与工作区的 `config/workspace.json` 双向核对后再运行独立启动器。禁止修改系统级 PATH、擅自扫描磁盘或在位置失效时默默迁移用户资料。
 - **真人审批**：AI 只能出审核建议，不能代表人完成 `studio approve` 的交互确认。成片和公开发布各自需要单独批准。
 - **安全发布**：默认只生成发布包/dry-run。CLI 退出码不证明平台发布成功，未得到用户确认的链接时保持状态未知；不绕过平台访问限制。
 - **工具排序**：已审核脚本/FFmpeg CLI > 受控现成工具 > 针对性 MCP > 新代码；尽可能避免重写现成能力。

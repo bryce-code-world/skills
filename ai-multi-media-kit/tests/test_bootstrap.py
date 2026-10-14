@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,8 @@ class BootstrapRegression(unittest.TestCase):
         self.assertIn('Invoke-WebRequest',ps)
         self.assertIn('python install',shell)
         self.assertIn("'python','install','3.12'",ps)
+        self.assertIn('workspace_locator.py', shell)
+        self.assertIn('workspace_locator.py', ps)
 
     def test_tampered_binary_rejected_by_hash(self):
         b=load_bootstrap()
@@ -53,6 +56,10 @@ class BootstrapRegression(unittest.TestCase):
         # Simulates uv and Python provider in an offline sandbox. Does NOT claim actual Python 3.12 download.
         with tempfile.TemporaryDirectory() as tmp:
             base=Path(tmp)
+            # Run setup from an isolated Skill installation so tests cannot overwrite
+            # the user's real source-local installation pointer.
+            isolated_skill=base/'skill-src'
+            shutil.copytree(ROOT,isolated_skill,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
             root=base/'工具 with spaces'
             knowledge=base/'企业 data'
             uvdir=root/'runtime/bootstrap/uv';uvdir.mkdir(parents=True)
@@ -62,7 +69,7 @@ class BootstrapRegression(unittest.TestCase):
             fakeuv=uvdir/'uv'
             fakeuv.write_text('#!/bin/sh\ncase "$1 $2" in\n  "--version "*) echo "uv 0.12.19";;\n  "python install") mkdir -p "$UV_PYTHON_INSTALL_DIR/stub";;\n  "python find") echo "'+str(fakepy)+'";;\n  *) exit 2;;\nesac\n',encoding='utf-8')
             fakeuv.chmod(0o755)
-            args=['bash',str(ROOT/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(knowledge),'--non-interactive','--skip-ffmpeg']
+            args=['bash',str(isolated_skill/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(knowledge),'--non-interactive','--skip-ffmpeg']
             first=subprocess.run(args,text=True,capture_output=True,timeout=30)
             self.assertEqual(first.returncode,0,first.stdout+'\n'+first.stderr)
             cfg=json.loads((root/'config/workspace.json').read_text('utf-8'))
@@ -70,6 +77,9 @@ class BootstrapRegression(unittest.TestCase):
             self.assertTrue((root/'run-studio.sh').exists())
             self.assertTrue((root/'SETUP-WINDOWS.ps1').exists())
             self.assertTrue((root/'config/bootstrap-assets.json').exists())
+            locator=json.loads((isolated_skill/'config/local-install.json').read_text('utf-8'))
+            self.assertEqual(locator['install_root'],str(root))
+            self.assertFalse((root/'config/local-install.json').exists())
             (knowledge/'brand.md').write_text('自有内容不覆盖',encoding='utf-8')
             second=subprocess.run(args,text=True,capture_output=True,timeout=30)
             self.assertEqual(second.returncode,0,second.stderr)
@@ -77,7 +87,7 @@ class BootstrapRegression(unittest.TestCase):
             doctor=subprocess.run(['bash',str(root/'run-studio.sh'),'doctor','--scope','core','--strict'],text=True,capture_output=True,timeout=30)
             self.assertEqual(doctor.returncode,0,doctor.stdout+'\n'+doctor.stderr)
             nested=base/'nested'
-            bad=subprocess.run(['bash',str(ROOT/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(root/'nested'),'--non-interactive','--skip-ffmpeg'],text=True,capture_output=True,timeout=15)
+            bad=subprocess.run(['bash',str(isolated_skill/'SETUP-UNIX.sh'),'--install-root',str(root),'--knowledge-root',str(root/'nested'),'--non-interactive','--skip-ffmpeg'],text=True,capture_output=True,timeout=15)
             self.assertEqual(bad.returncode,2)
             self.assertFalse((root/'nested').exists())
 

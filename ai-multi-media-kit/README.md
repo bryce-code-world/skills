@@ -25,6 +25,8 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
 首次使用要求当前 Agent 可以读取 GitHub 仓库、访问本地终端并获准写入相关目录。若 Agent 不支持 GitHub Skill 安装或网络不可用，应明确报告阻塞，再采用下文的手动备用方式。安装后若暂时无法识别 Skill，可重新打开 Codex 会话并检查安装位置。
 
+**安装路径会被记住：** 初始化成功后，安装器自动在主 Skill 目录的 `config/local-install.json` 保存工具目录及知识库目录（本机私有，已 Git 忽略）。日后从其他项目、新的 Codex 会话调用时，AI 从 Skill 所在目录读取并核对这条记录，然后调用工作区内的绝对路径启动器。无需重复填写目录，也无需修改系统 PATH。Skill 被删除重装或安装目录迁移后，记录可能丢失/失效；这时应重新登记已有工作区，而不是自动重装或覆盖数据。
+
 ## 初始化成功后怎么用
 
 在 Codex 中直接对话即可，不需要每天运行命令：
@@ -75,7 +77,8 @@ bash ./SETUP-UNIX.sh
 
 ## 维护与验收
 
-- AI 检查环境：读取 `SKILL.md`，调用工作区启动器的 `doctor`。
+- AI 定位环境：先从主 Skill 目录读取 Git 忽略的 `config/local-install.json`，核对工作区的 `config/workspace.json`；不能依赖当前终端所在目录。
+- AI 检查环境：使用定位到的工作区绝对路径调用 `doctor`。
 - AI 安装缺失能力：先运行 `installer` 的预览模式，确认来源/权限后执行。
 - 账号与发布测试：必须逐个平台验证，CLI 安装成功不代表可以稳定投稿。
 - 知识库、内容成果与来源索引独立于第三方工具；升级 Skill 不应覆盖它们。

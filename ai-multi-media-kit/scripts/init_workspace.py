@@ -28,6 +28,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Initialize AI Media Studio (no downloads or installs).")
     parser.add_argument("--install-root", required=True, help="Workspace/tool root, e.g. D:\\AI-Media-Studio")
     parser.add_argument("--knowledge-root", required=True, help="Independent company knowledge root")
+    parser.add_argument("--remember", action="store_true", help="Remember this initialized workspace in this Skill's private local-install.json")
     args = parser.parse_args()
     install = Path(args.install_root).expanduser().resolve()
     knowledge = Path(args.knowledge_root).expanduser().resolve()
@@ -53,6 +54,12 @@ def main() -> int:
 
     for rel in [".agents/skills", "config", "docs", "scripts"]:
         source = PROJECT_ROOT / rel
+        if rel == "config":
+            # Never copy a host-specific locator into another user's runtime workspace.
+            for file in ("bootstrap-assets.json", "dependencies.yaml", "platforms.yaml"):
+                if (source / file).is_file():
+                    safe_copy(source / file, install / rel / file)
+            continue
         if source.exists() and source.resolve() != (install / rel).resolve():
             if not (install / rel).exists():
                 safe_copy(source, install / rel)
@@ -103,6 +110,14 @@ def main() -> int:
     if not lock.exists():
         lock.write_text(json.dumps({"schema": 1, "status": "not_installed", "verified_dependencies": {}}, indent=2) + "\n", encoding="utf-8")
         print("CREATED:", lock)
+    if args.remember:
+        from workspace_locator import remember_workspace
+        try:
+            changed = remember_workspace(install, knowledge, PROJECT_ROOT)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR: cannot persist workspace locator: {exc}", file=sys.stderr)
+            return 2
+        print("DEFAULT_WORKSPACE_REGISTERED" if changed else "DEFAULT_WORKSPACE_UNCHANGED")
     print("READY (workspace scaffolding only). Run SETUP-WINDOWS.ps1 or SETUP-UNIX.sh to bootstrap Python and media tooling; external accounts have NOT been linked.")
     print("NEXT: run-studio.sh doctor / RUN-STUDIO-WINDOWS.ps1 -Task doctor; workspace:", str(install))
     return 0

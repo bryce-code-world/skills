@@ -10,6 +10,7 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 ## 快速启动
 
 - Windows 通过 `RUN-STUDIO-WINDOWS.ps1 -Task <tool>`，macOS/Linux 通过 `bash ./run-studio.sh <tool>` 调用本地工具。引导安装分别使用 `SETUP-WINDOWS.ps1` 和 `SETUP-UNIX.sh`，**不要求全局 Python / uv / Git**。
+- **跨项目/新 Codex 会话先定位工作区：** 以本 `SKILL.md` 所在 Skill 目录为起点，优先读取同目录 `config/local-install.json` 的 `install_root`、`knowledge_root`；核对 `<install_root>/config/workspace.json` 中路径一致、知识库存在后，使用 `<install_root>/RUN-STUDIO-WINDOWS.ps1` 或 `<install_root>/run-studio.sh` 的**绝对路径**执行任务。无需设置系统 PATH，也不能假定当前项目目录就是工作区。缺失/路径失效时说明原因，请用户提供原安装目录或重新初始化；不要猜测、全盘扫描、自动覆盖旧环境。详见 `docs/START_HERE.md`。
 - Skill 源码所在目录与运行工作区可以不同。首次按 `docs/START_HERE.md` 在指定目录初始化。之后在配置了 `config/workspace.json` 的运行工作区中执行工作流；不要自动将资料写进本 Skill 源码仓库。
 - 本地资产始终以 `config/workspace.json` 中 `knowledge_root` 为源；**不要**把企业知识副本偷偷放在第三方工具配置里。
 - 在本 Skill 源目录或已初始化工作区的 `.agents/skills/` 中查看 `ai-media-topics`、`ai-media-scripts`、`ai-media-review`、`ai-media-materials`、`ai-media-video`、`ai-media-publish` 子 Skill。按需加载，不要一次性读完整第三方仓库。
@@ -20,12 +21,13 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 
 | 用户想做 | 动作 | 绝对不能跳过 |
 | --- | --- | --- |
-| 首次使用/自动安装 | 初始化向导 -> installer plan -> 授权安装 -> doctor | 原始仓库和执行权限核对 |
+| 首次使用/自动安装 | 初始化向导 -> 按授权安装依赖 -> 本机记录工作区 -> doctor | 原始仓库和执行权限核对；不要修改系统 PATH |
 | 批量选题 | 读知识库 -> `ai-media-topics` -> 输出选题表 | 核实原创性与受众 |
 | 生成脚本 | `studio new` -> `ai-media-scripts` -> 写 `brief.md`、`script.json` | 避免生成虚构事实 |
 | 自动审核 | `ai-media-review` -> 生成 `review.json` -> `studio check` | 有待核实时不得 PASS |
 | 准备拍剪 | 提醒用户自行执行 `studio approve --stage script` | 真人明确批准 |
-| 选择视频素材 | `ai-media-materials` -> 配置本地/NAS/临时来源 -> `materials scan/search/preview/annotate`；不足时按授权调用已有线上素材工具 | 不假定文件名等于视频内容；必须记录来源与使用授权 |\n| 合成视频 | `ai-media-video` -> `studio render --material-ids` / `--materials`，或 `import-video` | 审核通过 + 素材有权使用 |
+| 选择视频素材 | `ai-media-materials` -> 配置本地/NAS/临时来源 -> `materials scan/search/preview/annotate`；不足时按授权调用已有线上素材工具 | 不假定文件名等于视频内容；必须记录来源与使用授权 |
+| 合成视频 | `ai-media-video` -> `studio render --material-ids` / `--materials`，或 `import-video` | 审核通过 + 素材有权使用 |
 | 确认成片 | 提醒用户执行 `studio approve --stage video` | 真人验片 |
 | 七平台待发布 | `studio package` -> 人工校对标题、封面、标签 | 不等于投稿 |
 | 真正投稿 | 用户自己执行 `studio approve --stage publish` -> `studio publish --execute` | 平台、账号、内容版本逐项明确确认 |
@@ -35,7 +37,9 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 
 `outputs/<content_id>/` 中应有 `brief.md`、`script.json`、`review.json`、`approvals/*`、`video/master.mp4`、`platforms/<platform>/package.json` 和 `publish-ledger.json`。具体字段参考 `docs/CONTENT_SCHEMA.md` 和 `scripts/studio.py` 的 `new` 模板。
 
-素材来源独立于 MoneyPrinterTurbo：默认 `knowledge_root/materials`；用户还可添加本地/NAS 路径或临时文件。Codex 先按分镜检索已登记素材并查看预览帧，缺素材时再经用户许可调用 MPT 的 Pexels/Pixabay/Coverr `--stop-at materials`；外部 AI 生成服务只可作为显式授权扩展。详情见 `docs/MATERIAL_SOURCES.md`。\n\n脚本创作步骤：
+素材来源独立于 MoneyPrinterTurbo：默认 `knowledge_root/materials`；用户还可添加本地/NAS 路径或临时文件。Codex 先按分镜检索已登记素材并查看预览帧，缺素材时再经用户许可调用 MPT 的 Pexels/Pixabay/Coverr `--stop-at materials`；外部 AI 生成服务只可作为显式授权扩展。详情见 `docs/MATERIAL_SOURCES.md`。
+
+脚本创作步骤：
 1. 从知识库读取品牌/用户/审核方法/优秀案例与过往成果，明确事实来源和镜头素材。
 2. `run-studio.sh studio new --id <ID> --title "<题目>"`，在产物目录生成真实 `script.json`（不是模板）。
 3. 通过 `run-studio.sh studio hash --id <ID>` 获取 script_sha256 和审核标准哈希，按 `ai-media-review` 生成 `review.json`。
@@ -58,8 +62,13 @@ description: 用 Codex 和本地企业知识库完成国内新媒体选题、短
 
 - `docs/START_HERE.md`：新手开始、Codex 提示词、Windows 安装。
 - `docs/CONTENT_SCHEMA.md`：Script/Review/审批字段及调用实例。
-- `docs/TOOLCHAIN.md`：选型理由、MPT/Social CLI/MCP 接入方式。\n- `docs/MATERIAL_SOURCES.md`：多素材源配置、素材索引/检索、预览、许可与联网素材补充。
+- `docs/TOOLCHAIN.md`：选型理由、MPT/Social CLI/MCP 接入方式。
+- `docs/MATERIAL_SOURCES.md`：多素材源配置、素材索引/检索、预览、许可与联网素材补充。
 - `docs/ACCEPTANCE_V3.md`：离线、依赖安装、真实平台验收矩阵。
+
+## 本机安装记录
+
+标准 `SETUP-WINDOWS.ps1` / `SETUP-UNIX.sh` 初始化**成功完成后**在已安装的主 Skill 的 `config/local-install.json` 保存默认工作区和知识库绝对路径；若仅手动调用 `scripts/init_workspace.py` 建立工作区，应显式传入 `--remember` 才登记；该文件被 `.gitignore` 忽略，不会推送到 GitHub，也不会复制进新的工作区。它只是定位索引，权威配置始终是工作区的 `config/workspace.json`。每次使用先读索引并核验，不要直接相信过期路径；切换电脑、重新安装 Skill 或目录被迁移时，需用已存在的有效工作区重新登记/初始化。不要自动修改或迁移用户数据。
 
 ## 本地仓库安装说明
 

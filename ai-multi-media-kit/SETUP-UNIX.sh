@@ -105,6 +105,8 @@ PYTHON="$("$UV" python find --managed-python 3.12)"
 if [ "$SKIP_FFMPEG" -eq 0 ]; then
   "$PYTHON" "$SOURCE/scripts/bootstrap_assets.py" --root "$ROOT" --ffmpeg
 fi
+# Save the default locator only when initial provisioning has completed.
+"$PYTHON" "$SOURCE/scripts/workspace_locator.py" register --install-root "$ROOT"
 echo "READY: workspace $ROOT"
 echo "READY: knowledge $KNOWLEDGE"
 echo "Python: $PYTHON"

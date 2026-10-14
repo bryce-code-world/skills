@@ -2,6 +2,8 @@
 
 **推荐方式：** 在 Codex 中发送 `https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit`，请 AI 按原生 Skill 安装方式获取完整目录并引导初始化。无需用户自己下载 ZIP、预装 Python 或手动执行下面的命令。首次使用由 AI 检查 Skill 是否可发现、询问工具/企业知识库路径、展示外部依赖计划，并经授权后调用安装器。安装过程与正常业务使用的区别见 [项目 README](../README.md)。
 
+**以后如何自动找回路径：** SETUP-WINDOWS.ps1 / SETUP-UNIX.sh 成功完成后，会在**主 Skill 所在目录**的 `config/local-install.json` 写入默认工具和知识库路径（本机私有、Git 忽略）。新 Codex 会话不管从哪个项目调用，都应先基于已安装的 `SKILL.md` 找到这份索引，核对 `<install_root>/config/workspace.json` 后通过绝对路径调用工作区启动器。无须系统级 PATH。索引缺失或路径无效时询问原工作区位置，确认后重新登记，不猜测路径、不自动迁移或覆盖资产。原生 Skill 更新如清除本地文件，也需要重新登记。
+
 下面是 **Agent 无法自动安装或需要手动部署时的备用步骤**（下载安装运行时依赖仍可能需要联网）：
 
 1. 解压 ZIP。Windows 双击 `SETUP-WINDOWS.cmd`（本体 `SETUP-WINDOWS.ps1`）；Linux/macOS 执行 `bash SETUP-UNIX.sh`。无需事先安装 Python / uv / Git。
@@ -19,6 +21,10 @@
 - 发布平台界面改版、验证码、Cookies 过期、实际许可和接口权限不能通过安装脚本保证。
 - Windows 执行策略设置只限启动的 PowerShell 进程，不修改机器策略；Mac 可能会要求确认已下载的二进制。
 - 密钥、Cookie、企业资料留在用户工作区或外部知识库，不写入 Git 或导出的安装套件。
+
+## 重登记已有工作区（例如重装 Skill 后）
+
+AI 读取已知工具目录的 `config/workspace.json`，核对其中的 `install_root` 与 `knowledge_root` 都存在且一致后，可使用该工作区自带的 Python 3.12 执行主 Skill 的 `scripts/workspace_locator.py register --install-root "<已存在工具目录>"`，无需重新下载工具，也不会移动或覆盖企业数据。`show` 命令只读并校验已登记路径；安装记录只是索引，不能替代 `doctor` 依赖健康检查。
 
 ## 运行命令举例
 

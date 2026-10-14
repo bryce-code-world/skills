@@ -122,6 +122,8 @@ try {
         Write-Host 'Provisioning portable Git and media tools (downloaded files are checked)...'
         RunChecked $python (@((Join-Path $source 'scripts\bootstrap_assets.py')) + $more)
     }
+    # Persist the locator only after the selected tool bootstrap has succeeded.
+    RunChecked $python @((Join-Path $source 'scripts\workspace_locator.py'),'register','--install-root',$root)
     Write-Host ''
     Write-Host "SUCCESS: workspace $root"
     Write-Host "SUCCESS: knowledge $knowledge"
