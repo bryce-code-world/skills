@@ -60,7 +60,7 @@ class BootstrapRegression(unittest.TestCase):
             env = os.environ.copy()
             env["LOCALAPPDATA"] = str(base / "isolated local app data")
             isolated_skill = base / "another Agent Skill"
-            shutil.copytree(ROOT, isolated_skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copytree(ROOT, isolated_skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "local-install.json"))
             first = subprocess.run([sys.executable, "-X", "utf8",
                 str(isolated_skill / "scripts/init_workspace.py"), "--install-root", str(tool),
                 "--knowledge-root", str(knowledge), "--remember"],
@@ -99,7 +99,7 @@ class BootstrapRegression(unittest.TestCase):
             # Run setup from an isolated Skill installation so tests cannot overwrite
             # the user's real source-local installation pointer.
             isolated_skill=base/'skill-src'
-            shutil.copytree(ROOT,isolated_skill,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            shutil.copytree(ROOT,isolated_skill,ignore=shutil.ignore_patterns('__pycache__','*.pyc','local-install.json'))
             root=base/'工具 with spaces'
             knowledge=base/'企业 data'
             uvdir=root/'runtime/bootstrap/uv';uvdir.mkdir(parents=True)

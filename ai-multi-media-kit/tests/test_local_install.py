@@ -19,7 +19,7 @@ class LocalInstallTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
         self.skill = self.base / "installed skill with spaces"
-        shutil.copytree(SOURCE, self.skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.copytree(SOURCE, self.skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "local-install.json"))
         self.workspace = self.base / "toolspace"
         self.knowledge = self.base / "知识 库"
         self.other_cwd = self.base / "unrelated project"
@@ -124,7 +124,7 @@ class LocalInstallTests(unittest.TestCase):
         """Removing per-Skill discovery must not force a second agent to reinitialize."""
         self.assertEqual(self.initialize().returncode, 0)
         second_skill = self.base / 'second Agent vendor skill'
-        shutil.copytree(SOURCE, second_skill, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+        shutil.copytree(SOURCE, second_skill, ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'local-install.json'))
         self.assertFalse((second_skill / 'config' / 'local-install.json').exists())
         found = self.run_script('workspace_locator.py', 'show', skill=second_skill)
         self.assertEqual(found.returncode, 0, found.stderr)
@@ -136,7 +136,7 @@ class LocalInstallTests(unittest.TestCase):
         """Register must supersede stale per-agent cache without changing old workspace."""
         self.assertEqual(self.initialize().returncode, 0)
         second_skill = self.base / 'another agent'
-        shutil.copytree(SOURCE, second_skill, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+        shutil.copytree(SOURCE, second_skill, ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'local-install.json'))
         newer, newer_k = self.base / 'new tools', self.base / 'new knowledge'
         new_init = self.run_script('init_workspace.py', '--install-root', newer,
                                    '--knowledge-root', newer_k, '--new-workspace')
@@ -197,7 +197,7 @@ class LocalInstallTests(unittest.TestCase):
     def test_second_agent_with_matching_paths_reuses_without_local_reconfiguration(self):
         self.assertEqual(self.initialize().returncode, 0)
         second = self.base / 'second skill package'
-        shutil.copytree(SOURCE, second, ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        shutil.copytree(SOURCE, second, ignore=shutil.ignore_patterns('__pycache__','*.pyc','local-install.json'))
         before_config=(self.workspace/'config/workspace.json').read_bytes()
         before_shared=self.shared_registry.read_bytes()
         probe=self.run_script('init_workspace.py','--install-root',self.workspace,
@@ -213,7 +213,7 @@ class LocalInstallTests(unittest.TestCase):
         new_tools=self.base/'new agent duplicate'
         new_kb=self.base/'new knowledge duplicate'
         second=self.base/'vendor two'
-        shutil.copytree(SOURCE,second,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        shutil.copytree(SOURCE,second,ignore=shutil.ignore_patterns('__pycache__','*.pyc','local-install.json'))
         before=self.shared_registry.read_bytes()
         denied=self.run_script('init_workspace.py','--install-root',new_tools,
                                '--knowledge-root',new_kb,'--remember',skill=second)
