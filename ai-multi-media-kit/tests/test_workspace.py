@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def py(script: str, *args: str):
-    return subprocess.run([sys.executable, str(ROOT/'scripts'/script), *map(str,args)],
+    return subprocess.run([sys.executable, '-X', 'utf8', str(ROOT/'scripts'/script), *map(str,args)],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30)
 
 
@@ -55,12 +55,12 @@ class WorkspaceRegression(unittest.TestCase):
         self.assertEqual(result['scope'],'presence_only_not_platform_acceptance')
 
     def test_review_gate_blocks_render(self):
-        c=py('offline_smoke.py','--install-root',self.root,'--output-id','needs-approval')
+        c=py('offline_smoke.py','--install-root',self.root,'--output-id','needs-review')
         self.assertEqual(c.returncode,0,c.stderr)
-        output=self.root/'outputs'/'needs-approval'
+        output=self.root/'outputs'/'needs-review'
         self.assertTrue((output/'review.json').exists())
         self.assertFalse((output/'video/master.mp4').exists())
-        c2=py('offline_smoke.py','--install-root',self.root,'--output-id','needs-approval')
+        c2=py('offline_smoke.py','--install-root',self.root,'--output-id','needs-review')
         self.assertNotEqual(c2.returncode,0)
 
     def test_export_keeps_assets_but_not_secrets(self):

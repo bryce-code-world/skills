@@ -1,43 +1,37 @@
-# AI Agent 兼容与运行边界
+# 跨 Agent 兼容、授权边界与实测等级
 
-本 Skill 使用 [Agent Skills](https://agentskills.io/specification) 的 `SKILL.md` 目录格式；**不绑定模型、Agent 品牌、聊天订阅或特定插件框架**。一个宿主是否能使用完整功能，取决于该产品及版本开放了哪些工具能力，不由能否识别 `SKILL.md` 单独决定。无论用户使用 Codex、Claude、Grok、WorkBuddy、千问办公、豆包或其他产品，都应核实**当前具体客户端/版本**的 Skill 发现、文件系统和命令执行权限，不能仅凭产品名称宣称已适配。
+本 Skill 使用开放的 [Agent Skills](https://agentskills.io/specification) 目录格式，适用于能读取 `SKILL.md` 的 Agent，但**不保证**每种客户端都拥有本地文件、Shell、账号或浏览器能力。对于 Codex、Claude Code、WorkBuddy、Grok、千问办公、豆包等宿主都要按**当前具体版本**实测，不能凭品牌名宣称支持。
 
-## 三档能力
-
-| 当前 Agent 能力 | 本 Skill 能完成什么 | 不应宣称 |
+| 宿主实际可用能力 | 可以做什么 | 不能冒充 |
 | --- | --- | --- |
-| 只支持加载 `SKILL.md`、聊天/文档生成 | 讨论选题、创作脚本、解释流程；若用户提供材料可做文本审核 | 本地环境已安装、真实视频已合成或已投稿 |
-| 另有本机文件读写 + 终端命令执行（含 Windows PowerShell 或 Linux/macOS Bash） | 调用内置引导器、自有 Python、FFmpeg 和素材索引工具；记录审核及准备发布包 | 第三方素材/API 或媒体账号可用，除非实际验证 |
-| 另有经授权的网络/登录/媒体发布能力 | 在对应平台完成独立验证后尝试上传，并检查真实返回状态 | 所有平台通用、CLI 返回 0 就代表发布成功 |
+| 仅 Skill/聊天 | 选题、脚本、基于已提供证据的文本审查 | 本地环境已经安装、视频或平台发布已完成 |
+| 还可读写本机和执行命令 | 初始化或复用共享工作区、使用自有 Python/FFmpeg/素材 CLI，完成真实 MP4 和发布包 | 自动拥有第三方素材许可、TTS/模型额度或平台账号 |
+| 另有已验证的外部网络与平台登录权限 | 按用户初始任务限定的平台/账号执行受支持的发布工具并核查链接 | 任意平台账号都能发布、CLI 退出码 0 就是发布成功 |
 
-仅能访问隔离云电脑/容器的 Agent 不能自行访问用户 Windows 的 `D:\` 盘、私人 NAS 或登录态。此时优先在该宿主**实际可访问的文件系统**内完成文字任务，或要求用户在拥有执行权限的本地 Agent 中完成后续操作。不要用聊天工具、插件名或模型名推断本地权限。
+隔离的云电脑不自动等于用户本机 Windows 的 `D:\`，也不继承私人 NAS 或账号登录态。缺少能力时交付可核实的部分，不虚构功能。
 
-## 安装约定
+## Skill 安装与工作区复用
 
-把 GitHub Skill 目录链接交给当前 Agent，请它**使用自身支持的安装方式**（原生 Skill 安装器、导入或完整复制）取得 `SKILL.md` 连同 `scripts/`、`docs/`、`knowledge-templates/`、`.agents/skills/` 等资源。每种宿主的 Skill 安装目录与命令不同，**不要强制使用 Codex 或 Claude 的专有目录**。若只能读取文档但无法执行脚本，停止在文本方案。
+使用**当前宿主自己**的 Skill 安装/导入或完整目录复制，不强制 Codex 或 Claude 专属安装目录。主 `SKILL.md` 为统一入口；初始化工作区内 `.agents/skills/ai-media-*/SKILL.md` 是业务子 Skill，宿主不能自动发现时按阶段直接读取，无需修改系统 Skill 路径。
 
-主 `SKILL.md` 是跨 Agent 的唯一通用入口；初始化工作区内的 `.agents/skills/ai-media-*/SKILL.md` 是分阶段的业务子 Skill。宿主不发现嵌套子 Skill 时，主 Agent 按工作阶段直接读取对应文件，不要求改写系统 Skill 搜索路径或重复安装全部子 Skill。已安装并验证的现成第三方技能优先复用。
-
-## 首次初始化与跨 Agent 共享路径
-
-用户只需指定一次**工具目录**和**企业知识库目录**，均由用户掌控，且不互相嵌套。宿主执行对应 `SETUP-WINDOWS.ps1` 或 `SETUP-UNIX.sh`，自动准备套件内的 Python/uv/FFmpeg（平台不支持的工具须另行处理）。不会修改系统 PATH。联网安装依赖前应展示来源、权限与费用，并遵循用户授权。
-
-首次成功完成后，共享定位索引仅保存路径信息：
+工具目录和企业知识库目录由用户选定且不得互相嵌套。运行对应的 `SETUP-WINDOWS.ps1` / `SETUP-UNIX.sh`，不改系统 PATH。首次成功后在同一系统用户的本机共享索引中记路径：
 
 - Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
 - macOS / Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
 
-路径是 **每台设备、每位操作系统用户** 的本机配置，不是 Agent 云端同步服务；这份小型元数据可能位于系统盘，但 Python、FFmpeg、缓存和企业内容依然优先在用户选择的位置。不同 Agent 需要以**同一用户身份和相同本机文件访问权限**运行，才能共享它。旧版主 Skill 目录的 `config/local-install.json` 仅作为缺少共享记录时的兼容回退；不要将任何一种索引上传 Git 或生成工作区副本。
+每次需与 `<install_root>/config/workspace.json`、企业知识库校验。旧版主 Skill 的 `config/local-install.json` 仅供共享索引缺失时回退；索引损坏或路径不符时停止询问原路径，不静默迁移或重复安装用户资产。独立 Agent 在同设备、同系统用户及可访问本地文件时才可复用，索引不是云同步。
 
-新会话使用前，读取共享索引并核对 `<install_root>/config/workspace.json`、`knowledge_root`；再以绝对路径调用工作区启动器。若路径失效，**停止并请用户提供现有工具目录**；不全盘扫描、不自动安装到新位置、不修改或迁移自有资料。可通过已有工作区的 Python 执行 `scripts/workspace_locator.py register --install-root <原工具目录>` 重登记；`show` 为只读验证。没有 Python 的 Agent 也可用自己的本地文件读取能力直接读取这两份 JSON。
+## 自动执行的授权
 
-## 哪些能力有专属适配
+用户明确提出**制作视频**的任务，允许 Agent 在该任务内自主选题、脚本、AI 审核、合法免费选材、成片及迭代，不因每一阶段的质量或工具计划重复索取批准。
 
-- `start-codex.cmd`、`start-codex.sh` 仅为 **Codex CLI 的可选便捷入口**，不是主运行入口，也不要求其他 Agent 安装 Codex。
-- `scripts/configure_mcp.py` 当前只生成 **Codex 项目级** `.codex/config.toml`，其他 Agent 必须按自己支持的 MCP 配置格式注册、授权并验证连接，不能直接复用该 TOML。
-- `RUN-STUDIO-WINDOWS.ps1`、`run-studio.sh`、`scripts/studio.py`、`scripts/materials.py` 等是**操作系统工具**，不属于某家模型或 Agent。按本机能力执行。
-- 无论宿主是谁，审批决定都必须来自真人。用户在对话中明确批准**当前内容 ID、阶段及必要的平台账号**后，Agent 才能原样引用该用户消息，通过 `studio approve --chat-message` 写入带哈希的审批记录；CLI 只核验字面匹配，无法独立证明消息确实出自用户，宿主必须先确认原始用户轮次。不得伪造、代写或推断授权。旧终端 `APPROVE` 仍兼容，实际投稿 `PUBLISH` 二次交互确认不变。未验证授权的素材、第三方收费 API 和平台投稿均禁止静默执行。
+只有原始任务明确指定**公开发布的平台及账号**，Agent 才可在创建内容时记录 `studio new --publish-target platform:account`。这不是任意未来发布权限；内容 ID、平台、账号严格绑定。Agent 不能将“账号已登录”“请准备发布包”或模糊回答解释为公开发布授权，不能编造用户请求或扩大范围。CLI 不能独立辨认原话作者，宿主必须保证指令确实来自用户。
 
-## 验收口径
+在该范围内，`studio publish --execute` 不要求第二次终端/对话审批。只在用户必须操作的平台登录、扫码、验证码时暂停。拒绝未经核实许可的素材、收费或不确定计费 API、未知外部安装；自主切换免费方案或报告阻塞，不将质量审查交给用户。状态未知不能重试盲发。
 
-区分 `SKILL.md` 已被发现、当前 Agent 已能读取知识库、内置本地工具已验证、第三方 CLI/MCP 已验证、目标媒体账号已真正验收五种状态。当前仅对本地脚本提供回归测试；不同厂商的 Agent 需在其真实运行版本验证 Skill 发现、工具调用和沙箱权限，不把某个 Agent 的成功推广到所有客户端。
+## 哪些功能仍为宿主专用
+
+- `start-codex.*` 仅是 Codex CLI 可选入口，不影响其它宿主。
+- `scripts/configure_mcp.py` 只适配 Codex 项目级 `.codex/config.toml`，其它宿主应使用自己的 MCP 注册和权限方式。
+- `RUN-STUDIO-WINDOWS.ps1`、`run-studio.sh`、`scripts/studio.py`、`scripts/materials.py` 是系统级本地工具，可供兼容 Agent 调用。
+- `doctor` 只做本地结构及依赖检查，不代表 AI 审核质量、账号已登录、MPT 成片或真实发布经过验收。真实作品必须具备可核对的 MP4/发布状态证据。

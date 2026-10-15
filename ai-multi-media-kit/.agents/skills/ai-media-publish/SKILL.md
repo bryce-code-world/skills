@@ -1,13 +1,16 @@
 ---
 name: ai-media-publish
-description: 给小红书、抖音、视频号、快手、B站、公众号、知乎准备差异化内容，严格执行人工审核和 dry-run，受控使用既有 CLI 或对应 Skill 发布。
+description: 自动生成小红书、抖音、视频号、B站、快手与公众号、知乎适配内容；仅在初始任务明确授权的平台和账号内执行已验证工具的投稿与核验。
 ---
-# 平台发布 Skill
+# 平台适配与发布
 
-- 七个平台：`xiaohongshu`、`douyin`、`tencent`、`bilibili`、`kuaishou`、`wechat_oa`、`zhihu`。
-- 视频平台需要人工批准成片；公众号/知乎需要人工批准脚本，并准备图文衍生稿；执行 `studio package --id <id>` 只会生成待发布包，绝不投稿。
-- 每个平台的标题、简介、标签应单独审核，尤其检查平台格式、话题、版权与敏感表述；素材仅供已授权账号使用。
-- 视频投稿首选 social-auto-upload `sau`；先在测试号验证当前 CLI。发布包可由用户在对话中明确批准**内容 ID + 平台 + 账号**，Agent 使用 `studio approve --stage publish --platform <p> --account <alias> --who <本人> --chat-message <用户原话>` 登记；否则仍使用终端人工批准。`studio publish` 先 dry-run。**实际投稿时的 `PUBLISH` 二次交互确认仍然独立保留**，不能把对话中批准发布包当作立即发帖授权。
-- 公众号使用 baoyu-post-to-wechat；知乎使用 ZhihuPublisher。由于它们的接口和授权流程不同，V2 只自动生成文章包，真正发送时由对应已安装 Skill 引导人工发布，不调用没有测试过的接口。
-- 未拿到可靠公开作品链接之前记录 `submitted_unknown`，不要声称发布成功，不要因超时而盲目重试。
-- 不默认自动抓取/回复评论；仅在合法 API/MCP 权限可验证后逐平台开启。
+支持 `xiaohongshu`、`douyin`、`tencent`、`bilibili`、`kuaishou`、`wechat_oa`、`zhihu`。视频平台需要已完成 AI 成片审核；公众号/知乎需要已通过的脚本、完整图文。
+
+- `studio package --id <id>` 在审核合格后生成内容包，始终只是离线准备，不公开投稿。七平台的标题、标签、简介和图文内容逐项自动审核，不能含未经核实的事实、版权素材或凭据。
+- **仅在用户初始任务明确要求公开发布、且 `studio new --publish-target platform:account` 已记录相同平台/账号时**，可在该平台与账号上自动投稿；用户只要求制作视频时不得发布。不得从账号存在或已登录推断授权。
+- 真实视频上传使用已有且经验证的 social-auto-upload 等适配器，先检查发布命令（dry-run），再由 Agent 直接执行 `studio publish --execute`。**不再请求用户逐平台审批或输入 `PUBLISH` 口令**；必须由本人完成的平台登录、扫码、验证码等操作则暂停，完成后续跑。
+- 当前 CLI 仅尝试已接入的视频投稿工具；公众号、知乎等无经验证自动发布工具时只提供发布包，不能代替实际发布或要求用户中途审批替代缺失实现。
+- 退出码不代表平台已公开，状态 `submitted_unknown` 时禁止盲重试。Agent 在官方平台确认作品链接后使用 `studio confirm-published --id ... --platform ... --url ...`，只接受目标平台的真实 HTTPS 作品链接。平台仍未知时如实保留未知，不伪造公开结果。
+- 用户对任务外的新平台、账号或内容版本提出发布需求，需要对应的明确新任务范围，不能绕过既有任务绑定。
+
+不默认自动评论、点赞或抓取私有用户数据。

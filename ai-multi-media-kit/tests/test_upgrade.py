@@ -13,7 +13,7 @@ class UpgradeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             home, kb = base/'tools', base/'knowledge'
-            init = subprocess.run([sys.executable, str(SRC/'scripts/init_workspace.py'),
+            init = subprocess.run([sys.executable, '-X', 'utf8', str(SRC/'scripts/init_workspace.py'),
                 '--install-root', str(home), '--knowledge-root', str(kb)],
                 text=True, capture_output=True)
             self.assertEqual(init.returncode, 0, init.stderr)
@@ -21,13 +21,13 @@ class UpgradeTests(unittest.TestCase):
             marker.write_text('用户自有品牌定位，请勿覆盖', encoding='utf-8')
             legacy = home/'AGENTS.md'
             legacy.write_text('旧版本用户已有规则', encoding='utf-8')
-            preview = subprocess.run([sys.executable,str(SRC/'scripts/upgrade_core.py'),
+            preview = subprocess.run([sys.executable, '-X', 'utf8', str(SRC/'scripts/upgrade_core.py'),
                 '--root',str(home)],capture_output=True,text=True)
             self.assertEqual(preview.returncode, 0, preview.stderr)
             self.assertIn('PREVIEW ONLY',preview.stdout)
             self.assertEqual(legacy.read_text(encoding='utf-8'),'旧版本用户已有规则')
-            run = subprocess.run([sys.executable,str(SRC/'scripts/upgrade_core.py'),
-                '--root',str(home),'--apply'],input='UPGRADE_CORE\n',capture_output=True,text=True)
+            run = subprocess.run([sys.executable, '-X', 'utf8', str(SRC/'scripts/upgrade_core.py'),
+                '--root',str(home),'--apply'],capture_output=True,text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             self.assertEqual(legacy.read_bytes(),(SRC/'AGENTS.md').read_bytes())
             self.assertEqual(marker.read_text(encoding='utf-8'),'用户自有品牌定位，请勿覆盖')

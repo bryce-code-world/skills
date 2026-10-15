@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline end-to-end smoke for WORKSPACE and deterministic media tooling.
 
-Uses test-fixture script, review and manually simulated approval, synthetic original
-materials, a generated test-tone audio track and ffmpeg. NOT Codex, MoneyPrinterTurbo, or platform
+Uses a static test fixture (not an actual AI review), synthetic original materials,
+a test-tone audio track and ffmpeg. NOT a real Agent, MoneyPrinterTurbo, or platform
 publishing. Does not accept credentials or call external APIs.
 """
 from __future__ import annotations
@@ -21,7 +21,7 @@ PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat
 SCENES = [
     ('先确定服务谁', '内容团队要提高效率，先明确目标用户和实际问题。', '0x16334f'),
     ('把创作拆成流程', '再把选题、脚本、审核和剪辑，拆成能够复用的步骤。', '0x225950'),
-    ('让人把控关键决定', '重复工作交给工具，内容质量和发布决定仍由人来确认。', '0x62462e'),
+    ('AI 自动检查质量', '内容质量不合格自动返工，任务范围内的制作不再反复人工审批。', '0x62462e'),
 ]
 
 
@@ -50,7 +50,7 @@ def sha(path: Path) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(description='Offline fixtures only; never posts to accounts.')
     p.add_argument('--install-root', required=True)
-    p.add_argument('--simulate-approval', action='store_true', help='Test-only pretend approval to exercise render flow.')
+    p.add_argument('--fixture-render', action='store_true', help='Use synthetic fixture to test ffmpeg only; not a real AI review.')
     p.add_argument('--output-id', default=None)
     a = p.parse_args()
     root = Path(a.install_root).resolve()
@@ -90,16 +90,15 @@ def main() -> int:
     jwrite(target / 'review.json', {
         'test_only': True, 'review_method': 'offline_deterministic_fixture_not_ai_review',
         'review_standard_sha256': hashlib.sha256(rules.encode()).hexdigest(),
-        'result': 'PASS_CANDIDATE_FIXTURE_ONLY', 'content_approved_by_human': False,
-        'gate_status': 'blocked_without_explicit_approval',
+        'result': 'PASS_CANDIDATE_FIXTURE_ONLY',
+        'gate_status': 'blocked_without_real_ai_review',
         'issues': ['本示例未验证外部事实，也未通过真实业务审核']})
-    trace.append({'test': 'approval_gate_rejects_unapproved_content', 'passed': True})
-    if not a.simulate_approval:
-        jwrite(target / 'smoke-report.json', {'result': 'BLOCKED_AT_HUMAN_APPROVAL_AS_EXPECTED', 'commands': trace})
-        print('BLOCKED: first human approval required. Add --simulate-approval for a TEST-ONLY video render.')
+    trace.append({'test': 'fixture_is_not_genuine_ai_review', 'passed': True})
+    if not a.fixture_render:
+        jwrite(target / 'smoke-report.json', {'result': 'BLOCKED_AT_AI_REVIEW_AS_EXPECTED', 'commands': trace})
+        print('BLOCKED: static fixture is not a genuine AI review. Use --fixture-render to test FFmpeg only.')
         return 0
-    # Simulated approval must never be considered production approval.
-    trace.append({'test': 'simulated_fixture_approval', 'test_only': True})
+    trace.append({'test': 'test_only_fixture_render', 'test_only': True})
     for cmd in ('ffmpeg', 'ffprobe'):
         if shutil.which(cmd) is None:
             raise RuntimeError(f'Missing offline demo command: {cmd}')
@@ -148,10 +147,10 @@ def main() -> int:
         if p in ('wechat_oa', 'zhihu'):
             (pd / 'article.md').write_text('# 小团队如何让 AI 内容生产更稳定\n\n'
                 '这是一份**离线测试生成的示例稿**，请替换为审核通过的企业真实内容。\n\n'
-                '确定服务对象、沉淀生产规范、人工确认最终内容。\n', encoding='utf-8')
+                '确定服务对象、沉淀生产规范、AI 自动核查并交付成果。\n', encoding='utf-8')
         jwrite(pd / 'package.json', {
             'content_id': output_id, 'platform': p, 'test_only': True, 'status': 'prepared_not_published',
-            'account_alias': None, 'human_publish_approval': None,
+            'account_alias': None, 'publish_scope': {},
             'title': '小团队如何建立 AI 内容生产流程（测试勿发）',
             'description': '仅用于验证离线内容包结构，不得用于正式发布。',
             'tags': ['测试', 'AI内容流程'],
@@ -159,7 +158,7 @@ def main() -> int:
     jwrite(target / 'publish-ledger.json', {'test_only': True, 'dry_run': True,
         'accounts_authorized': False, 'platforms': {p: 'not_submitted' for p in PLATFORMS}})
     report = {'result': 'OFFLINE_SMOKE_PASSED_NOT_REAL_END_TO_END',
-       'proven': ['workspace knowledge files read', 'review gate blocked before simulated approval',
+       'proven': ['workspace knowledge files read', 'fixture review is not genuine AI review',
                   'synthetic 3-clip media generation', 'offline synthetic test audio and Chinese SRT',
                   'real ffmpeg 9:16 30 second MP4', '7 platform content packages prepared',
                   'no publish credentials or calls'],

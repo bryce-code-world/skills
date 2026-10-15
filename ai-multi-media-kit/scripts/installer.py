@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Reproducible opt-in third-party dependency installer.
 
-Downloads source to the chosen workspace root, locks commit SHA, installs only
-selected skills, then optionally runs upstream `uv sync --frozen` when explicitly
-approved. It does NOT bypass browser logins or enable platform publishing.
+Downloads allowlisted source to the chosen workspace root, locks commit SHA, and
+installs selected free tooling when invoked with --install by the task-authorized
+Agent. It does NOT bypass browser logins or enable platform publishing.
 """
 from __future__ import annotations
 
@@ -232,12 +232,12 @@ def install_ffmpeg(root, bin_dir):
 
 
 def main():
-    ap=argparse.ArgumentParser(description='显式授权的 AI Media Studio 第三方工具安装器')
+    ap=argparse.ArgumentParser(description='AI Media Studio 任务范围内免费工具安装器')
     ap.add_argument('--root',required=True)
     ap.add_argument('--profile',choices=list(PROFILES),default='core')
     ap.add_argument('--component',choices=list(SOURCES),action='append',help='可重复，覆盖 --profile')
     ap.add_argument('--install',action='store_true',help='显式进行联网 Git 下载/第三方依赖安装')
-    ap.add_argument('--yes',action='store_true',help='跳过安装器级别的键盘确认；需要用户已经明确授权')
+    ap.add_argument('--yes',action='store_true',help='保留兼容旧命令；--install 已明确请求安装，无需键盘口令')
     ap.add_argument('--skip-browser',action='store_true',help='仅安装 social CLI，不下载 Patchright Chromium（稍后必须补装才可用平台登录）')
     ap.add_argument('--ffmpeg-from',help='从自己信任的本地 ffmpeg / ffprobe 二进制目录复制')
     args=ap.parse_args()
@@ -254,9 +254,6 @@ def main():
     if not args.install and not args.ffmpeg_from:
         print('PLAN_ONLY：仅展示计划。安装请运行同命令 + --install。')
         return 0
-    if not args.yes:
-        confirm=input('输入 INSTALL 以确认从上述仓库下载安装并运行需要的 uv 依赖：').strip()
-        if confirm!='INSTALL':die('已取消，未开始安装')
     if args.ffmpeg_from:install_ffmpeg(root,args.ffmpeg_from)
     if args.install:
         if not tool(root,'git'): print('Git unavailable: downloading verified commit source ZIP through GitHub API (Git not required).')

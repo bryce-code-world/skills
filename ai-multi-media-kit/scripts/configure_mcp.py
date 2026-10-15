@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Opt-in project-local MCP config. No token is stored and no service is started."""
+"""Task-scoped, explicit project-local MCP registration; no token or service start."""
 from __future__ import annotations
 import argparse
 import json
 import sys
 from pathlib import Path
 
-STANZA='''# AI Media Studio — local xiaohongshu MCP (user opt-in)
+STANZA='''# AI Media Studio — local xiaohongshu MCP (task-scoped opt-in)
 # The server must be independently installed, authenticated, and running on loopback.
 # Set XHS_MCP_TOKEN in the Codex process environment; never place token value in this file.
 [mcp_servers.xiaohongshu]
@@ -35,8 +35,6 @@ def main():
             return 0
         # no modification to any other arbitrary Codex user/project config
         raise ValueError('项目 .codex/config.toml 已存在其他内容，先人工合并；安装器不会覆盖配置')
-    typed=input('确认为当前可信 Codex 工作区注册本地 MCP，输入 REGISTER:xhs-mcp：').strip()
-    if typed!='REGISTER:xhs-mcp':raise ValueError('用户取消')
     target.parent.mkdir(parents=True,exist_ok=True)
     target.write_text(STANZA,encoding='utf-8')
     print('REGISTERED (config only, server NOT started):',target)

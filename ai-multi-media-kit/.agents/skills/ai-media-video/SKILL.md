@@ -1,16 +1,13 @@
 ---
 name: ai-media-video
-description: 将已审核的短视频脚本、经过来源与授权核对的本地/企业/NAS/网上补充素材，通过 FFmpeg 或 MoneyPrinterTurbo 组合成竖屏成片，并保留素材使用记录。
+description: 使用通过 AI 审核的脚本和合法素材由 FFmpeg/MoneyPrinterTurbo 自动成片、验收、返工，并记录当前内容哈希。
 ---
-
 # 视频制作 Skill
 
-- 先用 `studio check` 核验脚本 AI 审核及真人批准。素材由 `ai-media-materials` 提供，详见 `docs/MATERIAL_SOURCES.md`；不要将 MoneyPrinterTurbo 当作唯一素材源。
-- 按分镜查找本地素材：`materials scan` -> `materials search --query <关键词>` -> 必要时 `materials preview --id <素材ID>` 并由 Codex/人工核对画面 -> `materials annotate` 记录描述/授权。
-- 优先以 `studio render --id <内容ID> --engine ffmpeg --material-ids <ID1> <ID2> --rights-confirmed --dry-run` 检查计划，确认后移除 `--dry-run` 执行。索引已变化、授权未核实或素材丢失时会拒绝执行；原有 `--materials <file1> <file2>` 仍可处理临时视频。
-- 本地 FFmpeg 适合剪辑已有真实片段：`--audio <voice.mp3>` 和 `--subtitles <captions.srt>` 可选。未提供配音音频时为静音，不可声称“自动 AI 配音”。当前默认拼接整个片段，精确镜头裁剪需先用确定性工具准备片段。
-- 如果需要 MPT 配音和成片：使用 `studio render --engine mpt`，默认依旧从已确认的**本地**素材导入；MPT 生成的结果需用 `studio import-video` 纳入受控工作区。不能把退出码当成作品验收。
-- 如果缺少素材，按用户同意使用 `materials fetch-online`，仅执行到 MPT 的 `materials` 阶段，然后核对实际视频/授权并导入本地索引。未经允许不调用付费 API、不调用可灵/即梦等外部生成服务，不自动投稿。
-- 最后请用户本人观看成片；用户可以在当前对话明确批准对应内容 ID 的成片，由 Agent 原样引用该用户消息并调用 `studio approve --stage video --chat-message <用户原话> --who <用户别名>` 登记；不能代替用户决定、伪造原话或代填终端确认口令。
+1. `studio check` 确认脚本 AI 审核通过（`script_ready=valid`），**不需要真人脚本批准**。通过 `materials resolve/preview` 验证已登记素材与画面，必要时裁剪镜头。
+2. 优先 `studio render --id <ID> --engine ffmpeg --material-ids <ID1> <ID2> --rights-confirmed`，需要时加 `--audio` 与 `--subtitles`。也可先 dry-run 诊断，但不能把 dry-run 当成最终输出。FFmpeg 不会自动写口播或生成 TTS；用户要求有声讲解时，必须选用已经核实免费且可用的音频方案。
+3. MPT 需要先按经验证的免费依赖配置运行，生成的真实 MP4 经 `studio import-video` 重新验收。CLI 成功但没有找到输出文件不代表成片。
+4. 使用 ffprobe 校验音视频轨、方向、时长等硬条件。基于真实成片或关键帧核验分镜一致性、字幕、听感、节奏、版权和明显伪影，写入 `video/review.json`，包含成片哈希、脚本哈希、审核标准哈希和全项检查。
+5. AI 审核未 PASS 就自主修复并再渲染（`--replace` 只能覆盖本内容 ID 的成片），最多三轮。**不请求真人验片批准**，不得为了通过验收虚构观看视频、音频或场景质量。
 
-Windows 命令统一使用 `RUN-STUDIO-WINDOWS.ps1 -Task materials/studio ...`，Linux/macOS 使用 `bash ./run-studio.sh materials/studio ...`，无需预装系统 Python。
+成片质量验收绑定最新版本；完成后由 `studio package` 生成待发布包。

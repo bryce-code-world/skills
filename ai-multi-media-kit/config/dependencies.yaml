@@ -1,9 +1,9 @@
-# AI Media Studio V2 approved candidate registry (not proof of tested installation)
+# AI Media Studio allowlisted candidate registry (not proof of tested installation)
 # Initial setup pins actual working Git SHA and tool versions into config/dependencies.lock.json.
 # Nothing should be executed just because its name appears here.
 version: 2
 created_on: 2026-10-12
-approval_policy: explicit-before-first-execution
+approval_policy: initial-task-scope-and-verified-free-tools
 version_policy: pin-reviewed-commit-or-version
 third_party_code_bundled: false
 candidates:

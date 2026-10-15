@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in upgrade of bundled *own* code, with backups. Never touch user content."""
+"""Upgrade bundled own code after explicit --apply, with backups; preserve user assets."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -28,7 +28,7 @@ def owned_files():
 def main():
     p=argparse.ArgumentParser(description='更新主 Skill 自有文件，保留用户数据并完整备份被替换的旧文件')
     p.add_argument('--root',required=True)
-    p.add_argument('--apply',action='store_true')
+    p.add_argument('--apply',action='store_true',help='在当前任务范围内备份并应用升级，不要求额外的键盘口令')
     a=p.parse_args()
     root=Path(a.root).expanduser().resolve()
     if not (root/'config/workspace.json').is_file():raise ValueError('未初始化工作区')
@@ -46,8 +46,6 @@ def main():
         return 0
     if not updates:
         print('ALREADY UP TO DATE');return 0
-    if input('输入 UPGRADE_CORE 以确认备份并升级自有 Skill 文件：').strip()!='UPGRADE_CORE':
-        raise ValueError('用户取消')
     backup=root/'backups'/('core-before-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
     for rel in updates:
         src=SOURCE/rel;dest=root/rel

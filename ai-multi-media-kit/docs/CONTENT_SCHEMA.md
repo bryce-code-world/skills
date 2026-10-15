@@ -1,66 +1,105 @@
-# 内容数据结构与审批约束
+# 内容结构与 AI 自主质量门禁
 
-对一个内容 ID，运行 `studio new` 后，会生成 `script.template.json` 和 `review.template.json`，由 当前 AI Agent 参考模板生成以下正式文件：
+**一次用户任务授权完整的内容制作，不需要脚本、成片或素材逐项人工批准。** 只有初始用户任务明确指定公开发布的平台和账号时，才记录相应发布范围。
 
-`outputs/<ID>/script.json`：
+## 任务创建与发布范围
+
+默认只制作：
+
+```powershell
+.\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id my-video-001 --title "短视频主题"
+```
+
+初始任务明确授权公开发布抖音的 `main` 账号时：
+
+```powershell
+.\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id my-video-002 --title "短视频主题" --publish-target douyin:main --task-ref "当前用户消息的真实引用"
+```
+
+`outputs/<ID>/content.json` 中保存 `publish_targets` 和可选的 `task_ref`（不保存账号口令）；`--publish-target` 可在创建时重复传入不同平台和账号，同一平台不得重复。Agent **只能根据原始用户任务设置**，不是由 CLI 读取聊天记录或判断真人身份。工具无法独立证明用户是否下达过发布指令，因此 Agent 不得自己编造来源。后续修改脚本不会增加发布权限，默认制作任务无法执行公开投稿。
+
+## AI 编稿与脚本审核
+
+`studio new` 生成 `script.template.json` 和 `review.template.json`，由 Agent 结合企业知识库生成正式 `script.json`：
 
 ```json
 {
   "content_id": "my-video-001",
   "title": "短视频题目",
   "duration_seconds": 45,
-  "narration": "真实中文口播稿……",
+  "narration": "经过事实核对的真实中文口播稿",
   "shots": [
-    {"seconds": 5, "visual": "真实素材或可执行的拍摄镜头描述", "voiceover": "本镜头口播"}
+    {"seconds": 5, "visual": "能找到且许可明确的镜头", "voiceover": "该镜头口播"}
   ],
   "platforms": {
     "xiaohongshu": {"title": "小红书标题", "description": "正文", "tags": ["标签"]},
-    "douyin": {"title": "抖音标题", "description": "正文", "tags": ["标签"]},
-    "tencent": {"title": "视频号标题", "description": "正文", "tags": ["标签"]},
-    "bilibili": {"title": "B站标题", "description": "正文", "tags": ["标签"]},
-    "kuaishou": {"title": "快手标题", "description": "正文", "tags": ["标签"]},
+    "douyin": {"title": "抖音标题", "description": "正文", "tags": []},
+    "tencent": {"title": "视频号标题", "description": "正文", "tags": []},
+    "bilibili": {"title": "B站标题", "description": "正文", "tags": []},
+    "kuaishou": {"title": "快手标题", "description": "正文", "tags": []},
     "wechat_oa": {"title": "公众号标题", "description": "图文摘要", "tags": []},
     "zhihu": {"title": "知乎标题", "description": "图文摘要", "tags": []}
   },
-  "article_markdown": "# 视频衍生文章标题\n正文……"
+  "article_markdown": "# 衍生文章\n..."
 }
 ```
 
-生成 `script.json` 后执行 `python scripts/studio.py --root . hash --id my-video-001`，将打印结果填入 `review.json`：
+执行 `studio hash --id <ID>` 得到真实的 `script_sha256` 和 `review_standard_sha256`，Agent 依据知识库与实际证据审核并写入 `review.json`：
 
 ```json
 {
   "result": "PASS",
   "score": 91,
-  "script_sha256": "复制 studio hash 给出的当前值",
-  "review_standard_sha256": "复制 studio hash 给出的当前值",
-  "checks": [{"rule": "事实准确", "result": "PASS", "reason": "已核对证据..."}],
+  "script_sha256": "studio hash 给出的脚本哈希",
+  "review_standard_sha256": "studio hash 给出的审核标准哈希",
+  "checks": [
+    {"rule": "事实准确", "result": "PASS", "reason": "能够追溯的证据"}
+  ],
   "facts_to_verify": [],
   "issues": []
 }
 ```
 
-如果存在待核实事实或未通过检查，result 必须为 `REVISE`/`BLOCK`，不允许 PASS。
+只有 **PASS + 每条 checks PASS + 无待核事实 + 无问题 + 哈希有效**，才会通过 `studio check` 的 `script_ready`；否则 Agent 自主查证、修改和重新审核（默认最多三轮）。文件本身是 AI 审核声明，CLI 不能代替 AI 发现语义错误，更不能默许伪造 PASS。
 
-素材选型信息不直接混入 `script.json` 的审核哈希：由 `materials scan/search/preview` 从多来源选视频、`materials annotate` 记录来源和授权，使用 `studio render --material-ids <ID...>` 时校验索引的新鲜度及许可。成片后 `video/materials-used.json` 记录素材 ID、原始路径、授权状态及成片哈希（只复制元数据，不复制企业原片）。使用原有 `--materials` 仍可临时传入本地文件，并由使用者显式确认其权利。详见 [MATERIAL_SOURCES.md](MATERIAL_SOURCES.md)。
+## 素材、成片和视频 AI 审核
 
-人工关口绑定最新哈希，支持**对话确认或终端确认**：
+优先使用可验证授权的本地/NAS/原创素材，`materials scan/search/preview` 用于检索和提帧。已有合法素材的 `--material-ids` 会验证索引、时间戳和权利；临时 `--materials` 必须有来源/许可依据。`--rights-confirmed` 只是执行 Agent 已核查的断言，不是用户审批。
 
-1. 脚本：AI 审核 PASS、无待核事实且本人看过当前脚本后，可以在当前对话说「我已审核并批准 my-video-001 的脚本，可以进入视频制作。」或「我批准 my-video-001 的脚本。」。
-2. 成片：实际视频存在、脚本未变化，本人验片后可以说「我已验收并批准 my-video-001 的成片。」或「我批准 my-video-001 的成片。」。
-3. 发布包：对应脚本/成片已获批准，平台包生成后，本人可说「我批准 my-video-001 发布到 douyin，账号 main。」；内容 ID、平台和账号必须完全一致。
-4. **真正上传仍是另一道关口：** `studio publish --execute` 当前依然需要终端输入 `PUBLISH:<ID>:<platform>`，不因批准发布包而自动投稿；`confirm-published` 的人工核验同样保留。
+`studio render`（FFmpeg）或 `studio import-video`（MPT 等外部工具）生成 `video/master.mp4` 和 `video/render.json`。渲染/导入记录 `script_sha256`、`video_sha256` 及可得的音视频信息；导入视频必须通过 ffprobe 的真实音视频检测。AI 审核实际画面、节奏、字幕和配音后创建 `video/review.json`：
 
-Agent 在确认存在**真实用户**的上述原话后，可以执行下面的命令记录批准，用户本人无需操作终端：
-
-```powershell
-# Windows：在已初始化工作区，Agent 引用实际用户发出的批准原话
-.\RUN-STUDIO-WINDOWS.ps1 -Task studio approve --id my-video-001 --stage script --who "本人" --chat-message "我已审核并批准 my-video-001 的脚本，可以进入视频制作。"
-# 如果宿主提供真实用户消息 ID，可附加 --chat-ref "workbuddy:conversation:message"
+```json
+{
+  "result": "PASS",
+  "video_sha256": "当前 video/master.mp4 的 SHA256",
+  "script_sha256": "当前 script.json 的 SHA256",
+  "review_standard_sha256": "当前知识库 review-rules.md 的 SHA256",
+  "checks": [
+    {"rule": "镜头、字幕、声音与节奏", "result": "PASS", "reason": "已检查实际成片/关键帧"}
+  ],
+  "facts_to_verify": [],
+  "issues": []
+}
 ```
 
-CLI 的 `--chat-message` 只校验文本明确性、内容 ID、阶段及账号（如发布），**无法独立验证是谁发出的消息**。调用的 Agent 必须直接引用当前会话真人用户的原话，不能编造、总结代替、引用 AI 自己的输出，不能把疑问、笼统的「可以」或本次功能开发授权当成脚本批准。可选的 `--chat-ref` 是便于追溯的消息位置，不是身份签名。记录会保留 `approval_method=conversation`、用户批准原话、来源引用（若有）及现有脚本/审核/成片/发布包哈希，修改后旧批准仍失效。对话引用只使用简单批准语句，勿夹带隐私或凭据。
+`studio check/status` 报告 `video_ready`。视频审核必须全项通过且与当前脚本、成片及审核标准版本吻合，`studio package` 才允许生成视频平台的发布包；任一修改将使相关审核过期。Agent 应自动返工且如实记录，不能用“FFmpeg 退出 0”替代视听验收。
 
-旧流程完全保留：用户也可以自己执行 `studio approve` 并在终端输入 `APPROVE:<ID>:script`、`APPROVE:<ID>:video` 或 `APPROVE:<ID>:publish:<platform>`。不允许 AI 代填终端口令。
+## 发布与状态
 
-已执行的发布动作不可自动撤回。
+`studio package --id <ID>` 生成各平台 `package.json` 和可用图文，不会投稿。发布包记录当前脚本、成片及视频审核哈希。
+
+仅当内容创建时的 `publish_targets` 含 `platform:account`、发布包与当前资产一致、实际平台工具和登录态可用，Agent 可执行：
+
+```powershell
+.\RUN-STUDIO-WINDOWS.ps1 -Task studio publish --id my-video-002 --platform douyin --account main --execute
+```
+
+不再调用 `studio approve`，也不要求 `APPROVE`、`PUBLISH`、`VERIFY` 或逐平台确认；用户可能需要完成登录/扫码/验证码。CLI 成功仅进入 `submitted_unknown`，**不能直接宣称发布成功**。核实官方作品链接后记录：
+
+```powershell
+.\RUN-STUDIO-WINDOWS.ps1 -Task studio confirm-published --id my-video-002 --platform douyin --url "https://www.douyin.com/video/真实作品ID"
+```
+
+只有对应已授权平台账号的 `submitted_unknown` 状态和该平台的 HTTPS 作品链接才能进入 `published`；请求超时、状态未知或已发布时不得盲发第二次。当前公众号、知乎只有发布包能力，没有经验证的本套件通用自动投稿实现。
+
+已存在的旧人工审批记录可以保留作历史追溯，但不再构成新版本的执行条件；旧内容若缺少当前视频 AI 审核，需要补做审核才可打包。已删除的 `studio approve` 不再是命令入口。

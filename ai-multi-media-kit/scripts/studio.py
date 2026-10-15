@@ -18,6 +18,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat_oa', 'zhihu')
 VIDEO_PLATFORMS = PLATFORMS[:5]
@@ -78,27 +79,22 @@ def paths(root: Path, content_id: str):
     return d
 
 
-def ensure_approved_script(d: Path, knowledge: Path):
+def ensure_reviewed_script(d: Path, knowledge: Path):
     j = d / 'script.json'
     r = d / 'review.json'
-    a = d / 'approvals' / 'script.json'
-    if not all(p.is_file() for p in (j, r, a)):
-        fail('缺少脚本、AI审核或人工脚本批准记录')
-    script = load(j)
+    if not j.is_file() or not r.is_file():
+        fail('缺少脚本或 AI 审核结果，请自动生成并审核')
+    script = check_script(d)
     review = load(r)
-    approval = load(a)
-    digest_script = filehash(j)
-    if review.get('result') != 'PASS' or not (isinstance(review.get('checks'), list) and len(review['checks']) > 0):
-        fail('审核不是 PASS 或缺少审核明细')
-    if review.get('script_sha256') != digest_script:
+    if review.get('result') != 'PASS' or not review.get('checks') or any(
+            not isinstance(c, dict) or c.get('result') != 'PASS' for c in review['checks']):
+        fail('脚本 AI 审核未全部 PASS，请自动修改后重新审核')
+    if review.get('facts_to_verify') or review.get('issues'):
+        fail('脚本审核存在待核事实或未解决问题')
+    if review.get('script_sha256') != filehash(j):
         fail('脚本内容发生变化，需要重新 AI 审核')
     if review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md'):
         fail('企业审核标准已经更新，需要重新 AI 审核')
-    if review.get('facts_to_verify') or any(x.get('result') != 'PASS' for x in review['checks']):
-        fail('审核存在未解决的事实或检查项')
-    if (approval.get('script_sha256') != digest_script or
-            approval.get('review_sha256') != filehash(r)):
-        fail('人工批准对应的脚本/审核已过期，请重新批准')
     return script
 
 
@@ -106,16 +102,42 @@ def video_path(d):
     return d / 'video' / 'master.mp4'
 
 
-def ensure_video_approved(d: Path, knowledge: Path):
-    script = ensure_approved_script(d, knowledge)
+def ensure_video_ready(d: Path, knowledge: Path):
+    script = ensure_reviewed_script(d, knowledge)
     v = video_path(d)
-    a = d / 'approvals' / 'video.json'
-    if not v.is_file() or not a.is_file():
-        fail('缺少成片或人工验片批准')
-    obj = load(a)
-    if obj.get('video_sha256') != filehash(v) or obj.get('script_sha256') != filehash(d/'script.json'):
-        fail('成片或脚本更新后，人工视频审批失效')
+    meta_path = d / 'video' / 'render.json'
+    review_path = d / 'video' / 'review.json'
+    if not v.is_file() or not v.stat().st_size or not meta_path.is_file() or not review_path.is_file():
+        fail('缺少成片、渲染记录或 AI 成片审核，请自动补齐')
+    meta = load(meta_path)
+    review = load(review_path)
+    v_sha = filehash(v)
+    s_sha = filehash(d / 'script.json')
+    if meta.get('video_sha256') != v_sha or meta.get('script_sha256') != s_sha:
+        fail('成片或脚本发生变化，需要重新渲染或导入')
+    if review.get('result') != 'PASS' or not review.get('checks') or any(
+            not isinstance(c, dict) or c.get('result') != 'PASS' for c in review['checks']):
+        fail('成片 AI 审核未全部 PASS，请自动修复后重新审核')
+    if review.get('issues') or review.get('facts_to_verify'):
+        fail('成片 AI 审核存在未解决问题')
+    if (review.get('video_sha256') != v_sha or review.get('script_sha256') != s_sha or
+            review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md')):
+        fail('成片或审核标准已变化，需要重新执行 AI 成片审核')
     return script
+
+
+def publish_targets(values):
+    targets = {}
+    for raw in values or []:
+        if raw.count(':') != 1:
+            fail('发布范围格式须为 platform:account（账号别名）')
+        platform, account = raw.split(':', 1)
+        if platform not in PLATFORMS or not ID_RE.fullmatch(account):
+            fail('发布范围需要明确支持的平台及有效账号别名，不支持通配符')
+        if platform in targets:
+            fail('同一平台只能绑定一个账号；不可重复或覆盖')
+        targets[platform] = account
+    return targets
 
 
 def cmd_new(a):
@@ -123,9 +145,13 @@ def cmd_new(a):
     d = content_dir(root, a.id)
     if d.exists():
         fail(f'内容 ID 已存在，不允许覆盖：{a.id}')
+    targets = publish_targets(a.publish_target)
+    if a.task_ref and (len(a.task_ref) > 256 or any(c in a.task_ref for c in '\r\n')):
+        fail('任务来源引用不合法')
     d.mkdir(parents=True)
-    data = {'schema': 2, 'content_id': a.id, 'title': a.title, 'created_at_utc': now(),
-            'knowledge_root': str(knowledge), 'platforms': list(PLATFORMS)}
+    data = {'schema': 3, 'content_id': a.id, 'title': a.title, 'created_at_utc': now(),
+            'knowledge_root': str(knowledge), 'platforms': list(PLATFORMS),
+            'publish_targets': targets, 'task_ref': a.task_ref or None}
     save(d/'content.json', data)
     (d/'brief.md').write_text('# '+a.title+'\n\n目标用户：\n\n证据与参考：\n\n创作角度：\n', encoding='utf-8')
     save(d/'script.template.json', {'content_id': a.id, 'title': a.title, 'duration_seconds': 30,
@@ -135,7 +161,7 @@ def cmd_new(a):
     save(d/'review.template.json', {'result': 'REVISE', 'score': 0,
          'script_sha256': '运行 studio hash 获得', 'review_standard_sha256': filehash(knowledge/'review-rules.md'),
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
-         'facts_to_verify': ['尚待人工查证'], 'issues': ['请先填写真实审核意见']})
+         'facts_to_verify': ['待 AI 核查的事实'], 'issues': ['请先由 AI 根据真实证据完成审核']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
     print(f'CREATED {d}\n下一步：当前 AI Agent 读取知识库完成 brief.md / script.json / review.json，运行 hash/check')
 
@@ -150,7 +176,7 @@ def cmd_hash(a):
           'review_standard_sha256':filehash(knowledge/'review-rules.md')}, ensure_ascii=False, indent=2))
 
 
-def check_script(root, knowledge, d):
+def check_script(d):
     script_path = d/'script.json'
     if not script_path.is_file():
         fail('缺少 script.json（不是 script.template.json），请由 当前 AI Agent 生成')
@@ -173,94 +199,19 @@ def check_script(root, knowledge, d):
 
 def cmd_check(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    j=check_script(root,k,d)
+    j=check_script(d)
     result={'script_structure':'valid','script_sha256':filehash(d/'script.json')}
     try:
-        ensure_approved_script(d,k)
-        result['script_approval']='valid'
+        ensure_reviewed_script(d,k)
+        result['script_ready']='valid'
     except ValueError as e:
-        result['script_approval']='not_ready: '+str(e)
+        result['script_ready']='not_ready: '+str(e)
     try:
-        ensure_video_approved(d,k)
-        result['video_approval']='valid'
+        ensure_video_ready(d,k)
+        result['video_ready']='valid'
     except ValueError as e:
-        result['video_approval']='not_ready: '+str(e)
+        result['video_ready']='not_ready: '+str(e)
     print(json.dumps(result,ensure_ascii=False,indent=2))
-
-
-def approve_prompt(expected):
-    print('确认将写入不可自动撤销的人工审批记录，当前 AI Agent 不得代替真实用户确认。')
-    typed=input(f'请由本人输入 {expected} ：').strip()
-    if typed!=expected: fail('审批确认文本不匹配，已取消')
-
-
-def approval_evidence(a):
-    """Accept a quoted, stage-specific user statement; do not infer approval from chat context.
-
-    This parser checks the *text and scope*, not the identity of its author.
-    The invoking Agent must obtain the unchanged quote from an actual human user turn.
-    """
-    if a.chat_message is None:
-        if a.chat_ref:
-            fail('--chat-ref 不能单独代替用户批准消息')
-        expected=f'APPROVE:{a.id}:{a.stage}' + (f':{a.platform}' if a.stage=='publish' else '')
-        approve_prompt(expected)
-        return {'approval_method':'terminal'}
-
-    message=a.chat_message.strip()
-    if not message or len(message)>300 or any(c in message for c in ('\r','\n')):
-        fail('对话批准必须引用不超过300字的一条原始用户消息')
-    if a.chat_ref and (len(a.chat_ref)>256 or any(c in a.chat_ref for c in ('\r','\n'))):
-        fail('--chat-ref 必须是单行的消息引用')
-    phrases={
-        'script': [f'我批准 {a.id} 的脚本',
-                   f'我已审核并批准 {a.id} 的脚本，可以进入视频制作'],
-        'video': [f'我批准 {a.id} 的成片',
-                  f'我已验收并批准 {a.id} 的成片'],
-        'publish': [f'我批准 {a.id} 发布到 {a.platform}，账号 {a.account}']
-    }
-    normalize=lambda s: ''.join(s.split()).rstrip('。.!！')
-    if normalize(message) not in {normalize(x) for x in phrases[a.stage]}:
-        fail('未发现匹配当前内容ID、阶段及账号的明确用户批准；不能由AI推断、改写或代替用户同意')
-    return {'approval_method':'conversation','chat_message':message,
-            'chat_ref':a.chat_ref or None}
-
-
-def cmd_approve(a):
-    root,k=workspace(a.root); d=paths(root,a.id)
-    if not a.who.strip(): fail('--who 不能为空')
-    if a.stage=='script':
-        script=check_script(root,k,d)
-        r=d/'review.json'
-        if not r.exists(): fail('review.json 尚未生成')
-        review=load(r)
-        if review.get('result')!='PASS' or not review.get('checks') or any(c.get('result')!='PASS' for c in review['checks']):
-            fail('审核不是全项 PASS')
-        if review.get('facts_to_verify'): fail('存在待核事实，不能审批')
-        if review.get('script_sha256')!=filehash(d/'script.json') or review.get('review_standard_sha256')!=filehash(k/'review-rules.md'):
-            fail('审核 hash 不匹配，请 当前 AI Agent 重新审核')
-        stage_data={'script_sha256': filehash(d/'script.json'), 'review_sha256':filehash(r)}
-    elif a.stage=='video':
-        ensure_approved_script(d,k)
-        v=video_path(d)
-        if not v.is_file() or v.stat().st_size==0: fail('没有实际成片')
-        stage_data={'script_sha256':filehash(d/'script.json'), 'video_sha256':filehash(v)}
-    elif a.stage=='publish':
-        if not a.platform or a.platform not in PLATFORMS: fail('发布审批要求指定 --platform')
-        if not a.account: fail('发布审批要求指定 --account（账号别名，不是凭据）')
-        if a.platform in VIDEO_PLATFORMS: ensure_video_approved(d,k)
-        else: ensure_approved_script(d,k)
-        package=d/'platforms'/a.platform/'package.json'
-        if not package.is_file(): fail('先执行 package 生成平台待发包')
-        stage_data={'platform':a.platform,'account':a.account, 'package_sha256':filehash(package),
-          'script_sha256':filehash(d/'script.json')}
-        if a.platform in VIDEO_PLATFORMS: stage_data['video_sha256']=filehash(video_path(d))
-    else: fail('不支持的审批阶段')
-    evidence=approval_evidence(a)
-    stage_data.update({'human':a.who,'approved_at_utc':now(),'stage':a.stage, 'content_id':a.id,**evidence})
-    rel=f'publish-{a.platform}' if a.stage=='publish' else a.stage
-    save(d/'approvals'/f'{rel}.json',stage_data)
-    print('APPROVED (human checkpoint):',d/'approvals'/f'{rel}.json')
 
 
 def load_ffmpeg_bin(root, base):
@@ -286,7 +237,7 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
     if subtitles and not subtitles.is_file(): fail('字幕不存在')
     out=video_path(d)
     out.parent.mkdir(exist_ok=True,parents=True)
-    if out.exists() and not getattr(render_ffmpeg,'allow_replace',False): fail('成片已存在。修改后请显式加 --replace（将导致审批失效）')
+    if out.exists() and not getattr(render_ffmpeg,'allow_replace',False): fail('成片已存在。重新渲染请显式加 --replace，之后需要重新审核')
     with tempfile.TemporaryDirectory(prefix='ai-media-') as td:
         tmp=Path(td)
         pieces=[]
@@ -322,7 +273,8 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
     aud=[s for s in streams if s.get('codec_type')=='audio']
     if not vids or not aud or vids[0].get('width')!=width or vids[0].get('height')!=height:
         fail('实际视频校验失败：音视频轨道或尺寸有误')
-    save(d/'video'/'render.json',{'engine':'ffmpeg','video_sha256':filehash(out),'created_at_utc':now(),
+    save(d/'video'/'render.json',{'engine':'ffmpeg','video_sha256':filehash(out),
+         'script_sha256':filehash(d/'script.json'),'created_at_utc':now(),
          'clips':[str(x) for x in clips],'audio':str(audio) if audio else None,
          'subtitles':str(subtitles) if subtitles else None,'duration_seconds':float(result['format']['duration'])})
     return out
@@ -330,7 +282,7 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
 
 def cmd_render(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    script=ensure_approved_script(d,k)
+    script=ensure_reviewed_script(d,k)
     if a.material_ids and a.materials:
         fail('--material-ids 与 --materials 只能选择一种')
     selected = []
@@ -342,7 +294,7 @@ def cmd_render(a):
     else:
         files = [Path(x).expanduser().resolve() for x in (a.materials or [])]
     if not files: fail('请指定 --material-ids（从素材库选择）或 --materials（临时本地文件）')
-    # Both managed and ad-hoc assets need a deliberate rights acknowledgement.
+    # Agent must verify the license/provenance before attesting, no human approval prompt.
     if not a.rights_confirmed: fail('必须传入 --rights-confirmed 表示已核对素材来源/授权（不代表工具自动校验版权）')
     for clip in files:
         if not clip.is_file(): fail('素材不存在：' + str(clip))
@@ -358,7 +310,7 @@ def cmd_render(a):
         save(d/'video'/'materials-used.json',
              {'video_sha256': filehash(result), 'rights_acknowledged': True,
               'assets': selected if selected else
-              [{'source': 'manual', 'path': str(p), 'rights': 'user-confirmed-no-index'}
+              [{'source': 'manual', 'path': str(p), 'rights': 'agent-verified-no-index'}
                for p in files]})
         print('RENDERED:',result,'\n备注：未提供 audio 时为静音视频。FFmpeg 不会自动生成 TTS。')
     else:
@@ -384,23 +336,33 @@ def cmd_render(a):
 
 
 def cmd_import_video(a):
-    root,k=workspace(a.root); d=paths(root,a.id); ensure_approved_script(d,k)
+    root,k=workspace(a.root); d=paths(root,a.id); ensure_reviewed_script(d,k)
     src=Path(a.file).expanduser().resolve()
     if not src.is_file() or src.suffix.lower()!='.mp4': fail('只允许导入存在的 .mp4 视频文件')
+    ffprobe = load_ffmpeg_bin(root, 'ffprobe')
+    if not ffprobe: fail('缺少 ffprobe，无法验证导入的 MP4')
+    info=json.loads(run([ffprobe,'-v','error','-show_streams','-show_format','-of','json',src]))
+    streams=info.get('streams',[])
+    if (not any(x.get('codec_type')=='video' for x in streams) or
+            not any(x.get('codec_type')=='audio' for x in streams) or
+            float(info.get('format',{}).get('duration',0))<=0):
+        fail('导入的视频必须是有效的音视频 MP4')
     dst=video_path(d); dst.parent.mkdir(parents=True,exist_ok=True)
     if dst.exists() and not a.replace: fail('已有成片，需要 --replace 明确覆盖')
     if src!=dst: shutil.copy2(src,dst)
-    save(d/'video'/'render.json',{'engine':'import','source':str(src),'video_sha256':filehash(dst),'created_at_utc':now()})
+    save(d/'video'/'render.json',{'engine':'import','source':str(src),'video_sha256':filehash(dst),
+                                 'script_sha256':filehash(d/'script.json'),
+                                 'duration_seconds':float(info['format']['duration']),'created_at_utc':now()})
     print('IMPORTED:',dst)
 
 
 def cmd_package(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    script=check_script(root,k,d)
+    script=check_script(d)
     targets=list(PLATFORMS) if a.platform=='all' else [a.platform]
     for p in targets:
-        if p in VIDEO_PLATFORMS: ensure_video_approved(d,k)
-        else: ensure_approved_script(d,k)
+        if p in VIDEO_PLATFORMS: ensure_video_ready(d,k)
+        else: ensure_reviewed_script(d,k)
     for p in targets:
         if (d/'platforms'/p/'package.json').exists() and not a.replace:
             fail(f'{p} 发布包已存在，使用 --replace 才能覆盖；没有修改任何平台包')
@@ -412,6 +374,9 @@ def cmd_package(a):
         pack={'schema':1,'content_id':a.id,'platform':p,'state':'prepared_not_published',
               'title':item['title'],'description':item.get('description',''), 'tags':item.get('tags',[]),
               'category_id': item.get('category_id'),
+              'script_sha256':filehash(d/'script.json'),
+              'video_sha256':filehash(video_path(d)) if p in VIDEO_PLATFORMS else None,
+              'video_review_sha256':filehash(d/'video'/'review.json') if p in VIDEO_PLATFORMS else None,
               'video_path':str(video_path(d)) if p in VIDEO_PLATFORMS else None,
               'article_path':None,'generated_at_utc':now(), 'account_alias':None}
         target=d/'platforms'/p
@@ -421,7 +386,7 @@ def cmd_package(a):
             if doc.exists() and not a.replace: fail(f'{p} 文章已存在，使用 --replace 才能覆盖')
             doc.write_text(article or '(请由 当前 AI Agent 提供公众号/知乎适配图文)',encoding='utf-8')
             pack['article_path']=str(doc)
-        # Content must not silently overwrite previous platform variant/approval.
+        # Updated packages invalidate older source hashes; actual submission remains scoped to the original task.
         dest=target/'package.json'
         if dest.exists() and not a.replace: fail(f'{p} 发布包已存在，使用 --replace 才能覆盖')
         save(dest,pack)
@@ -444,57 +409,57 @@ def tool_env(root):
 
 def cmd_publish(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    if a.platform not in PLATFORMS: fail('未知平台')
     p=a.platform
+    if p not in PLATFORMS: fail('未知平台')
+    task=load(d/'content.json')
+    if a.execute and task.get('publish_targets',{}).get(p)!=a.account:
+        fail('当前平台/账号未在初始任务中明确授权公开发布')
     packfile=d/'platforms'/p/'package.json'
-    approved=d/'approvals'/f'publish-{p}.json'
-    if not packfile.is_file() or not approved.is_file(): fail('发布前需先生成发布包并人工审批')
-    pack=load(packfile); auth=load(approved)
-    if auth.get('package_sha256')!=filehash(packfile) or auth.get('account')!=a.account:
-        fail('发布包/账号和人工审批记录不一致，拒绝发布')
+    if not packfile.is_file(): fail('发布前必须生成并通过质量审核的发布包')
+    pack=load(packfile)
+    if (pack.get('content_id')!=a.id or pack.get('platform')!=p or
+            pack.get('script_sha256')!=filehash(d/'script.json')):
+        fail('发布包与当前脚本版本不一致，需要重新打包')
     if p in VIDEO_PLATFORMS:
-        ensure_video_approved(d,k)
-        if auth.get('video_sha256')!=filehash(video_path(d)):
-            fail('成片已更新，需要重新批准')
-    else: ensure_approved_script(d,k)
+        ensure_video_ready(d,k)
+        if (pack.get('video_sha256')!=filehash(video_path(d)) or
+                pack.get('video_review_sha256')!=filehash(d/'video'/'review.json')):
+            fail('发布包与当前成片/AI 审核版本不一致，需要重新打包')
+    else:
+        ensure_reviewed_script(d,k)
     if p not in VIDEO_PLATFORMS:
-        print(f'{p} 使用已安装的专项发布 Skill 人工预览发布，本 CLI 不模拟未经验证的接口。')
-        print('文章路径：',pack.get('article_path'))
+        print(f'{p} 暂未接入经验证的自动投稿接口，已准备图文包：{pack.get("article_path")}')
         return
     cli=sau_binary(root)
-    if not cli.is_file(): fail('未安装 social-auto-upload，请先运行 installer --component social')
-    # Bilibili normally needs a category ID (tid); never invent category assignment.
+    if not cli.is_file(): fail('未安装 social-auto-upload，先安装并验证免费投稿工具')
     tid=a.tid or pack.get('category_id')
     if p=='bilibili' and not tid:
-        fail('B站发布缺少分区 TID：请在 script.json 平台配置提供 category_id，或命令加 --tid')
+        fail('B站缺少已核验分区 TID，请在平台配置提供 category_id 或使用 --tid')
     cmd=[cli,p,'upload-video','--account',a.account,'--file',video_path(d),
-          '--title',pack['title'],'--desc',pack.get('description','')]
+         '--title',pack['title'],'--desc',pack.get('description','')]
     if p=='bilibili': cmd.extend(['--tid',str(tid)])
     if pack.get('tags'): cmd.extend(['--tags',','.join(str(t) for t in pack['tags'])])
     if not a.execute:
-        print('DRY_RUN — 即将调用的命令：\n',subprocess.list2cmdline([str(x) for x in cmd]))
-        print('没有投稿。若账号已登录并确认真实发布，使用 --execute。')
+        print('DRY_RUN_NO_UPLOAD:',subprocess.list2cmdline([str(x) for x in cmd]))
         return
-    approve_prompt(f'PUBLISH:{a.id}:{p}')
     ledger_file=d/'publish-ledger.json'; ledger=load(ledger_file)
-    prev=ledger['platforms'].get(p,{})
-    if prev.get('state') in ('submitted_unknown','published'):
-        fail('该平台已有未知/已发布状态：禁止重复盲发，先人工确认状态')
+    previous=ledger.get('platforms',{}).get(p,{})
+    if previous.get('state') in ('attempting','submitted_unknown','published'):
+        fail('该平台已有尝试中/状态未知/已发布记录，禁止重复投稿；先核对平台状态')
     ledger['platforms'][p]={'state':'attempting','account':a.account,'at':now()}
     save(ledger_file,ledger)
     try:
         proc=subprocess.run([str(x) for x in cmd],cwd=cli.parent.parent,env=tool_env(root),
                             capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=900)
-        # Never store third-party stdout/stderr: it might include cookie/token.
-        # Some CLI versions exit 0 before the platform has fully accepted the post.
         ledger['platforms'][p]={'state':'submitted_unknown','account':a.account,'returncode':proc.returncode,
-            'at':now(),'note':'请在平台后台核实；程序退出码不代表公开发布成功'}
-        print('CLI returned',proc.returncode,'\n请到官方后台核查发布状态，使用 confirm-published 更新账本。')
+            'at':now(),'note':'须核对平台作品链接；退出码不代表公开发布成功'}
+        print('UPLOAD_SUBMITTED_STATUS_UNKNOWN:',proc.returncode)
     except (subprocess.TimeoutExpired, OSError) as exc:
         ledger['platforms'][p]={'state':'submitted_unknown','account':a.account,'at':now(),
-            'note':'超时/异常，未知是否提交；禁止盲重试'}
-        print('UPLOAD STATUS UNKNOWN:',type(exc).__name__)
-    finally: save(ledger_file,ledger)
+            'note':'超时/异常，状态未知；禁止盲重试'}
+        print('UPLOAD_STATUS_UNKNOWN:',type(exc).__name__)
+    finally:
+        save(ledger_file,ledger)
 
 
 def cmd_confirm_published(a):
@@ -502,8 +467,23 @@ def cmd_confirm_published(a):
     ledger_file=d/'publish-ledger.json'; ledger=load(ledger_file)
     prev=ledger['platforms'].get(a.platform,{})
     if prev.get('state')!='submitted_unknown': fail('仅允许确认已提交待核查状态')
-    if not a.url.startswith('https://'): fail('必须提供平台后台可核对的 HTTPS 作品链接')
-    approve_prompt(f'VERIFY:{a.id}:{a.platform}')
+    task=load(d/'content.json')
+    if task.get('publish_targets',{}).get(a.platform)!=prev.get('account'):
+        fail('发布状态必须属于初始任务中授权的平台和账号')
+    expected_domains={
+        'xiaohongshu': ('xiaohongshu.com','xhslink.com'),
+        'douyin': ('douyin.com',),
+        'tencent': ('weixin.qq.com',),
+        'bilibili': ('bilibili.com','b23.tv'),
+        'kuaishou': ('kuaishou.com',),
+        'wechat_oa': ('mp.weixin.qq.com',),
+        'zhihu': ('zhihu.com',),
+    }
+    url=urlsplit(a.url)
+    host=(url.hostname or '').lower()
+    if (url.scheme!='https' or url.username or url.password or not host or
+            not any(host==d or host.endswith('.'+d) for d in expected_domains[a.platform])):
+        fail('请提供当前平台真实作品的 HTTPS 链接，不能用其他网站代替')
     ledger['platforms'][a.platform]={**prev,'state':'published','url':a.url,
                                      'verified_by':a.who,'verified_at_utc':now()}
     save(ledger_file,ledger)
@@ -516,24 +496,23 @@ def cmd_status(a):
             'review_exists':(d/'review.json').is_file(),'video_exists':video_path(d).is_file(),
             'prepared_platforms':[p for p in PLATFORMS if (d/'platforms'/p/'package.json').exists()],
             'publish':load(d/'publish-ledger.json')['platforms']}
-    for key,fn in (('script_ready',ensure_approved_script),('video_ready',ensure_video_approved)):
+    for key,fn in (('script_ready',ensure_reviewed_script),('video_ready',ensure_video_ready)):
         try:fn(d,k);result[key]=True
         except ValueError as e:result[key]=False;result[key+'_reason']=str(e)
     print(json.dumps(result,indent=2,ensure_ascii=False))
 
 
 def parse():
-    parser=argparse.ArgumentParser(description='AI Media Studio - 标准化内容和人工审批 CLI')
+    parser=argparse.ArgumentParser(description='AI Media Studio - 一次任务授权与 AI 自主质量闭环')
     parser.add_argument('--root',required=True,help='安装根目录（与 config/workspace.json 一致）')
     sub=parser.add_subparsers(dest='command',required=True)
-    n=sub.add_parser('new');n.add_argument('--id',required=True);n.add_argument('--title',required=True);n.set_defaults(func=cmd_new)
+    n=sub.add_parser('new');n.add_argument('--id',required=True);n.add_argument('--title',required=True)
+    n.add_argument('--publish-target',action='append',help='仅在初始用户任务明确要求公开发布时填写 platform:account；可重复')
+    n.add_argument('--task-ref',help='原始用户任务消息引用（有则记录，不包含凭据）')
+    n.set_defaults(func=cmd_new)
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)
     c=sub.add_parser('check');c.add_argument('--id',required=True);c.set_defaults(func=cmd_check)
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
-    ap=sub.add_parser('approve');ap.add_argument('--id',required=True);ap.add_argument('--stage',required=True,choices=['script','video','publish']);ap.add_argument('--platform',choices=PLATFORMS);ap.add_argument('--account');ap.add_argument('--who',required=True)
-    ap.add_argument('--chat-message',help='直接引用当前会话中真人用户明确批准该ID/阶段的原话；不会再触发终端输入')
-    ap.add_argument('--chat-ref',help='可选：宿主提供的实际用户消息引用，供审计追溯')
-    ap.set_defaults(func=cmd_approve)
     ren=sub.add_parser('render');ren.add_argument('--id',required=True);ren.add_argument('--engine',choices=['ffmpeg','mpt'],default='ffmpeg');
     ren.add_argument('--materials',nargs='+',help='手动指定本地视频，兼容原流程')
     ren.add_argument('--material-ids',nargs='+',help='从 materials search 返回的素材 ID 按指定顺序剪辑')
@@ -541,7 +520,7 @@ def parse():
     ip=sub.add_parser('import-video');ip.add_argument('--id',required=True);ip.add_argument('--file',required=True);ip.add_argument('--replace',action='store_true');ip.set_defaults(func=cmd_import_video)
     pkg=sub.add_parser('package');pkg.add_argument('--id',required=True);pkg.add_argument('--platform',choices=['all',*PLATFORMS],default='all');pkg.add_argument('--replace',action='store_true');pkg.set_defaults(func=cmd_package)
     pub=sub.add_parser('publish');pub.add_argument('--id',required=True);pub.add_argument('--platform',required=True,choices=PLATFORMS);pub.add_argument('--account',required=True);pub.add_argument('--tid',help='B站视频分区ID');pub.add_argument('--execute',action='store_true');pub.set_defaults(func=cmd_publish)
-    verify=sub.add_parser('confirm-published');verify.add_argument('--id',required=True);verify.add_argument('--platform',required=True,choices=PLATFORMS);verify.add_argument('--url',required=True);verify.add_argument('--who',required=True);verify.set_defaults(func=cmd_confirm_published)
+    verify=sub.add_parser('confirm-published');verify.add_argument('--id',required=True);verify.add_argument('--platform',required=True,choices=PLATFORMS);verify.add_argument('--url',required=True);verify.add_argument('--who',default='agent-verified');verify.set_defaults(func=cmd_confirm_published)
     return parser.parse_args()
 
 

@@ -1,17 +1,13 @@
 ---
 name: ai-media-materials
-description: 管理 AI Media Studio 的企业本地/NAS/临时视频素材源、素材授权与检索，按脚本分镜选择真实镜头；缺素材时按授权通过 MoneyPrinterTurbo 查找 Pexels/Pixabay/Coverr 并导入素材索引。
+description: 自动检索企业本地/NAS与已授权免费素材，核验来源、许可和实际画面，为短视频成片提供可追溯的素材 ID。
 ---
+# 素材源与镜头匹配
 
-# 素材源与镜头匹配 Skill
+- 根据 `config/workspace.json` 定位企业素材库；已配置目录与 NAS 使用 `materials scan/search`，通过 `materials preview` 提取真实画面；AI 能看图时核对镜头，文件名匹配不代表视觉识别。用 `materials annotate` 留下描述、来源和许可。
+- 只选择 `owned` 或有可核许可证据的 `licensed` 素材。默认 `unverified` 不能成片，不得用 Agent 猜测代替许可。原始视频不复制、不修改。
+- 若找不到镜头，优先调节分镜、检索已有素材或使用经过核实免费/合法的外部来源；`materials fetch-online` 先可查看计划，符合任务范围、费用与许可约束时直接 `--execute`，**不需再次人工输入 FETCH 口令**。网络失败或额度/权利不明则换用其它免费方案或说明阻塞。
+- 将合规素材 ID 提供给 `studio render --material-ids <ID...> --rights-confirmed`。这里的 `--rights-confirmed` 是 Agent 依据证据确认素材许可，不是用户单独审批。未索引的临时文件需有实际来源及权利证据。
+- 素材预览、格式与镜头选择都进入自动质量闭环，不应把正常创作判断交给用户。仅账号登录/扫码/验证码等身份操作需暂停；不得从非法来源抓取受保护内容。
 
-素材是企业资产，素材源与剪辑引擎相互独立。按需阅读 `docs/MATERIAL_SOURCES.md`。
-
-1. 默认检索已配置的企业素材目录；其他挂载/NAS 目录经用户指定后用 `materials add-source` 登记。临时文件通过 `materials add-file` 登记，不复制或修改原始视频。
-2. 使用 `materials scan` 建索引，以 `materials search --query` 找候选；需要实际理解画面时，使用 `materials preview --id` 生成帧，由 当前 AI Agent 可用的图像理解能力或人工观察后用 `materials annotate` 保存标签/描述。文件名和标签命中只是初筛，不能宣称已完成视觉语义匹配。
-3. 匹配 `script.json` 的每个 `shots[].visual`，优先原创/已授权素材；缺口写清并请求用户选择自有素材、授权的网上素材或 AI 生成素材。不能编造镜头内容，也不静默启用收费服务。
-4. 网络素材优先使用已经验证的现成 CLI/MCP 或 MPT 的 `materials fetch-online`；默认只展示方案，联网执行还需用户本人确认。执行后检查来源、授权、文件与画面，再 `add-file --source-url` 导入本地库。不把未经许可的素材标为商用可用。
-5. 经用户批准脚本后，把素材 ID 交给 `studio render --material-ids`。先 `--dry-run`，再由已验证的 FFmpeg/MPT 执行；始终传 `--rights-confirmed`。对临时文件仍兼容 `--materials`。
-6. 无法访问共享盘、素材缺失、素材在索引后变化、权益不明、下载权限不足时停止当前选材并说明原因。不得自行生成假素材或绕过授权。成片后保留素材来源和授权元数据并请用户验片。
-
-运行入口：Windows `RUN-STUDIO-WINDOWS.ps1 -Task materials ...`，Linux/macOS `bash ./run-studio.sh materials ...`。它们运行套件本身的 Python，不依赖全局 Python。
+详见 `docs/MATERIAL_SOURCES.md`。

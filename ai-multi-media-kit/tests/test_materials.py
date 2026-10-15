@@ -112,7 +112,7 @@ class MaterialSourcesTests(unittest.TestCase):
                                   "--path", self.knowledge / "materials")
         self.assertEqual(existing.returncode, 2)
 
-    def test_studio_accepts_ids_with_approval_but_does_not_render_in_dry_run(self):
+    def test_studio_accepts_reviewed_script_without_approval_in_dry_run(self):
         clip = self.knowledge / "materials" / "foo.mp4"
         clip.write_bytes(b"test bytes")
         self.assertEqual(self.materials("scan").returncode, 0)
@@ -136,9 +136,6 @@ class MaterialSourcesTests(unittest.TestCase):
         review = {"result": "PASS", "checks": [{"rule": "事实核实","result":"PASS"}],
                   "facts_to_verify": [], **hashes}
         (folder/"review.json").write_text(json.dumps(review,ensure_ascii=False),encoding="utf-8")
-        approve = run("studio.py","--root",self.root,"approve","--id",cid,"--stage","script",
-                      "--who","Tester",stdin=f"APPROVE:{cid}:script\n")
-        self.assertEqual(approve.returncode,0,approve.stderr)
         dry = run("studio.py", "--root", self.root, "render", "--id", cid,
                   "--engine", "ffmpeg", "--material-ids", item["id"],
                   "--rights-confirmed", "--dry-run")

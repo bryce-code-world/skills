@@ -1,64 +1,54 @@
-# 初次安装、共享工具环境与手动备用流程
+# 安装、共享运行环境与一次任务启动
 
-## 推荐：交给当前 AI Agent
-
-把下面 GitHub Skill 地址发给你正在使用的**兼容 Agent Skills 的 AI Agent**，让它采用自身可用的 Skill 安装方式获取完整目录，不需要用户先下载 ZIP：
+## 将 Skill 链接交给 Agent
 
 `https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit`
 
-先让宿主检查它是否具备当前任务所需的本机文件、终端和网络权限；**能读取 SKILL.md 不等于有权访问本机电脑**。详见 [Agent 兼容指南](AGENT_COMPATIBILITY.md)。有本地命令能力时，首次选择独立的工具目录和企业知识库目录，再调用 `SETUP-WINDOWS.ps1`（Windows）或 `SETUP-UNIX.sh`（macOS/Linux）；第三方依赖先审查来源和费用后经用户授权按需安装。不改变系统级 PATH。
+请使用当前 Agent 自己的 Skill 安装方式获取**整个目录**，包含 `SKILL.md`、`scripts`、`docs`、`knowledge-templates` 与所有子 Skills。无需手动下载 ZIP，也无需预装 Python。**宿主能读取 Skill 不代表能调用本机文件或终端**；若只能文本生成，不得宣称已成片或发布。
 
-## 不同 Agent 如何复用之前的工具环境
+首次配置请指定两个不相互嵌套的目录：**工具工作区**与**企业知识库**。若已经有本机共享路径索引，先读取并核对路径，合法存在即复用，不要复制另一套工作区。
 
-首次成功初始化后，工具目录与知识库目录会登记到**当前操作系统用户共享**的安装索引：
+## 不同 Agent 复用共享目录
+
+首次初始化完成后，同一设备/系统用户共享安装路径索引：
 
 - Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
-- macOS/Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
+- macOS / Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
 
-另一款 Agent 只要以**相同的系统用户身份且有本地文件权限**运行，就可读取这个路径索引；再与工具目录的 `config/workspace.json` 核对，不需要重新安装 Python 和 FFmpeg。共享索引只是小型元数据（可能位于系统盘），工具、浏览器运行环境、缓存、输出仍在用户选定的工作区。
+必须与 `<install_root>/config/workspace.json` 双向核对，不能在路径失效时擅自全盘扫描、重装或迁移原数据。旧版的主 Skill `config/local-install.json` 只在共享索引缺失时作为只读回退。需要恢复现有工作区时，可用其自有 Python 执行 `scripts/workspace_locator.py register --install-root <已有工具目录>`。纯云端隔离 Agent 无法自动使用 Windows 本地索引。
 
-旧版 V0.3 使用主 Skill 目录 `config/local-install.json` 的索引，仅在共享索引缺失时回退读取；若共享索引损坏或路径失效，停止并询问原工作区路径，不进行磁盘扫描或自动重装。可使用已可用的 Python 运行主 Skill 内 `scripts/workspace_locator.py show` 查看路径和来源；需显式恢复时执行 `scripts/workspace_locator.py register --install-root <已有工具目录>`。纯云端隔离 Agent 无法分享用户本地的这个索引。
+## 初始化本地工具
 
-## 手动备用安装
-
-如果当前 AI Agent 不支持从 GitHub 直接导入 Skill，请将本目录复制到该宿主能发现的 Skill 位置，再通过内置引导器初始化**运行环境**，不是另外安装一套 Skill：
-
-Windows（需要 PowerShell 5.1+）：
+Windows PowerShell 5.1+：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1 -InstallRoot "D:\自选工具目录" -KnowledgeRoot "D:\自选企业知识库" -NonInteractive
 ```
 
-macOS/Linux：
+Linux/macOS：
 
 ```bash
 bash ./SETUP-UNIX.sh
 ```
 
-按提示输入两个互不嵌套的目录：工具工作区、企业知识库。引导器将可用的 Python 3.12/uv、便携 Git（Windows）与 FFmpeg/FFprobe、各类缓存尽量放在工具目录。再次运行只复用符合校验的现有工具和知识库内容，不自动覆盖。下载需网络/证书和系统基础解压工具；Windows ARM64 的 FFmpeg、Linux musl 等需单独检查支持情况。少量系统配置、下载安全日志可能仍位于系统盘。
+引导器将 Python 3.12/uv、便携 Git 和 FFmpeg 优先安装到工具目录，缓存不修改系统级 PATH；再次运行复用原配置并保护用户资产。平台、证书和联网条件仍需真实验证。必须用户处理的账号登录、扫码、验证码由 Agent 暂停等待，成功后继续执行。
 
-## 日常命令（由具备终端能力的 Agent 调用）
+## 升级已有工作区而不覆盖资料
 
-在**已经初始化的工具工作区**，可通过绝对路径调用：
+重新安装 Skill 源码不会自动覆盖用户的旧运行环境。应由 Agent 使用**新获取的 Skill 源码目录**下的 `scripts/upgrade_core.py --root <已有工具目录> --apply`，先备份将覆盖的 Skill 自有文件，再更新；用户知识库、outputs、账号与 runtime 不变。当前版本 `--apply` 不要求额外升级口令。完成后从原绝对路径重新运行 `doctor` 和回归检查。只运行已有工作区内部的旧版升级脚本可能无法获取新源码，不能误报已更新。
 
-Windows：
+## 自动化日常执行
+
+Agent 使用已初始化工具目录的绝对路径调用启动器：
 
 ```powershell
-.\RUN-STUDIO-WINDOWS.ps1 -Task doctor --scope core --strict
-.\RUN-STUDIO-WINDOWS.ps1 -Task materials sources
-.\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id demo-001 --title "我的第一条视频"
-.\RUN-STUDIO-WINDOWS.ps1 -Task installer --component mpt # 仅显示安装计划
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task doctor --scope core --strict
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio new --id demo-001 --title "我的第一条视频"
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task installer --component mpt
 ```
 
-macOS/Linux：
+安装器默认仅展示计划。在实际需要且**已核实免费、属于初始任务范围**时，Agent 可以加 `--install` 执行安装，无需用户另输 `INSTALL`。不得借此启用未知费用的云服务。
 
-```bash
-bash ./run-studio.sh doctor --scope core --strict
-bash ./run-studio.sh materials sources
-bash ./run-studio.sh studio new --id demo-001 --title "我的第一条视频"
-bash ./run-studio.sh installer --component mpt  # 仅显示安装计划
-```
+之后 Agent 自行读取 `brand.md`、`audience.md`、`review-rules.md`，完成编稿、AI 审核、素材、实际渲染、视频 AI 验收、平台包。**制作任务不需要中间阶段审批**；默认至多三轮纠错。
 
-然后由当前 Agent 读企业知识库的 `brand.md`、`audience.md`、`review-rules.md`，调用内部 `ai-media-*` Skill 生产脚本、执行审查和选材。脚本、成片、发布包都可以让用户**直接在当前对话中明确批准对应内容 ID/阶段**，Agent 原样引用该用户消息执行 `studio approve --chat-message` 登记，不需用户手动输入终端口令；没有明确真人表态时不能推断批准。真正视频制作需 FFmpeg/MPT 已装且可用；真实平台上传仍有独立的 `PUBLISH` 确认。参见 [内容结构](CONTENT_SCHEMA.md)、[素材源](MATERIAL_SOURCES.md)、[工具依赖](TOOLCHAIN.md)。
-
-仅需文本回答的 Agent 可以跳过全部本地命令，绝不能把无法执行的视频渲染、浏览器登录或投稿说成已经完成。
+如果原始用户请求中明确要求“发布到指定平台的指定账号”，创建内容时可以在 `studio new` 添加 `--publish-target 平台:账号`，但制作/导出不能推断为公开发布。后续 `studio publish --execute` 不要求再次批准，只能按该范围执行。无实际投稿工具或作品链接时不能宣称已发布。详见 [内容数据](CONTENT_SCHEMA.md)、[素材](MATERIAL_SOURCES.md)、[兼容](AGENT_COMPATIBILITY.md)。

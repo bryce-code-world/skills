@@ -1,16 +1,12 @@
-# AI Media Studio — 工作区 Agent 规则（V3）
+# AI Media Studio — 工作区 Agent 规则
 
-这个工作区用于中文新媒体内容生产，采用 Agent Skills 的通用 `SKILL.md` 目录格式，不绑定 Codex 或其他模型。源码入口是 `SKILL.md`；独立工作区有 `.agents/skills/ai-media-studio/SKILL.md`，宿主不自动发现嵌套子 Skill 时按需读取。宿主的本地文件、终端与账号能力必须分别确认，详见 `docs/AGENT_COMPATIBILITY.md`。
+本工作区以 `SKILL.md` 为跨 Agent 入口；初始化工作区的业务子 Skill 在 `.agents/skills/ai-media-*/SKILL.md`。先核对宿主实际具备的本地文件、终端、网络与账号能力，再执行，不将只读文档能力冒充视频或发布能力。
 
-- **数据归属**：企业知识库由 `config/workspace.json` 的 `knowledge_root` 指定。不要自动覆盖、迁移、上传企业数据；除授权范围内必要文本外，不将企业内部文件发给第三方平台。不得将 Cookie、API Key、密码、`.env` 复制到提示词或产物。
-- **初始化**：不存在配置时引导使用 `SETUP-WINDOWS.cmd` / `SETUP-WINDOWS.ps1` 或 `bash SETUP-UNIX.sh`（自动安装套件内 Python，不要求系统安装）。依赖安装先用 `RUN-STUDIO-WINDOWS.ps1 -Task installer` / `bash run-studio.sh installer` 展示计划；用户批准后安装，逐个锁定 Git SHA，不假定已安装或已功能验证。
-- **跨 Agent 路径记忆**：首次成功初始化后，Windows 在 `%LOCALAPPDATA%/ai-multi-media-kit/local-install.json`、macOS/Linux 在 `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json` 写一份当前系统用户级路径索引，供不同本地 Agent 共享；原主 Skill `config/local-install.json` 仅在共享索引缺失时用于旧版回退。每次和工作区的 `config/workspace.json` 双向核对，失效时停止，不猜测位置或迁移用户资料。不修改系统 PATH，不把安装记录纳入 Git。
-- **真人审批**：AI 不得代表用户作出批准决定。用户在当前对话中明确批准指定内容 ID 的脚本、成片或平台/账号时，当前 Agent 可使用 `studio approve --chat-message <用户原话>` 记录批准，不再要求用户手动操作终端；原有终端口令仍可用。Agent 必须引用真实用户原话，不得推断、伪造或从 AI 输出中复制批准。审核 PASS 和版本哈希约束不变；实际公开上传仍需独立执行确认。
-- **安全发布**：默认只生成发布包/dry-run。CLI 退出码不证明平台发布成功，未得到用户确认的链接时保持状态未知；不绕过平台访问限制。
-- **工具排序**：已审核脚本/FFmpeg CLI > 受控现成工具 > 针对性 MCP > 新代码；尽可能避免重写现成能力。
-- **素材独立与许可**：默认以 `knowledge_root/materials` 为本地素材源；其他共享目录、临时文件须显式登记。扫描只读原视频，索引存在工作区内。索引文本匹配不等于视觉识别，预览帧需 AI/人工核实。联网搜索/生成须事先授权、核对使用许可；未经验证授权的素材不得自动加入成片。
-- **版本与产物**：内容 ID 不覆盖、脚本/审核/视频/发布包 SHA 防过期。发生变更重新审核/确认。所有重要输出保存到 `outputs/`，可导出但须审查敏感信息。
-- **收费边界**：任何 AI Agent 的聊天订阅和第三方模型、TTS、素材及媒体 API 额度独立。未经确认不要启用收费云模型、素材、配音服务或付费投稿。
-- **区分已测范围**：本地离线演示、真正 FFmpeg 视频、MPT 集成、真实平台投稿是不同的验收等级。不要混为一谈。
-
-- **执行入口**：宿主有本机终端权限时，统一以绝对路径调用 `RUN-STUDIO-WINDOWS.ps1` / `run-studio.sh`；无需用户预装 Python、uv、Git 或修改系统 PATH。没有终端/本地目录权限时只进行文本任务，不能声称已成片/发布。安装第三方依赖要先展示来源、许可与费用并获得授权；`configure_mcp.py` 仅是 Codex 适配，其他宿主按自己的配置处理。
+- **一次任务授权**：用户下达内容任务即授权该任务范围内的选题、脚本、AI 审核、合法素材检索、免费工具安装与成片制作，无需逐阶段人工批准。仅当原始用户任务明确指定了**公开发布的平台与账号**，才能在 `studio new --publish-target platform:account` 登记该范围；制作/导出任务不等于公开发布授权。由 Agent 依据真实用户消息设置任务范围，禁止虚构或扩大。
+- **AI 质量闭环**：脚本经 `review.json` 全项 PASS 且无待核事实才能制作；视频经 `video/review.json` 全项 PASS，绑定当前脚本、成片及审核标准哈希，才能打包、发布。发现问题自主修正并重新审核，默认最多 3 轮，仍无法达到标准则如实交付阻塞，不伪造 PASS，也不将质量判断交给用户。
+- **人工参与边界**：原则上只在平台登录、扫码、验证码等宿主无法代办的身份步骤暂停；登录完成后续跑原任务。超出任务范围、收费或未经授权的第三方行为不得自动执行：优先换用已许可的免费方案，不能降级为擅自付费或公开发布。
+- **安装与共享环境**：首次初始化按 `SETUP-WINDOWS.ps1` / `SETUP-UNIX.sh` 使用用户指定的工具目录和独立知识库目录。Windows 共享索引在 `%LOCALAPPDATA%/ai-multi-media-kit/local-install.json`，macOS/Linux 在 `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`；再次使用须同 `config/workspace.json` 核对。不修改系统 PATH、不覆盖用户资产、不向 Git 提交本机安装路径或密钥。按需安装免费第三方工具，先检查固定来源、许可及费用；原任务范围内调用安装器 `--install`，不再要求终端口令。
+- **素材与数据**：以 `knowledge_root/materials` 为默认本地素材源，其他目录只在任务允许的范围内登记。保留原视频和许可元数据，按需使用 AI 核实镜头；索引文本匹配不是视觉识别。未经核实授权的素材不得使用，未经确认免费的 API 或素材服务不得使用。不得输出或保存 Cookie、API Key、账号密码、敏感第三方日志。
+- **安全发布**：`studio package` 只生成发布包；`studio publish --execute` 必须严格匹配内容创建时记录的平台及账号，不再弹出 `PUBLISH` 确认。平台返回码不等于发布成功；链接须在对应平台核验，提交状态不明禁止重复盲发。未接入可靠投稿适配的公众号/知乎等只能交付发布包，不声称已发。
+- **版本与可恢复性**：内容 ID 不覆盖、脚本与成片更新后旧 AI 审核失效；原任务的发布范围不可事后静默扩张。优先既有 FFmpeg/CLI/MCP，不为自动化重写成熟能力。所有产物保存在 `outputs/`，记录真实成功、失败和不可验证项。
+- **执行入口**：在具备本机权限的宿主使用绝对路径 `RUN-STUDIO-WINDOWS.ps1` / `run-studio.sh`。Codex 专属的 `start-codex.*`、`configure_mcp.py` 不是其他 Agent 的前提。离线演示、真实 FFmpeg 成片、MPT 集成和平台发布分别验收。
