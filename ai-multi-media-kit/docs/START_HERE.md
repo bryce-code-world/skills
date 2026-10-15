@@ -59,6 +59,6 @@ bash ./run-studio.sh studio new --id demo-001 --title "我的第一条视频"
 bash ./run-studio.sh installer --component mpt  # 仅显示安装计划
 ```
 
-然后由当前 Agent 读企业知识库的 `brand.md`、`audience.md`、`review-rules.md`，调用内部 `ai-media-*` Skill 生产脚本、执行审查和选材。真正视频制作需 FFmpeg/MPT 已装且可用；真实平台发布需用户针对账号、平台、内容版本独立批准。参见 [内容结构](CONTENT_SCHEMA.md)、[素材源](MATERIAL_SOURCES.md)、[工具依赖](TOOLCHAIN.md)。
+然后由当前 Agent 读企业知识库的 `brand.md`、`audience.md`、`review-rules.md`，调用内部 `ai-media-*` Skill 生产脚本、执行审查和选材。脚本、成片、发布包都可以让用户**直接在当前对话中明确批准对应内容 ID/阶段**，Agent 原样引用该用户消息执行 `studio approve --chat-message` 登记，不需用户手动输入终端口令；没有明确真人表态时不能推断批准。真正视频制作需 FFmpeg/MPT 已装且可用；真实平台上传仍有独立的 `PUBLISH` 确认。参见 [内容结构](CONTENT_SCHEMA.md)、[素材源](MATERIAL_SOURCES.md)、[工具依赖](TOOLCHAIN.md)。
 
 仅需文本回答的 Agent 可以跳过全部本地命令，绝不能把无法执行的视频渲染、浏览器登录或投稿说成已经完成。

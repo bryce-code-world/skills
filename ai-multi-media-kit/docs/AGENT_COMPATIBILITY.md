@@ -36,7 +36,7 @@
 - `start-codex.cmd`、`start-codex.sh` 仅为 **Codex CLI 的可选便捷入口**，不是主运行入口，也不要求其他 Agent 安装 Codex。
 - `scripts/configure_mcp.py` 当前只生成 **Codex 项目级** `.codex/config.toml`，其他 Agent 必须按自己支持的 MCP 配置格式注册、授权并验证连接，不能直接复用该 TOML。
 - `RUN-STUDIO-WINDOWS.ps1`、`run-studio.sh`、`scripts/studio.py`、`scripts/materials.py` 等是**操作系统工具**，不属于某家模型或 Agent。按本机能力执行。
-- 无论宿主是谁，AI 不能替用户输入 `APPROVE` 或 `PUBLISH` 确认短语；未验证授权的素材、第三方收费 API 和平台投稿均禁止静默执行。
+- 无论宿主是谁，审批决定都必须来自真人。用户在对话中明确批准**当前内容 ID、阶段及必要的平台账号**后，Agent 才能原样引用该用户消息，通过 `studio approve --chat-message` 写入带哈希的审批记录；CLI 只核验字面匹配，无法独立证明消息确实出自用户，宿主必须先确认原始用户轮次。不得伪造、代写或推断授权。旧终端 `APPROVE` 仍兼容，实际投稿 `PUBLISH` 二次交互确认不变。未验证授权的素材、第三方收费 API 和平台投稿均禁止静默执行。
 
 ## 验收口径
 

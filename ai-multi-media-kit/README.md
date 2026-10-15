@@ -55,7 +55,7 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
 素材优先来自企业本地目录、NAS/共享目录、临时视频；素材不足时可以使用**已经授权并验证的**外部素材来源，例如 MPT 的 Pexels/Pixabay/Coverr。当前支持文本索引与人工/Agent 检查画面，**不应把关键词匹配说成视频语义识别**。未经核实使用许可的素材不能直接用于公开发布。
 
-Agent 负责选题、脚本、内容检查和镜头判断；现成脚本、FFmpeg、MoneyPrinterTurbo、平台 CLI/MCP 负责确定性操作。AI **不能代替用户输入批准或投稿确认短语**。平台上传工具退出正常并不代表真实审核或公开发布成功。
+Agent 负责选题、脚本、内容检查和镜头判断；现成脚本、FFmpeg、MoneyPrinterTurbo、平台 CLI/MCP 负责确定性操作。**用户可以在对话中直接批准脚本、成片或指定账号的发布包**，Agent 只在识别到真实用户针对当前内容 ID 的明确批准后，将用户原话传入 `studio approve --chat-message` 并保存哈希绑定的审批记录，无需再要求本人手动操作终端。旧的终端确认方式保留，实际上传 `PUBLISH` 仍需独立二次确认。AI 不能代替用户作出决定，也不能自己制造批准消息。详见 [审批协议](docs/CONTENT_SCHEMA.md)。平台上传工具退出正常并不代表真实审核或公开发布成功。
 
 ## 宿主环境的能力边界
 

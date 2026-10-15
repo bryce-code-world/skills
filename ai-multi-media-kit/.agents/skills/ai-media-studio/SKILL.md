@@ -10,9 +10,9 @@ description: 面向兼容 Agent Skills 的 AI Agent，在已初始化 AI Media S
 - 运行自有脚本使用工作区绝对路径：Windows `RUN-STUDIO-WINDOWS.ps1 -Task ...`；macOS/Linux `bash run-studio.sh ...`。不要要求全局 Python、uv、Git 或修改系统 PATH。
 - 从当前企业知识库读取品牌、受众、方法、审核标准与历史数据。内部子 Skill 位于 `.agents/skills/ai-media-*/SKILL.md`；当前 Agent 不发现这些子 Skill 时按任务阶段直接读取对应文件。
 - 选题与脚本由**当前具备相应能力的 AI Agent**完成：`ai-media-topics` → `ai-media-scripts` → `studio new` → `script.json`；不得生成无法核对的营销效果或原创事实。
-- 通过 `studio hash` 和 `ai-media-review` 生成 `review.json`，然后 `studio check`。只有审核 PASS 且没有待核事实时，才提示用户本人完成 `studio approve --stage script`，AI 禁止代输批准短语。
+- 通过 `studio hash` 和 `ai-media-review` 生成 `review.json`，然后 `studio check`。只有审核 PASS 且没有待核事实时才请用户审批。真人可直接在当前对话明确批准指定内容 ID 的脚本，由 Agent 原样传入 `studio approve --stage script --chat-message <用户原话> --who <用户别名>` 记录；未经真人明确表态不能生成审批，亦不能替用户输入终端确认短语。
 - 使用 `ai-media-materials` 检索自有本地/NAS/临时素材并核验画面、授权；未满足需求时按用户同意用已验证的外部素材 CLI，不擅自调用付费模型、TTS 或受保护视频资源。
-- 使用 `ai-media-video` 和 `studio render --material-ids` / `--materials` 成片。完整视频生成后请用户本人执行 `studio approve --stage video`，未批准不得进入可发布状态。
+- 使用 `ai-media-video` 和 `studio render --material-ids` / `--materials` 成片。完整视频生成后请用户本人验片并在对话中明确批准成片，Agent 才可按真实用户原话登记 `studio approve --stage video --chat-message ...`；未批准不得进入可发布状态。
 - 使用 `studio package` 生成七平台发布包；`ai-media-publish` 只在用户针对平台、账号与版本单独批准后尝试投稿。未核实真实公开作品链接前不得标为成功，遇到未知上传状态不得盲重试。
 - 审核、脚本、视频、平台包哈希必须对应当前版本。无法执行本地操作、登录或验证时报告准确阻塞并保留数据，不伪装成已完成业务。
 

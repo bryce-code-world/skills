@@ -32,7 +32,7 @@ description: 面向兼容 Agent Skills / SKILL.md 的 AI Agent，使用企业知
 
 ## 权限和真实能力边界
 
-- **AI 不能代替真人审批**；一切真实发布默认为禁用，预览发布包不是投稿，CLI 退出码不是公开成功。
+- **AI 不能代替真人作出审批决定。** 用户可在当前对话中明确批准指定内容 ID/阶段，Agent 才能将用户原话传入 `studio approve --chat-message` 登记；不再强制用户打开终端，但 AI 不得编造、代写用户批准或把「可以吗」当成同意。没有明确消息时继续等待真人审批。原有终端口令仍可用；实际视频投稿的 `PUBLISH` 二次确认仍独立保留。预览发布包不是投稿，CLI 退出码不是公开成功。
 - 不读取或复制未知 Cookie/Token；不向第三方上传企业全文、账号凭据或个人敏感资料；未经同意不执行下载、付费 API、登录和媒体发布。
 - `social-auto-upload`、`baoyu-post-to-wechat`、`ZhihuPublisher`、MoneyPrinterTurbo 均为**可选且需按实际版本验收**的工具。仅在有权使用并验证的宿主和平台上使用；不保证所有厂商可直传 MP4。
 - 宿主订阅与第三方模型、TTS、素材/API 配额分开；无需指定哪个 Agent 负责创作，由**当前可用 Agent**根据自己实际能力执行。

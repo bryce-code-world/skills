@@ -129,6 +129,75 @@ class StudioProductionTests(unittest.TestCase):
         self.assertEqual(p.returncode,2) # No real CLI installed
         self.assertEqual(json.loads((self.d/'publish-ledger.json').read_text(encoding='utf-8'))['platforms']['douyin']['state'],'not_submitted')
 
+
+    def test_chat_script_approval_records_user_statement_and_binds_revision(self):
+        message=f'我已审核并批准 {self.id} 的脚本，可以进入视频制作。'
+        result=self.call('approve','--id',self.id,'--stage','script','--who','本人',
+                         '--chat-message',message,'--chat-ref','workbuddy:conversation-123:message-4')
+        self.assertEqual(result.returncode,0,result.stderr)
+        record=json.loads((self.d/'approvals'/'script.json').read_text(encoding='utf-8'))
+        self.assertEqual(record['approval_method'],'conversation')
+        self.assertEqual(record['chat_message'],message)
+        self.assertEqual(record['chat_ref'],'workbuddy:conversation-123:message-4')
+        self.assertEqual(record['script_sha256'],json.loads(self.call('hash','--id',self.id).stdout)['script_sha256'])
+        checked=json.loads(self.call('check','--id',self.id).stdout)
+        self.assertEqual(checked['script_approval'],'valid')
+        script=self.d/'script.json'
+        data=json.loads(script.read_text(encoding='utf-8'))
+        data['narration']+='这是一项新修改。'
+        jsonwrite(script,data)
+        checked=json.loads(self.call('check','--id',self.id).stdout)
+        self.assertIn('脚本内容发生变化',checked['script_approval'])
+
+    def test_chat_requires_explicit_user_approval_for_exact_target(self):
+        messages=['可以','我在这里直接批准你可以吗？',
+                  '我批准 demo-002 的脚本。','我批准 demo-001 的成片。',
+                  '我不批准 demo-001 的脚本。','我批准 demo-001 的脚本，先不要做视频。',
+                  '我批准 demo-001 的脚本吗？',
+                  '请优化脚本审批支持对话确认']
+        for message in messages:
+            with self.subTest(message=message):
+                p=self.call('approve','--id',self.id,'--stage','script','--who','本人',
+                            '--chat-message',message)
+                self.assertEqual(p.returncode,2,p.stderr)
+                self.assertFalse((self.d/'approvals'/'script.json').exists())
+        # A reference is not itself user approval, and must never trigger terminal input implicitly.
+        p=self.call('approve','--id',self.id,'--stage','script','--who','本人',
+                    '--chat-ref','chat:message-8',input='')
+        self.assertEqual(p.returncode,2,p.stderr)
+        self.assertFalse((self.d/'approvals'/'script.json').exists())
+
+    def test_chat_video_and_publish_check_separate_stage_account_and_assets(self):
+        p=self.call('approve','--id',self.id,'--stage','video','--who','本人',
+                    '--chat-message',f'我已验收并批准 {self.id} 的成片。')
+        self.assertEqual(p.returncode,2)
+        self.assertFalse((self.d/'approvals'/'video.json').exists())
+        p=self.call('approve','--id',self.id,'--stage','script','--who','本人',
+                    '--chat-message',f'我批准 {self.id} 的脚本。')
+        self.assertEqual(p.returncode,0,p.stderr)
+        video=self.d/'video'/'master.mp4';video.parent.mkdir(parents=True)
+        video.write_bytes(b'synthetic test bytes; not a real video')
+        bad=self.call('approve','--id',self.id,'--stage','video','--who','本人',
+                      '--chat-message',f'我批准 {self.id} 的脚本。')
+        self.assertEqual(bad.returncode,2)
+        p=self.call('approve','--id',self.id,'--stage','video','--who','本人',
+                    '--chat-message',f'我已验收并批准 {self.id} 的成片。')
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertEqual(self.call('package','--id',self.id).returncode,0)
+        msg=f'我批准 {self.id} 发布到 douyin，账号 main。'
+        wrong=self.call('approve','--id',self.id,'--stage','publish','--platform','douyin',
+                        '--account','other','--who','本人','--chat-message',msg)
+        self.assertEqual(wrong.returncode,2)
+        self.assertFalse((self.d/'approvals'/'publish-douyin.json').exists())
+        ok=self.call('approve','--id',self.id,'--stage','publish','--platform','douyin',
+                     '--account','main','--who','本人','--chat-message',msg)
+        self.assertEqual(ok.returncode,0,ok.stderr)
+        record=json.loads((self.d/'approvals'/'publish-douyin.json').read_text(encoding='utf-8'))
+        self.assertEqual(record['account'],'main')
+        self.assertEqual(record['approval_method'],'conversation')
+        # Conversation-stage approval never authorizes or performs the actual upload.
+        self.assertEqual(json.loads((self.d/'publish-ledger.json').read_text(encoding='utf-8'))['platforms']['douyin']['state'],'not_submitted')
+
     def test_installer_plan_does_not_download(self):
         p=pyth('installer.py','--root',self.root,'--profile','core')
         self.assertEqual(p.returncode,0,p.stderr)

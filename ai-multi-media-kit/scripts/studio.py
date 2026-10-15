@@ -194,6 +194,38 @@ def approve_prompt(expected):
     if typed!=expected: fail('审批确认文本不匹配，已取消')
 
 
+def approval_evidence(a):
+    """Accept a quoted, stage-specific user statement; do not infer approval from chat context.
+
+    This parser checks the *text and scope*, not the identity of its author.
+    The invoking Agent must obtain the unchanged quote from an actual human user turn.
+    """
+    if a.chat_message is None:
+        if a.chat_ref:
+            fail('--chat-ref 不能单独代替用户批准消息')
+        expected=f'APPROVE:{a.id}:{a.stage}' + (f':{a.platform}' if a.stage=='publish' else '')
+        approve_prompt(expected)
+        return {'approval_method':'terminal'}
+
+    message=a.chat_message.strip()
+    if not message or len(message)>300 or any(c in message for c in ('\r','\n')):
+        fail('对话批准必须引用不超过300字的一条原始用户消息')
+    if a.chat_ref and (len(a.chat_ref)>256 or any(c in a.chat_ref for c in ('\r','\n'))):
+        fail('--chat-ref 必须是单行的消息引用')
+    phrases={
+        'script': [f'我批准 {a.id} 的脚本',
+                   f'我已审核并批准 {a.id} 的脚本，可以进入视频制作'],
+        'video': [f'我批准 {a.id} 的成片',
+                  f'我已验收并批准 {a.id} 的成片'],
+        'publish': [f'我批准 {a.id} 发布到 {a.platform}，账号 {a.account}']
+    }
+    normalize=lambda s: ''.join(s.split()).rstrip('。.!！')
+    if normalize(message) not in {normalize(x) for x in phrases[a.stage]}:
+        fail('未发现匹配当前内容ID、阶段及账号的明确用户批准；不能由AI推断、改写或代替用户同意')
+    return {'approval_method':'conversation','chat_message':message,
+            'chat_ref':a.chat_ref or None}
+
+
 def cmd_approve(a):
     root,k=workspace(a.root); d=paths(root,a.id)
     if not a.who.strip(): fail('--who 不能为空')
@@ -224,9 +256,8 @@ def cmd_approve(a):
           'script_sha256':filehash(d/'script.json')}
         if a.platform in VIDEO_PLATFORMS: stage_data['video_sha256']=filehash(video_path(d))
     else: fail('不支持的审批阶段')
-    expected=f'APPROVE:{a.id}:{a.stage}' + (f':{a.platform}' if a.stage=='publish' else '')
-    approve_prompt(expected)
-    stage_data.update({'human':a.who,'approved_at_utc':now(),'stage':a.stage, 'content_id':a.id})
+    evidence=approval_evidence(a)
+    stage_data.update({'human':a.who,'approved_at_utc':now(),'stage':a.stage, 'content_id':a.id,**evidence})
     rel=f'publish-{a.platform}' if a.stage=='publish' else a.stage
     save(d/'approvals'/f'{rel}.json',stage_data)
     print('APPROVED (human checkpoint):',d/'approvals'/f'{rel}.json')
@@ -499,7 +530,10 @@ def parse():
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)
     c=sub.add_parser('check');c.add_argument('--id',required=True);c.set_defaults(func=cmd_check)
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
-    ap=sub.add_parser('approve');ap.add_argument('--id',required=True);ap.add_argument('--stage',required=True,choices=['script','video','publish']);ap.add_argument('--platform',choices=PLATFORMS);ap.add_argument('--account');ap.add_argument('--who',required=True);ap.set_defaults(func=cmd_approve)
+    ap=sub.add_parser('approve');ap.add_argument('--id',required=True);ap.add_argument('--stage',required=True,choices=['script','video','publish']);ap.add_argument('--platform',choices=PLATFORMS);ap.add_argument('--account');ap.add_argument('--who',required=True)
+    ap.add_argument('--chat-message',help='直接引用当前会话中真人用户明确批准该ID/阶段的原话；不会再触发终端输入')
+    ap.add_argument('--chat-ref',help='可选：宿主提供的实际用户消息引用，供审计追溯')
+    ap.set_defaults(func=cmd_approve)
     ren=sub.add_parser('render');ren.add_argument('--id',required=True);ren.add_argument('--engine',choices=['ffmpeg','mpt'],default='ffmpeg');
     ren.add_argument('--materials',nargs='+',help='手动指定本地视频，兼容原流程')
     ren.add_argument('--material-ids',nargs='+',help='从 materials search 返回的素材 ID 按指定顺序剪辑')
