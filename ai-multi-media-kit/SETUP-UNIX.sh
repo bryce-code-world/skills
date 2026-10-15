@@ -2,13 +2,13 @@
 # Bash 3.2+ bootstrap for macOS and glibc Linux, no system Python or Git required.
 set -euo pipefail
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOT=""; KNOWLEDGE=""; NONINTERACTIVE=0; SKIP_FFMPEG=0; SKIP_GIT=0
-usage() { echo 'Usage: bash SETUP-UNIX.sh [--install-root DIR] [--knowledge-root DIR] [--non-interactive] [--skip-ffmpeg]'; }
+ROOT=""; KNOWLEDGE=""; OUTPUT=""; NONINTERACTIVE=0; SKIP_FFMPEG=0; SKIP_GIT=0
+usage() { echo 'Usage: bash SETUP-UNIX.sh [--install-root DIR] [--knowledge-root DIR] [--output-root DIR] [--non-interactive] [--skip-ffmpeg]'; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --install-root|--knowledge-root)
+    --install-root|--knowledge-root|--output-root)
       [ "$#" -ge 2 ] || { usage >&2; exit 2; }
-      case "$1" in --install-root) ROOT="$2";; --knowledge-root) KNOWLEDGE="$2";; esac
+      case "$1" in --install-root) ROOT="$2";; --knowledge-root) KNOWLEDGE="$2";; --output-root) OUTPUT="$2";; esac
       shift 2;;
     --non-interactive) NONINTERACTIVE=1; shift;;
     --skip-ffmpeg) SKIP_FFMPEG=1; shift;;
@@ -33,6 +33,27 @@ case "$ROOT" in /*) ;; *) ROOT="$PWD/$ROOT";; esac
 case "$KNOWLEDGE" in /*) ;; *) KNOWLEDGE="$PWD/$KNOWLEDGE";; esac
 ROOT="${ROOT%/}"; KNOWLEDGE="${KNOWLEDGE%/}"
 case "$KNOWLEDGE/" in "$ROOT/"* ) echo 'Install root may not contain knowledge root' >&2; exit 2;; esac
+# Preserve custom output_root in an already-initialized workspace when the
+# operator omits --output-root. Prompt on first install only.
+if [ -z "$OUTPUT" ] && [ ! -f "$ROOT/config/workspace.json" ]; then
+  if [ "$NONINTERACTIVE" -eq 1 ]; then
+    OUTPUT="$ROOT/outputs"
+  else
+    read -r -p "Project output root [$ROOT/outputs]: " OUTPUT || exit 2
+    OUTPUT="${OUTPUT:-$ROOT/outputs}"
+  fi
+fi
+if [ -n "$OUTPUT" ]; then
+  case "$OUTPUT" in '~'*) OUTPUT="$HOME${OUTPUT#\~}";; esac
+  case "$OUTPUT" in /*) ;; *) OUTPUT="$PWD/$OUTPUT";; esac
+  OUTPUT="${OUTPUT%/}"
+  case "$KNOWLEDGE/" in "$OUTPUT/"* ) echo 'Project output may not contain the knowledge root' >&2; exit 2;; esac
+  case "$OUTPUT/" in "$KNOWLEDGE/"* ) echo 'Project output may not be inside the knowledge root' >&2; exit 2;; esac
+  if [ "$OUTPUT" != "$ROOT/outputs" ]; then
+    case "$ROOT/" in "$OUTPUT/"* ) echo 'Project output may not contain the install root' >&2; exit 2;; esac
+    case "$OUTPUT/" in "$ROOT/"* ) echo 'Project output may not be inside the install root' >&2; exit 2;; esac
+  fi
+fi
 case "$ROOT/" in "$KNOWLEDGE/"* ) echo 'Knowledge root may not contain install root' >&2; exit 2;; esac
 if [ -f "$ROOT/config/workspace.json" ]; then
   # Python bootstrap follows, but refuse silently changing existing workspace roots:
@@ -101,7 +122,9 @@ echo 'Provisioning Python 3.12 inside the chosen installation root...'
 PYTHON="$("$UV" python find --managed-python 3.12)"
 [ -x "$PYTHON" ] || { echo 'Managed Python not available' >&2; exit 2; }
 "$PYTHON" -c 'import sys;assert sys.version_info[:2] == (3,12)'
-"$PYTHON" "$SOURCE/scripts/init_workspace.py" --install-root "$ROOT" --knowledge-root "$KNOWLEDGE"
+INIT_ARGS=(--install-root "$ROOT" --knowledge-root "$KNOWLEDGE")
+[ -z "$OUTPUT" ] || INIT_ARGS+=(--output-root "$OUTPUT")
+"$PYTHON" "$SOURCE/scripts/init_workspace.py" "${INIT_ARGS[@]}"
 if [ "$SKIP_FFMPEG" -eq 0 ]; then
   "$PYTHON" "$SOURCE/scripts/bootstrap_assets.py" --root "$ROOT" --ffmpeg
 fi
@@ -109,6 +132,7 @@ fi
 "$PYTHON" "$SOURCE/scripts/workspace_locator.py" register --install-root "$ROOT"
 echo "READY: workspace $ROOT"
 echo "READY: knowledge $KNOWLEDGE"
+echo "Project outputs: see $ROOT/config/workspace.json (output_root)"
 echo "Python: $PYTHON"
 echo "Use: bash \"$ROOT/run-studio.sh\" doctor"
 echo 'No sudo, homebrew, global PATH changes or machine-wide Python installation.'

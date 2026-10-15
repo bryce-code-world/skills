@@ -7,6 +7,7 @@ No system PATH changes, elevation, or remote script execution.
 param(
     [string]$InstallRoot = '',
     [string]$KnowledgeRoot = '',
+    [string]$OutputRoot = '',
     [switch]$NonInteractive,
     [switch]$SkipGit,
     [switch]$SkipFfmpeg
@@ -61,10 +62,41 @@ try {
         Fail 'Tool root and knowledge root must be separate and non-nested.'
     }
     $existing = Join-Path $root 'config\workspace.json'
+    $cfg = $null
     if (Test-Path -LiteralPath $existing) {
         $cfg = Get-Content -LiteralPath $existing -Raw -Encoding UTF8 | ConvertFrom-Json
         if ((Canonical $cfg.install_root) -ine $root -or (Canonical $cfg.knowledge_root) -ine $knowledge) {
             Fail 'Existing workspace has other paths. No changes were made.'
+        }
+    }
+    # Existing workspaces silently retain their configured output path; new ones
+    # can choose a separate location while legacy install/outputs stays the default.
+    $output = ''
+    if ($OutputRoot) {
+        $output = Canonical $OutputRoot
+    } elseif (-not $cfg) {
+        $outputDefault = Join-Path $root 'outputs'
+        if ($NonInteractive) {
+            $output = $outputDefault
+        } else {
+            $answer = Read-Host "Project output root [$outputDefault]"
+            $output = Canonical $(if ($answer) { $answer } else { $outputDefault })
+        }
+    }
+    if ($output) {
+        $legacy = Join-Path $root 'outputs'
+        if (([string]::Equals($output,$knowledge,[StringComparison]::OrdinalIgnoreCase)) -or
+            $output.StartsWith($knowledge+'\',[StringComparison]::OrdinalIgnoreCase) -or
+            $knowledge.StartsWith($output+'\',[StringComparison]::OrdinalIgnoreCase) -or
+            ($output -ine $legacy -and (
+             $output -ieq $root -or
+             $output.StartsWith($root+'\',[StringComparison]::OrdinalIgnoreCase) -or
+             $root.StartsWith($output+'\',[StringComparison]::OrdinalIgnoreCase)))) {
+            Fail 'Project output directory must be separate from the tool and knowledge directories.'
+        }
+        if ($cfg) {
+            $prior = if ($cfg.output_root) { Canonical $cfg.output_root } else { $legacy }
+            if ($prior -ine $output) { Fail 'Existing project output_root differs. No data was moved; use the existing path.' }
         }
     }
     $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
@@ -114,7 +146,9 @@ try {
     $python = (& $uv python find --managed-python 3.12 | Select-Object -Last 1).Trim()
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $python -PathType Leaf)) { Fail 'uv-managed Python not found' }
     RunChecked $python @('-c','import sys; assert sys.version_info[:2] == (3,12)')
-    RunChecked $python @((Join-Path $source 'scripts\init_workspace.py'),'--install-root',$root,'--knowledge-root',$knowledge)
+    $initArgs = @((Join-Path $source 'scripts\init_workspace.py'),'--install-root',$root,'--knowledge-root',$knowledge)
+    if ($output) { $initArgs += @('--output-root',$output) }
+    RunChecked $python $initArgs
     $more = @('--root',$root)
     if (-not $SkipGit) { $more += '--git' }
     if (-not $SkipFfmpeg) { $more += '--ffmpeg' }
@@ -127,6 +161,8 @@ try {
     Write-Host ''
     Write-Host "SUCCESS: workspace $root"
     Write-Host "SUCCESS: knowledge $knowledge"
+    $configured = Get-Content -LiteralPath (Join-Path $root 'config\workspace.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Write-Host "SUCCESS: project outputs $(if ($configured.output_root) { $configured.output_root } else { Join-Path $root 'outputs' })"
     Write-Host "Python: $python"
     Write-Host "Use: powershell -ExecutionPolicy Bypass -File `"$(Join-Path $root 'RUN-STUDIO-WINDOWS.ps1')`" -Task doctor"
     Write-Host 'No machine-wide Python / PATH modification performed.'

@@ -8,6 +8,9 @@ import shutil
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from workspace_paths import output_directory
+
 LOCAL = ['ai-media-studio','ai-media-topics','ai-media-scripts','ai-media-review','ai-media-materials','ai-media-video','ai-media-publish']
 PLATFORMS=['xiaohongshu','douyin','tencent','bilibili','kuaishou','wechat_oa','zhihu']
 
@@ -32,6 +35,11 @@ def main():
             val=json.loads(cfg.read_text(encoding='utf-8'))
             kb=Path(val['knowledge_root'])
             check('企业知识库',kb.is_dir(),kb)
+            try:
+                projects=output_directory(root,val)
+                check('项目成果目录',projects.is_dir(),projects)
+            except (ValueError,OSError) as exc:
+                check('项目成果目录',False,str(exc))
             for f in ('brand.md','audience.md','review-rules.md'):
                 check(f'知识库文件 {f}',(kb/f).is_file())
             check('默认禁止自动发布',val.get('auto_publish') is False)

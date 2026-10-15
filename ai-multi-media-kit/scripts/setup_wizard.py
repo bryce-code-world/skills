@@ -29,7 +29,8 @@ def main():
         disk=str(Path.home()/'AI-Media-Studio');kb=str(Path.home()/'Company-Knowledge')
     dest=prompt('工具/Skill 工作区位置',disk)
     knowledge=prompt('企业知识库位置（独立）',kb)
-    sys.argv=['init_workspace.py','--install-root',dest,'--knowledge-root',knowledge]
+    projects=prompt('项目输出目录（默认兼容旧版）',str(Path(dest).expanduser().resolve()/'outputs'))
+    sys.argv=['init_workspace.py','--install-root',dest,'--knowledge-root',knowledge,'--output-root',projects]
     rc=init_workspace.main()
     if rc:return rc
     print('\n完成。后续操作：')

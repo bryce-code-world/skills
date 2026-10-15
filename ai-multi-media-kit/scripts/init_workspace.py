@@ -28,6 +28,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Initialize AI Media Studio (no downloads or installs).")
     parser.add_argument("--install-root", required=True, help="Workspace/tool root, e.g. D:\\AI-Media-Studio")
     parser.add_argument("--knowledge-root", required=True, help="Independent company knowledge root")
+    parser.add_argument("--output-root", help="Separate project output root; default keeps legacy <install-root>/outputs")
     parser.add_argument("--remember", action="store_true", help="Remember this initialized workspace in this Skill's private local-install.json")
     args = parser.parse_args()
     install = Path(args.install_root).expanduser().resolve()
@@ -36,6 +37,8 @@ def main() -> int:
         print("ERROR: install-root and knowledge-root must be separate, non-nested directories.", file=sys.stderr)
         return 2
 
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from workspace_paths import output_directory
     # Preflight BEFORE any filesystem changes: avoid creating an unwanted knowledge
     # directory and copying files when reconfiguration conflicts with existing data.
     preexisting_config = install / "config" / "workspace.json"
@@ -48,9 +51,28 @@ def main() -> int:
         if str(install) != previous.get("install_root") or str(knowledge) != previous.get("knowledge_root"):
             print("ERROR: existing workspace.json paths differ; no paths were created or modified.", file=sys.stderr)
             return 2
+    # An existing output directory cannot be moved safely by merely changing its config.
+    # When --output-root is omitted, preserve the previous choice or the legacy default.
+    raw_output = args.output_root if args.output_root is not None else (
+        previous.get("output_root", str(install / "outputs")) if preexisting_config.exists()
+        else str(install / "outputs"))
+    try:
+        output = output_directory(install, {"knowledge_root": str(knowledge), "output_root": raw_output}, initializing=True)
+        if preexisting_config.exists():
+            stored = output_directory(install, previous)
+            if output != stored:
+                print("ERROR: Existing output_root differs; do not relocate or split existing projects.", file=sys.stderr)
+                return 2
+            if output != (install / "outputs").resolve() and not output.is_dir():
+                print("ERROR: existing custom output_root is missing or not a directory; refusing to recreate it.", file=sys.stderr)
+                return 2
+    except (ValueError, OSError) as exc:
+        print(f"ERROR: invalid output_root: {exc}", file=sys.stderr)
+        return 2
 
     install.mkdir(parents=True, exist_ok=True)
     knowledge.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
 
     for rel in [".agents/skills", "config", "docs", "scripts"]:
         source = PROJECT_ROOT / rel
@@ -71,7 +93,7 @@ def main() -> int:
 
     for base_file in ["AGENTS.md", "README.md", ".gitignore", "SETUP-WINDOWS.cmd", "SETUP-WINDOWS.ps1", "SETUP-UNIX.sh", "RUN-STUDIO-WINDOWS.ps1", "run-studio.sh", "start-codex.cmd", "start-codex.sh"]:
         safe_copy(PROJECT_ROOT / base_file, install / base_file)
-    for folder in ["tools", "mcp", "runtime/browsers", "runtime/uv-cache", "runtime/uv-python", "runtime/bootstrap/uv", "runtime/downloads", "runtime/cache", "runtime/tmp", "auth", "cache", "logs", "outputs"]:
+    for folder in ["tools", "mcp", "runtime/browsers", "runtime/uv-cache", "runtime/uv-python", "runtime/bootstrap/uv", "runtime/downloads", "runtime/cache", "runtime/tmp", "auth", "cache", "logs"]:
         (install / folder).mkdir(parents=True, exist_ok=True)
     for folder in ["examples", "materials", "review-history", "platform-rules", "methodologies", "successful-examples"]:
         (knowledge / folder).mkdir(parents=True, exist_ok=True)
@@ -85,7 +107,7 @@ def main() -> int:
             "schema": 2,
             "install_root": str(install),
             "knowledge_root": str(knowledge),
-            "output_root": str(install / "outputs"),
+            "output_root": str(output),
             "platforms": PLATFORMS,
             "publish_mode": "dry-run",
             "auto_publish": False,
@@ -119,6 +141,7 @@ def main() -> int:
             return 2
         print("DEFAULT_WORKSPACE_REGISTERED" if changed else "DEFAULT_WORKSPACE_UNCHANGED")
     print("READY (workspace scaffolding only). Run SETUP-WINDOWS.ps1 or SETUP-UNIX.sh to bootstrap Python and media tooling; external accounts have NOT been linked.")
+    print("PROJECT_OUTPUT_ROOT:", output)
     print("NEXT: run-studio.sh doctor / RUN-STUDIO-WINDOWS.ps1 -Task doctor; workspace:", str(install))
     return 0
 

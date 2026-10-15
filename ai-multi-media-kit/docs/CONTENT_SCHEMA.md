@@ -16,7 +16,9 @@
 .\RUN-STUDIO-WINDOWS.ps1 -Task studio new --id my-video-002 --title "短视频主题" --publish-target douyin:main --task-ref "当前用户消息的真实引用"
 ```
 
-`outputs/<ID>/content.json` 中保存 `publish_targets` 和可选的 `task_ref`（不保存账号口令）；`--publish-target` 可在创建时重复传入不同平台和账号，同一平台不得重复。Agent **只能根据原始用户任务设置**，不是由 CLI 读取聊天记录或判断真人身份。工具无法独立证明用户是否下达过发布指令，因此 Agent 不得自己编造来源。后续修改脚本不会增加发布权限，默认制作任务无法执行公开投稿。
+`<output_root>/<ID>/content.json` 中保存 `publish_targets` 和可选的 `task_ref`（不保存账号口令）；`--publish-target` 可在创建时重复传入不同平台和账号，同一平台不得重复。Agent **只能根据原始用户任务设置**，不是由 CLI 读取聊天记录或判断真人身份。工具无法独立证明用户是否下达过发布指令，因此 Agent 不得自己编造来源。后续修改脚本不会增加发布权限，默认制作任务无法执行公开投稿。
+
+**统一输出位置：** `config/workspace.json` 的 `output_root` 是成果文件根目录，按 `内容ID/` 创建项目；旧配置缺少该字段时仍使用 `<install_root>/outputs`。跨 Agent 不应在当前终端目录或源码目录另外创建 `outputs/`，批量选题统一放 `<output_root>/_plans/`。成果目录不随工具升级迁移。
 
 ## AI 编稿与脚本审核
 

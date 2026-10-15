@@ -6,7 +6,7 @@
 
 请使用当前 Agent 自己的 Skill 安装方式获取**整个目录**，包含 `SKILL.md`、`scripts`、`docs`、`knowledge-templates` 与所有子 Skills。无需手动下载 ZIP，也无需预装 Python。**宿主能读取 Skill 不代表能调用本机文件或终端**；若只能文本生成，不得宣称已成片或发布。
 
-首次配置请指定两个不相互嵌套的目录：**工具工作区**与**企业知识库**。若已经有本机共享路径索引，先读取并核对路径，合法存在即复用，不要复制另一套工作区。
+首次配置可指定三个不相互嵌套的目录：**工具工作区**、**企业知识库**、**项目成果目录**。第三个目录用于持久保存选题、脚本、审核、MP4 和发布包；若不指定则兼容 `<install_root>/outputs`。若已有本机共享索引，先核对 `config/workspace.json` 中的三个目录并复用，不另建工作区或迁移旧视频。
 
 ## 不同 Agent 复用共享目录
 
@@ -22,20 +22,20 @@
 Windows PowerShell 5.1+：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1 -InstallRoot "D:\自选工具目录" -KnowledgeRoot "D:\自选企业知识库" -NonInteractive
+powershell -NoProfile -ExecutionPolicy Bypass -File .\SETUP-WINDOWS.ps1 -InstallRoot "D:\自选工具目录" -KnowledgeRoot "D:\自选企业知识库" -OutputRoot "D:\自选视频项目" -NonInteractive
 ```
 
 Linux/macOS：
 
 ```bash
-bash ./SETUP-UNIX.sh
+bash ./SETUP-UNIX.sh --install-root "$HOME/media-tools" --knowledge-root "$HOME/company-knowledge" --output-root "$HOME/video-projects" --non-interactive
 ```
 
-引导器将 Python 3.12/uv、便携 Git 和 FFmpeg 优先安装到工具目录，缓存不修改系统级 PATH；再次运行复用原配置并保护用户资产。平台、证书和联网条件仍需真实验证。必须用户处理的账号登录、扫码、验证码由 Agent 暂停等待，成功后继续执行。
+引导器将 Python 3.12/uv、便携 Git 和 FFmpeg 优先安装到工具目录，缓存不修改系统级 PATH；实际成果在 `output_root/<内容ID>/`，批量选题在 `output_root/_plans/`。再次运行保留原有配置，**不会修改已有成果目录或自动迁移已有内容**。平台、证书和联网条件仍需真实验证。必须用户处理的账号登录、扫码、验证码由 Agent 暂停等待，成功后继续执行。
 
 ## 升级已有工作区而不覆盖资料
 
-重新安装 Skill 源码不会自动覆盖用户的旧运行环境。应由 Agent 使用**新获取的 Skill 源码目录**下的 `scripts/upgrade_core.py --root <已有工具目录> --apply`，先备份将覆盖的 Skill 自有文件，再更新；用户知识库、outputs、账号与 runtime 不变。当前版本 `--apply` 不要求额外升级口令。完成后从原绝对路径重新运行 `doctor` 和回归检查。只运行已有工作区内部的旧版升级脚本可能无法获取新源码，不能误报已更新。
+重新安装 Skill 源码不会自动覆盖用户的旧运行环境或独立项目成果目录。应由 Agent 使用**新获取的 Skill 源码目录**下的 `scripts/upgrade_core.py --root <已有工具目录> --apply`，先备份将覆盖的 Skill 自有文件，再更新；用户知识库、outputs、账号与 runtime 不变。当前版本 `--apply` 不要求额外升级口令。完成后从原绝对路径重新运行 `doctor` 和回归检查。只运行已有工作区内部的旧版升级脚本可能无法获取新源码，不能误报已更新。
 
 ## 自动化日常执行
 

@@ -9,8 +9,12 @@ import argparse
 import hashlib
 import json
 import re
+import sys
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from workspace_paths import output_directory
 
 EXCLUDED = re.compile(r'(?:^|[._-])(cookie|session|secret|token|password|private|credential|auth|\.env)(?:[._-]|$)', re.I)
 EXCLUDED_DIRS = {'auth', 'runtime', '.git', '.venv', 'cache', 'logs', 'node_modules', '__pycache__', 'secrets'}
@@ -39,13 +43,14 @@ def main():
     root = Path(args.install_root).expanduser().resolve()
     cfg = json.loads((root/'config/workspace.json').read_text(encoding='utf-8'))
     knowledge = Path(cfg['knowledge_root']).expanduser().resolve()
+    projects = output_directory(root, cfg)
     out = Path(args.destination).expanduser().resolve()
     if knowledge == root or root in knowledge.parents or knowledge in root.parents:
         raise ValueError('Knowledge root must be separate from install root')
-    if out.is_relative_to(root) or out.is_relative_to(knowledge):
+    if out.is_relative_to(root) or out.is_relative_to(knowledge) or out.is_relative_to(projects):
         raise ValueError('Export destination must be outside the exported data roots')
     items: list[tuple[Path,str]] = []
-    for folder,label in ((knowledge,'knowledge'),(root/'outputs','outputs')):
+    for folder,label in ((knowledge,'knowledge'),(projects,'outputs')):
         if folder.exists():
             for file,rel in safe_files(folder):
                 items.append((file, f'{label}/{rel.as_posix()}'))

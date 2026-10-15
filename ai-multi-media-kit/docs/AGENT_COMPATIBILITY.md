@@ -14,7 +14,7 @@
 
 使用**当前宿主自己**的 Skill 安装/导入或完整目录复制，不强制 Codex 或 Claude 专属安装目录。主 `SKILL.md` 为统一入口；初始化工作区内 `.agents/skills/ai-media-*/SKILL.md` 是业务子 Skill，宿主不能自动发现时按阶段直接读取，无需修改系统 Skill 路径。
 
-工具目录和企业知识库目录由用户选定且不得互相嵌套。运行对应的 `SETUP-WINDOWS.ps1` / `SETUP-UNIX.sh`，不改系统 PATH。首次成功后在同一系统用户的本机共享索引中记路径：
+首次安装由用户指定工具目录、企业知识库目录与项目成果目录（`output_root`），三者不得相互嵌套；第三个未指定时兼容 `<install_root>/outputs`。运行对应的 `SETUP-WINDOWS.ps1 -OutputRoot ...` / `SETUP-UNIX.sh --output-root ...`，不改系统 PATH。新旧 Agent 都从工具目录的 `config/workspace.json` 定位该成果根目录，独立存放选题、脚本、成片和平台发布包。首次成功后在同一系统用户的本机共享索引中记路径：
 
 - Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
 - macOS / Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`

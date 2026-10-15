@@ -10,12 +10,16 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from workspace_paths import output_directory
 
 PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat_oa', 'zhihu')
 SCENES = [
@@ -62,7 +66,9 @@ def main() -> int:
     if cfg.get('auto_publish') is not False:
         raise RuntimeError('Not safe: auto_publish must be false')
     output_id = a.output_id or 'offline-smoke-' + uuid4().hex[:8]
-    target = root / 'outputs' / output_id
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}', output_id):
+        raise ValueError('输出内容 ID 只能使用字母、数字、下划线或连字符，最长64位')
+    target = output_directory(root, cfg) / output_id
     if target.exists():
         raise RuntimeError(f'Output already exists; refusing overwrite: {target}')
     target.mkdir(parents=True)

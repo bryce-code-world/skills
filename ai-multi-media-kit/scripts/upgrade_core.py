@@ -40,7 +40,7 @@ def main():
     if root==SOURCE:updates=[]
     print('将更新的核心文件数：',len(updates))
     for r in updates:print(' -',r)
-    print('不会改动企业知识库、outputs、auth、runtime、第三方工具和 workspace.json。')
+    print('不会改动企业知识库、项目产出目录、auth、runtime、第三方工具和 workspace.json。')
     if not a.apply:
         print('PREVIEW ONLY：如确认需要升级，运行相同命令 + --apply')
         return 0

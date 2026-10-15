@@ -20,6 +20,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from workspace_paths import output_directory
+
 PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat_oa', 'zhihu')
 VIDEO_PLATFORMS = PLATFORMS[:5]
 ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
@@ -69,7 +72,7 @@ def workspace(root: str):
 def content_dir(root: Path, content_id: str):
     if not ID_RE.fullmatch(content_id):
         fail('内容 ID 仅允许字母、数字、下划线和连字符（最长64位）')
-    return root / 'outputs' / content_id
+    return output_directory(root, load(root / 'config' / 'workspace.json')) / content_id
 
 
 def paths(root: Path, content_id: str):

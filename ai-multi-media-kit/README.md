@@ -12,13 +12,15 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
 发送示例：
 
-> 请使用你自身的 Skill 安装功能安装上面的完整 Skill（包括 scripts、docs、knowledge-templates 和子 Skills），读取 `SKILL.md`、`AGENTS.md`、`docs/START_HERE.md`。我指定工具目录和独立的企业知识库目录；先检查同一系统用户的共享工作区，存在就复用，否则按指定路径初始化。使用已验证免费的工具完成一条 45～60 秒中文 9:16 竖屏视频，自动选题、编稿、审核、选材、返工和生成 MP4。除我必须完成的账号登录、扫码、验证码外，不要在脚本、成片、素材和工具安装阶段要求逐项审批。**本次只制作不公开发布。** 交付真实视频及审核记录，不得调用收费服务或覆盖既有用户数据。
+> 请使用你自身的 Skill 安装功能安装上面的完整 Skill（包括 scripts、docs、knowledge-templates 和子 Skills），读取 `SKILL.md`、`AGENTS.md`、`docs/START_HERE.md`。我指定工具目录、独立企业知识库目录和项目成果目录；先检查同一系统用户的共享工作区，存在就复用已有三个路径，否则按指定路径初始化。使用已验证免费的工具完成一条 45～60 秒中文 9:16 竖屏视频，自动选题、编稿、审核、选材、返工和生成 MP4。除我必须完成的账号登录、扫码、验证码外，不要在脚本、成片、素材和工具安装阶段要求逐项审批。**本次只制作不公开发布。** 交付真实视频及审核记录，不得调用收费服务或覆盖既有用户数据。
 
 **不需要用户先下载 ZIP 或预装 Python。** Skill 源码安装和运行环境安装是两件事。宿主不支持本机文件/命令时只能做文案等文本任务，不得冒充已成片。云端隔离 Agent 也不能自动访问用户电脑的 D: 盘。
 
-## 两个用户指定目录与共享定位
+## 三个用户目录与共享定位
 
-首次运行需要两个**互不嵌套**的目录：工具工作区（自有 Python、uv、FFmpeg、工具与视频产物）和企业知识库（品牌、受众、审核标准、授权素材）。按实际平台使用 `SETUP-WINDOWS.ps1` 或 `SETUP-UNIX.sh` 初始化。
+首次运行可分别指定**工具工作区**（自有 Python、uv、FFmpeg、依赖缓存）、**企业知识库**（品牌、受众、标准与授权原片）、**项目成果目录**（选题、脚本、审核记录、MP4、七平台发布包）。三者相互独立，不嵌套。项目成果目录由 `config/workspace.json` 的 `output_root` 持久记录，未来其他 Agent 通过共享工作区定位索引自动复用，不需要重复询问。
+
+新安装可使用 `SETUP-WINDOWS.ps1 -InstallRoot "D:\\ai-media-tools" -KnowledgeRoot "D:\\knowledge" -OutputRoot "D:\\content-projects"`（Unix 使用 `--install-root`、`--knowledge-root`、`--output-root`）；若不传成果目录，继续使用旧版 `<工具目录>/outputs`，兼容已有配置。已有工作区不会自动迁移旧视频，更换已存在的输出根路径将明确拒绝；需要迁移时应另行进行核对与备份。
 
 Windows 在 `%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`，macOS/Linux 在 `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json` 记录路径索引。每个 Agent 读取索引并核对 `config/workspace.json`，用**绝对路径**运行工具。共享路径不等于云同步；不修改系统级 PATH，不覆盖或迁移用户资料。不能定位时报告真实原因，不凭猜测重装。
 
