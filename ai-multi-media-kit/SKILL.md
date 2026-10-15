@@ -9,9 +9,10 @@ description: 面向兼容 Agent Skills 的本地 AI Agent，利用企业知识�
 
 ## 初始化与复用
 
-1. 用当前宿主的 Skill 安装能力获取完整源码与子 Skills。检查系统用户共享索引：Windows `%LOCALAPPDATA%/ai-multi-media-kit/local-install.json` 或 macOS/Linux `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`，同 `<install_root>/config/workspace.json` 核对。路径失效时停止猜测，核实原目录。
-2. 未初始化时由用户指定互不嵌套的**工具安装目录**、**企业知识库目录**和**项目成果目录**，调用 `SETUP-WINDOWS.ps1` 或 `SETUP-UNIX.sh`（第三个目录参数为 `-OutputRoot` / `--output-root`）。成果目录未指定时兼容旧位置 `<install_root>/outputs`。已有工作区直接读取 `config/workspace.json` 的 `output_root`，不自动更改或搬迁已有内容；无需系统 Python、uv、Git 或修改 PATH。
-3. 已验证为免费、且本次任务实际需要的本地工具，可用 `RUN-STUDIO-WINDOWS.ps1 -Task installer --component <组件> --install`（Linux/macOS 使用 `run-studio.sh`）按白名单安装并验证，不再要求 `INSTALL` 键盘口令；登录或验证码必须留给用户本人。
+1. 当前 Agent 只需用自身方式安装/加载 **Skill 入口**。**每次开始必须先只读发现**：检查 Windows `%LOCALAPPDATA%/ai-multi-media-kit/local-install.json` 或 macOS/Linux `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`；共享记录缺失时检查当前 Skill 的旧版 `config/local-install.json`。能运行 Python 时执行 `scripts/workspace_locator.py show`；否则读取 JSON 并核对 `<install_root>/config/workspace.json` 的工具、知识库、`output_root` 三个实际目录。
+2. **发现有效工作区即复用并停止初始化**：不再次询问三个目录，不运行 SETUP / `init_workspace.py`，不再次安装已存在的 Python、uv、FFmpeg 或第三方依赖。直接调用现有工作区的绝对路径启动器，需要时运行 `doctor` 检查实际缺失能力。即使用户再次提供同一组路径，也只能复用，不得创建第二套工具/知识库/输出环境。
+3. **发现缺失才允许新建**：若共享索引不存在、但用户已给出旧工具路径，先用 `workspace_locator.py inspect --install-root <旧目录>` 验证 `workspace.json`，可按需 `register` 恢复索引，不运行安装器。若索引损坏、目录失效、三路径冲突，则停止并报告，**不得静默回退或转而新建**。只有确认确无已有工作区且用户明确选择三个目录，才能调用 `SETUP-WINDOWS.ps1` 或 `SETUP-UNIX.sh`；输出目录缺省兼容 `<install_root>/outputs`。用户确实要创建另一套环境时，需明确授权并指定 `-NewWorkspace` / `--new-workspace`，Agent 不得自行加此选项。
+4. 已复用环境但 `doctor` 发现本任务需要的缺失工具时，只补齐该项经验证免费、合法的依赖；不得以“新 Agent 初次安装”为由重装全套。不同 Agent 可先后接管同一项目，但不应**同时写入同一内容 ID**；接管前确认前一 Agent 的写入已结束。宿主专属登录态/MCP 注册可能仍需检查；登录或验证码由用户本人操作，不修改系统 PATH。
 
 ## 自动内容流水线
 

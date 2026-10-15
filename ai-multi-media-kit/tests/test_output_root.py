@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -22,6 +23,8 @@ class OutputRootTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         base = Path(temp.name)
+        local=patch.dict(os.environ,{'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')})
+        local.start(); self.addCleanup(local.stop)
         self.install = base / "tool runtime"
         self.knowledge = base / "企业知识库"
         self.output = base / "持久项目成果"

@@ -19,7 +19,7 @@
 - Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
 - macOS / Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
 
-每次需与 `<install_root>/config/workspace.json`、企业知识库校验。旧版主 Skill 的 `config/local-install.json` 仅供共享索引缺失时回退；索引损坏或路径不符时停止询问原路径，不静默迁移或重复安装用户资产。独立 Agent 在同设备、同系统用户及可访问本地文件时才可复用，索引不是云同步。
+**每次先只读发现，后决定是否初始化**：有效共享索引与 `<install_root>/config/workspace.json`（包含 `output_root`）一致时，立即复用，不询问路径，也不运行 SETUP/init_workspace/重复下载工具。只需检测并补齐本次业务必需的缺失依赖。旧版主 Skill 的 `config/local-install.json` 仅供共享索引缺失时回退；已知原工具路径时优先用 `workspace_locator.py inspect` 读取既有工作区，必要时 `register` 补建共享索引。索引损坏、目录失效或路径冲突时停止，不得因此默认创建另一套；明确第二套环境需用户授权并使用 `--new-workspace`。该共享机制仅适用同设备、同系统用户且可操作本机文件的 Agent，不自动复用宿主专属浏览器登录态或 MCP 注册，亦不提供云同步。
 
 ## 自动执行的授权
 

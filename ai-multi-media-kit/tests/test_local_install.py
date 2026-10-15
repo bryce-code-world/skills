@@ -39,9 +39,11 @@ class LocalInstallTests(unittest.TestCase):
             errors='replace', timeout=30
         )
 
-    def initialize(self, workspace=None, knowledge=None):
-        return self.run_script("init_workspace.py", "--install-root", workspace or self.workspace,
-                               "--knowledge-root", knowledge or self.knowledge, "--remember")
+    def initialize(self, workspace=None, knowledge=None, *, new_workspace=False):
+        args=["--install-root", workspace or self.workspace,
+              "--knowledge-root", knowledge or self.knowledge, "--remember"]
+        if new_workspace:args.append("--new-workspace")
+        return self.run_script("init_workspace.py", *args)
 
     def test_init_remembers_default_for_new_process_and_no_global_path(self):
         first = self.initialize()
@@ -74,7 +76,7 @@ class LocalInstallTests(unittest.TestCase):
         self.assertEqual(self.initialize().returncode, 0)
         newer = self.base / "Another tools"
         newer_k = self.base / "Other knowledge"
-        p = self.initialize(newer, newer_k)
+        p = self.initialize(newer, newer_k, new_workspace=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         index = json.loads((self.skill / "config" / "local-install.json").read_text("utf8"))
         self.assertEqual(index["install_root"], str(newer.resolve()))
@@ -137,7 +139,7 @@ class LocalInstallTests(unittest.TestCase):
         shutil.copytree(SOURCE, second_skill, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         newer, newer_k = self.base / 'new tools', self.base / 'new knowledge'
         new_init = self.run_script('init_workspace.py', '--install-root', newer,
-                                   '--knowledge-root', newer_k)
+                                   '--knowledge-root', newer_k, '--new-workspace')
         self.assertEqual(new_init.returncode, 0, new_init.stderr)
         changed = self.run_script('workspace_locator.py', 'register', '--install-root', newer, skill=second_skill)
         self.assertEqual(changed.returncode, 0, changed.stderr)
@@ -179,6 +181,85 @@ class LocalInstallTests(unittest.TestCase):
         checks = json.loads(output.read_text("utf8"))["checks"]
         self.assertFalse(any("Codex" in c["name"] for c in checks))
         self.assertTrue(any(c["name"] == "内容工作流 CLI" for c in checks))
+
+    def test_repeated_setup_is_read_only_and_reports_reuse(self):
+        self.assertEqual(self.initialize().returncode, 0)
+        before_config=(self.workspace/'config/workspace.json').read_bytes()
+        before_record=self.shared_registry.read_bytes()
+        before_brand=(self.knowledge/'brand.md').stat().st_mtime_ns
+        followup=self.initialize()
+        self.assertEqual(followup.returncode, 0, followup.stderr)
+        self.assertIn('REUSE_EXISTING_WORKSPACE', followup.stdout)
+        self.assertEqual((self.workspace/'config/workspace.json').read_bytes(),before_config)
+        self.assertEqual(self.shared_registry.read_bytes(),before_record)
+        self.assertEqual((self.knowledge/'brand.md').stat().st_mtime_ns,before_brand)
+
+    def test_second_agent_with_matching_paths_reuses_without_local_reconfiguration(self):
+        self.assertEqual(self.initialize().returncode, 0)
+        second = self.base / 'second skill package'
+        shutil.copytree(SOURCE, second, ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        before_config=(self.workspace/'config/workspace.json').read_bytes()
+        before_shared=self.shared_registry.read_bytes()
+        probe=self.run_script('init_workspace.py','--install-root',self.workspace,
+                              '--knowledge-root',self.knowledge,'--remember',skill=second)
+        self.assertEqual(probe.returncode,0,probe.stderr)
+        self.assertIn('REUSE_EXISTING_WORKSPACE',probe.stdout)
+        self.assertFalse((second/'config/local-install.json').exists())
+        self.assertEqual((self.workspace/'config/workspace.json').read_bytes(),before_config)
+        self.assertEqual(self.shared_registry.read_bytes(),before_shared)
+
+    def test_new_agent_cannot_reinitialize_a_second_workspace_by_default(self):
+        self.assertEqual(self.initialize().returncode, 0)
+        new_tools=self.base/'new agent duplicate'
+        new_kb=self.base/'new knowledge duplicate'
+        second=self.base/'vendor two'
+        shutil.copytree(SOURCE,second,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        before=self.shared_registry.read_bytes()
+        denied=self.run_script('init_workspace.py','--install-root',new_tools,
+                               '--knowledge-root',new_kb,'--remember',skill=second)
+        self.assertEqual(denied.returncode, 2, denied.stderr)
+        self.assertIn('已有', denied.stderr)
+        self.assertFalse(new_tools.exists())
+        self.assertFalse(new_kb.exists())
+        self.assertEqual(self.shared_registry.read_bytes(),before)
+
+    def test_corrupt_shared_pointer_blocks_default_new_workspace(self):
+        self.assertEqual(self.initialize().returncode, 0)
+        self.shared_registry.write_text('{invalid json',encoding='utf8')
+        target=self.base/'hidden-second-workspace'
+        denied=self.run_script('init_workspace.py','--install-root',target,
+                               '--knowledge-root',self.base/'second-knowledge')
+        self.assertEqual(denied.returncode,2)
+        self.assertFalse(target.exists())
+        self.assertIn('本机安装记录',denied.stderr)
+
+    def test_show_validates_shared_output_root_and_requested_workspace(self):
+        self.assertEqual(self.initialize().returncode,0)
+        cfg=json.loads((self.workspace/'config/workspace.json').read_text('utf8'))
+        out=Path(cfg['output_root']).resolve()
+        same=self.run_script('workspace_locator.py','show','--install-root',self.workspace)
+        self.assertEqual(same.returncode,0,same.stderr)
+        self.assertEqual(json.loads(same.stdout)['output_root'],str(out))
+        wrong=self.run_script('workspace_locator.py','show','--install-root',self.base/'other')
+        self.assertEqual(wrong.returncode,2)
+        self.assertIn('不一致',wrong.stderr)
+
+    def test_existing_workspace_inspect_recovers_without_any_locator_or_install(self):
+        first=self.run_script('init_workspace.py','--install-root',self.workspace,
+                              '--knowledge-root',self.knowledge)
+        self.assertEqual(first.returncode,0,first.stderr)
+        self.assertFalse(self.shared_registry.exists())
+        result=self.run_script('workspace_locator.py','inspect','--install-root',self.workspace)
+        self.assertEqual(result.returncode,0,result.stderr)
+        data=json.loads(result.stdout)
+        self.assertEqual(data['install_root'],str(self.workspace.resolve()))
+        self.assertEqual(data['knowledge_root'],str(self.knowledge.resolve()))
+        self.assertEqual(data['output_root'],str((self.workspace/'outputs').resolve()))
+        self.assertFalse(self.shared_registry.exists())
+        mismatch=self.run_script('workspace_locator.py','inspect','--install-root',self.workspace,
+                                 '--knowledge-root',self.base/'wrong')
+        self.assertEqual(mismatch.returncode,2)
+        self.assertFalse((self.base/'wrong').exists())
 
     def test_registry_is_explicitly_ignored_by_gitignore(self):
         gitignore = (self.skill / ".gitignore").read_text("utf8")

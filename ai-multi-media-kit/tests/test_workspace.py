@@ -1,10 +1,12 @@
 """Fast offline regression tests for workspace and data-safety guarantees."""
 from __future__ import annotations
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -21,6 +23,8 @@ class WorkspaceRegression(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base=Path(self.tmp.name)
+        local=patch.dict(os.environ,{'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')})
+        local.start(); self.addCleanup(local.stop)
         self.root=base/'tools'
         self.knowledge=base/'company'
         self.first=py('init_workspace.py','--install-root',self.root,'--knowledge-root',self.knowledge)

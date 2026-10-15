@@ -10,7 +10,8 @@ param(
     [string]$OutputRoot = '',
     [switch]$NonInteractive,
     [switch]$SkipGit,
-    [switch]$SkipFfmpeg
+    [switch]$SkipFfmpeg,
+    [switch]$NewWorkspace
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -19,6 +20,41 @@ function Fail([string]$Message) { throw $Message }
 function Canonical([string]$PathText) {
     if ($PathText.StartsWith('~')) { $PathText = $env:USERPROFILE + $PathText.Substring(1) }
     return [IO.Path]::GetFullPath($PathText).TrimEnd([char[]]@('\','/'))
+}
+function VerifyExisting([string]$PathText, [string]$ExpectedKnowledge = '', [string]$ExpectedOutput = '') {
+    $rootPath = Canonical $PathText
+    $config = Join-Path $rootPath 'config\workspace.json'
+    if (-not (Test-Path -LiteralPath $config -PathType Leaf)) { Fail "Existing workspace missing configuration: $config" }
+    try { $item = Get-Content -LiteralPath $config -Encoding UTF8 -Raw | ConvertFrom-Json }
+    catch { Fail "Existing workspace configuration invalid: $config" }
+    if (-not $item.install_root -or -not $item.knowledge_root) { Fail 'Existing workspace paths are incomplete' }
+    if ((Canonical $item.install_root) -ine $rootPath) { Fail 'Registered install_root conflicts with workspace.json' }
+    $known = Canonical $item.knowledge_root
+    $output = Canonical $(if ($item.output_root) { $item.output_root } else { Join-Path $rootPath 'outputs' })
+    $legacy = Join-Path $rootPath 'outputs'
+    if ($known -ieq $rootPath -or $known.StartsWith($rootPath+'\',[StringComparison]::OrdinalIgnoreCase) -or
+        $rootPath.StartsWith($known+'\',[StringComparison]::OrdinalIgnoreCase) -or
+        $output -ieq $known -or $output.StartsWith($known+'\',[StringComparison]::OrdinalIgnoreCase) -or
+        $known.StartsWith($output+'\',[StringComparison]::OrdinalIgnoreCase) -or
+        ($output -ine $legacy -and ($output -ieq $rootPath -or
+          $output.StartsWith($rootPath+'\',[StringComparison]::OrdinalIgnoreCase) -or
+          $rootPath.StartsWith($output+'\',[StringComparison]::OrdinalIgnoreCase)))) {
+        Fail 'Registered tool/knowledge/project directories overlap; refuse reuse'
+    }
+    if (-not (Test-Path -LiteralPath $known -PathType Container) -or
+        -not (Test-Path -LiteralPath $output -PathType Container)) {
+        Fail 'Existing knowledge/output directories unavailable; refuse reinitialization'
+    }
+    if ($ExpectedKnowledge -and (Canonical $ExpectedKnowledge) -ine $known) {
+        Fail 'Requested knowledge directory conflicts with existing workspace'
+    }
+    if ($ExpectedOutput -and (Canonical $ExpectedOutput) -ine $output) {
+        Fail 'Requested project output directory conflicts with existing workspace'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $rootPath 'RUN-STUDIO-WINDOWS.ps1') -PathType Leaf)) {
+        Fail 'Existing workspace launcher missing; repair existing workspace instead of reinstalling'
+    }
+    return @{ InstallRoot = $rootPath; KnowledgeRoot = $known; OutputRoot = $output }
 }
 function RunChecked([string]$Program, [string[]]$Arguments) {
     & $Program @Arguments
@@ -44,6 +80,46 @@ function VerifiedDownload([string]$Url,[string]$Output,[string]$Sha256) {
 try {
     $homeDefault = if (Test-Path 'D:\') { 'D:\AI-Media-Studio' } else { Join-Path $env:USERPROFILE 'AI-Media-Studio' }
     $knowledgeDefault = if (Test-Path 'D:\') { 'D:\Company-Knowledge' } else { Join-Path $env:USERPROFILE 'Company-Knowledge' }
+    # Discover BEFORE prompting or downloading anything. The shared user index
+    # is authoritative; a broken index must not cause a second installation.
+    $sharedIndex = Join-Path $env:LOCALAPPDATA 'ai-multi-media-kit\local-install.json'
+    $legacyIndex = Join-Path $source 'config\local-install.json'
+    $index = if (Test-Path -LiteralPath $sharedIndex) { $sharedIndex } elseif (Test-Path -LiteralPath $legacyIndex) { $legacyIndex } else { '' }
+    if ($index) {
+        $fileInfo = Get-Item -LiteralPath $index -Force
+        if ($fileInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            Fail "Existing locator is a link; refusing to follow: $index"
+        }
+        try { $saved = Get-Content -LiteralPath $index -Encoding UTF8 -Raw | ConvertFrom-Json }
+        catch { Fail "Invalid existing workspace locator: $index" }
+        if ($saved.schema -ne 1 -or -not $saved.install_root -or -not $saved.knowledge_root) {
+            Fail "Invalid existing workspace locator: $index"
+        }
+        $prior = VerifyExisting $saved.install_root $saved.knowledge_root
+        if ($InstallRoot -and (Canonical $InstallRoot) -ine $prior.InstallRoot) {
+            if (-not $NewWorkspace) { Fail "Existing workspace already registered: $($prior.InstallRoot); refuse duplicate installation" }
+        } else {
+            if ($KnowledgeRoot -and (Canonical $KnowledgeRoot) -ine $prior.KnowledgeRoot) {
+                Fail 'Requested knowledge root conflicts with the registered workspace'
+            }
+            if ($OutputRoot -and (Canonical $OutputRoot) -ine $prior.OutputRoot) {
+                Fail 'Requested output root conflicts with the registered workspace'
+            }
+            Write-Host "REUSE_EXISTING_WORKSPACE: $($prior.InstallRoot)"
+            Write-Host "Knowledge: $($prior.KnowledgeRoot)"
+            Write-Host "Project outputs: $($prior.OutputRoot)"
+            Write-Host 'Use the existing launcher and doctor; no tools or configuration were installed.'
+            return
+        }
+    } elseif ($InstallRoot -and (Test-Path -LiteralPath (Join-Path (Canonical $InstallRoot) 'config\workspace.json'))) {
+        $prior = VerifyExisting $InstallRoot $KnowledgeRoot $OutputRoot
+        Write-Host "REUSE_EXISTING_WORKSPACE: $($prior.InstallRoot)"
+        Write-Host 'Run workspace_locator.py register with existing Python to restore cross-Agent discovery.'
+        return
+    }
+    if ($NewWorkspace -and ($index -and (-not $InstallRoot -or -not $KnowledgeRoot))) {
+        Fail 'NewWorkspace requires explicit -InstallRoot and -KnowledgeRoot'
+    }
     if (-not $InstallRoot) {
         if ($NonInteractive) { Fail 'NonInteractive requires -InstallRoot and -KnowledgeRoot' }
         $answer = Read-Host "Tool installation root [$homeDefault]"
@@ -148,6 +224,7 @@ try {
     RunChecked $python @('-c','import sys; assert sys.version_info[:2] == (3,12)')
     $initArgs = @((Join-Path $source 'scripts\init_workspace.py'),'--install-root',$root,'--knowledge-root',$knowledge)
     if ($output) { $initArgs += @('--output-root',$output) }
+    if ($NewWorkspace) { $initArgs += '--new-workspace' }
     RunChecked $python $initArgs
     $more = @('--root',$root)
     if (-not $SkipGit) { $more += '--git' }
@@ -167,6 +244,6 @@ try {
     Write-Host "Use: powershell -ExecutionPolicy Bypass -File `"$(Join-Path $root 'RUN-STUDIO-WINDOWS.ps1')`" -Task doctor"
     Write-Host 'No machine-wide Python / PATH modification performed.'
 } catch {
-    Write-Error "Bootstrap failed: $($_.Exception.Message)"
+    [Console]::Error.WriteLine("Bootstrap failed: $($_.Exception.Message)")
     exit 2
 }

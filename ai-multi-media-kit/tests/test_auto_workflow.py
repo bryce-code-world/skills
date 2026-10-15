@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -34,6 +35,8 @@ class AutomaticWorkflowTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         base = Path(tmp.name)
+        local=patch.dict(os.environ,{'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')})
+        local.start(); self.addCleanup(local.stop)
         self.root, self.knowledge = base / "tool", base / "knowledge"
         init = subprocess.run(
             [sys.executable, "-X", "utf8", str(ROOT / "scripts" / "init_workspace.py"),

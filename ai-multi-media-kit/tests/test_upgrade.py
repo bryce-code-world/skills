@@ -1,6 +1,7 @@
 """Upgrade retains owned data and records a prior-file backup."""
 from __future__ import annotations
 import subprocess
+import os
 import sys
 import tempfile
 import unittest
@@ -13,9 +14,10 @@ class UpgradeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             home, kb = base/'tools', base/'knowledge'
+            env=os.environ.copy();env['LOCALAPPDATA']=str(base/'user-config');env['XDG_CONFIG_HOME']=str(base/'xdg-config')
             init = subprocess.run([sys.executable, '-X', 'utf8', str(SRC/'scripts/init_workspace.py'),
                 '--install-root', str(home), '--knowledge-root', str(kb)],
-                text=True, capture_output=True)
+                text=True, capture_output=True, env=env)
             self.assertEqual(init.returncode, 0, init.stderr)
             marker = kb/'brand.md'
             marker.write_text('用户自有品牌定位，请勿覆盖', encoding='utf-8')

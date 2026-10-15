@@ -18,11 +18,11 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
 ## 三个用户目录与共享定位
 
-首次运行可分别指定**工具工作区**（自有 Python、uv、FFmpeg、依赖缓存）、**企业知识库**（品牌、受众、标准与授权原片）、**项目成果目录**（选题、脚本、审核记录、MP4、七平台发布包）。三者相互独立，不嵌套。项目成果目录由 `config/workspace.json` 的 `output_root` 持久记录，未来其他 Agent 通过共享工作区定位索引自动复用，不需要重复询问。
+首次运行可分别指定**工具工作区**（自有 Python、uv、FFmpeg、依赖缓存）、**企业知识库**（品牌、受众、标准与授权原片）、**项目成果目录**（选题、脚本、审核记录、MP4、七平台发布包）。三者相互独立、不嵌套，统一记录在 `config/workspace.json`。**同一设备、同一系统用户下，新 Agent 只需装自己的 Skill 入口：必须先只读发现已有工作区，复用这三个路径，禁止重复初始化或安装整套工具。**
 
 新安装可使用 `SETUP-WINDOWS.ps1 -InstallRoot "D:\\ai-media-tools" -KnowledgeRoot "D:\\knowledge" -OutputRoot "D:\\content-projects"`（Unix 使用 `--install-root`、`--knowledge-root`、`--output-root`）；若不传成果目录，继续使用旧版 `<工具目录>/outputs`，兼容已有配置。已有工作区不会自动迁移旧视频，更换已存在的输出根路径将明确拒绝；需要迁移时应另行进行核对与备份。
 
-Windows 在 `%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`，macOS/Linux 在 `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json` 记录路径索引。每个 Agent 读取索引并核对 `config/workspace.json`，用**绝对路径**运行工具。共享路径不等于云同步；不修改系统级 PATH，不覆盖或迁移用户资料。不能定位时报告真实原因，不凭猜测重装。
+Windows 在 `%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`，macOS/Linux 在 `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json` 记录路径索引。每个 Agent 从自己的 Skill 目录读取共享索引并核对现有 `config/workspace.json`，用**绝对路径**运行工具；可执行 `scripts/workspace_locator.py show`（只读）查看工具、知识库与输出目录。仅索引丢失时可凭用户提供的**已存在工具路径**运行 `inspect` 验证、`register` 恢复，无需再次安装。索引损坏、目录不可达或用户给出的路径与记录冲突时先报告，严禁默认新建；仅用户明确要求第二套时使用 `--new-workspace`/`-NewWorkspace`。共享路径不是云同步，不改系统 PATH。**这保证顺序切换 Agent 时可复用同一环境，但不保证多个 Agent 并发编辑同一内容 ID 的安全；也不自动共享宿主专属浏览器登录态/MCP 注册。**
 
 已有环境，Agent 可以执行：
 

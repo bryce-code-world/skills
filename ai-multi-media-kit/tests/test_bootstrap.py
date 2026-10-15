@@ -51,6 +51,44 @@ class BootstrapRegression(unittest.TestCase):
             self.assertTrue(b.verify(dest,{'sha256':hashlib.sha256(dest.read_bytes()).hexdigest()}))
             with self.assertRaises(ValueError):b.download('https://example.com/fake',dest,{'sha256':'0'*64},offline=True)
 
+    @unittest.skipUnless(os.name == "nt" and shutil.which("powershell.exe"), "Windows PowerShell only")
+    def test_windows_bootstrap_reuses_registered_workspace_without_provisioning(self):
+        """Onboarding a second local Agent must not re-download or rewrite the environment."""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            tool, knowledge = base / "reused tools", base / "知识库"
+            env = os.environ.copy()
+            env["LOCALAPPDATA"] = str(base / "isolated local app data")
+            isolated_skill = base / "another Agent Skill"
+            shutil.copytree(ROOT, isolated_skill, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            first = subprocess.run([sys.executable, "-X", "utf8",
+                str(isolated_skill / "scripts/init_workspace.py"), "--install-root", str(tool),
+                "--knowledge-root", str(knowledge), "--remember"],
+                text=True, capture_output=True, env=env, timeout=25)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            original=(tool/'config/workspace.json').read_bytes()
+            invoke=["powershell.exe","-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass",
+                    "-File",str(ROOT/'SETUP-WINDOWS.ps1'),"-NonInteractive"]
+            reused=subprocess.run(invoke, capture_output=True, text=True, encoding='utf-8',
+                                  errors='replace', env=env, timeout=30)
+            self.assertEqual(reused.returncode, 0, reused.stderr)
+            self.assertIn("REUSE_EXISTING_WORKSPACE", reused.stdout)
+            self.assertEqual((tool/'config/workspace.json').read_bytes(), original)
+            self.assertFalse((tool/'runtime/bootstrap/uv/uv.exe').exists())
+            other=base/"duplicate tools"
+            blocked=subprocess.run(invoke+["-InstallRoot",str(other),"-KnowledgeRoot",str(base/'other-kb')],
+                                   capture_output=True,text=True,encoding='utf8',errors='replace',
+                                   env=env,timeout=30)
+            self.assertEqual(blocked.returncode,2)
+            self.assertFalse(other.exists())
+            index=Path(env['LOCALAPPDATA'])/'ai-multi-media-kit'/'local-install.json'
+            index.write_text('{invalid-json',encoding='utf8')
+            invalid=subprocess.run(invoke,capture_output=True,text=True,encoding='utf8',
+                                   errors='replace',env=env,timeout=30)
+            self.assertEqual(invalid.returncode,2)
+            self.assertIn('locator',invalid.stderr.lower())
+            self.assertFalse((tool/'runtime/bootstrap/uv/uv.exe').exists())
+
     @unittest.skipUnless(platform.system()=='Linux' and platform.machine() in ('x86_64','amd64'), 'shell test on Linux x64')
     def test_bash_first_boot_and_idempotence_with_fake_uv(self):
         # Simulates uv and Python provider in an offline sandbox. Does NOT claim actual Python 3.12 download.
@@ -87,6 +125,7 @@ class BootstrapRegression(unittest.TestCase):
             (knowledge/'brand.md').write_text('自有内容不覆盖',encoding='utf-8')
             second=subprocess.run(args,text=True,capture_output=True,timeout=30,env=env)
             self.assertEqual(second.returncode,0,second.stderr)
+            self.assertIn('REUSE_EXISTING_WORKSPACE',second.stdout)
             self.assertEqual((knowledge/'brand.md').read_text('utf-8'),'自有内容不覆盖')
             doctor=subprocess.run(['bash',str(root/'run-studio.sh'),'doctor','--scope','core','--strict'],text=True,capture_output=True,timeout=30)
             self.assertEqual(doctor.returncode,0,doctor.stdout+'\n'+doctor.stderr)

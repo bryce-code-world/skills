@@ -29,7 +29,8 @@ def main() -> int:
     parser.add_argument("--install-root", required=True, help="Workspace/tool root, e.g. D:\\AI-Media-Studio")
     parser.add_argument("--knowledge-root", required=True, help="Independent company knowledge root")
     parser.add_argument("--output-root", help="Separate project output root; default keeps legacy <install-root>/outputs")
-    parser.add_argument("--remember", action="store_true", help="Remember this initialized workspace in this Skill's private local-install.json")
+    parser.add_argument("--remember", action="store_true", help="Register the selected workspace for later Agent sessions")
+    parser.add_argument("--new-workspace", action="store_true", help="Explicit user choice to initialize another workspace despite an existing valid default")
     args = parser.parse_args()
     install = Path(args.install_root).expanduser().resolve()
     knowledge = Path(args.knowledge_root).expanduser().resolve()
@@ -39,6 +40,7 @@ def main() -> int:
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from workspace_paths import output_directory
+    from workspace_locator import current_workspace, shared_registry_path, REGISTRY_RELATIVE
     # Preflight BEFORE any filesystem changes: avoid creating an unwanted knowledge
     # directory and copying files when reconfiguration conflicts with existing data.
     preexisting_config = install / "config" / "workspace.json"
@@ -69,6 +71,35 @@ def main() -> int:
     except (ValueError, OSError) as exc:
         print(f"ERROR: invalid output_root: {exc}", file=sys.stderr)
         return 2
+
+    # Discovery is mandatory even for direct CLI callers. An Agent cannot
+    # silently turn a second installation into the user's new default.
+    registered = None
+    index = shared_registry_path()
+    legacy_index = PROJECT_ROOT / REGISTRY_RELATIVE
+    if index.exists() or index.is_symlink() or legacy_index.exists() or legacy_index.is_symlink():
+        try:
+            registered = current_workspace(PROJECT_ROOT)
+        except (ValueError, OSError) as exc:
+            print(f"ERROR: 本机安装记录有误，请先修复原工作区：{exc}", file=sys.stderr)
+            return 2
+        if not args.new_workspace and Path(registered["install_root"]) != install:
+            print(f"ERROR: 已有工作区 {registered['install_root']}，禁止重复初始化或创建第二套环境；"
+                  "只有用户明确要求新建时才传 --new-workspace。", file=sys.stderr)
+            return 2
+    if preexisting_config.exists():
+        # Existing authoritative config is enough to reuse without rewriting
+        # scripts, assets, config or dependencies. Optionally recover the index.
+        if args.remember and (registered is None or Path(registered['install_root']) != install):
+            from workspace_locator import remember_workspace
+            try:
+                remember_workspace(install, knowledge, PROJECT_ROOT)
+            except (ValueError, OSError) as exc:
+                print(f"ERROR: existing workspace register failed: {exc}", file=sys.stderr)
+                return 2
+        print("REUSE_EXISTING_WORKSPACE:", install)
+        print("PROJECT_OUTPUT_ROOT:", output)
+        return 0
 
     install.mkdir(parents=True, exist_ok=True)
     knowledge.mkdir(parents=True, exist_ok=True)

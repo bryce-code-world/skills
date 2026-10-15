@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,8 @@ class MaterialSourcesTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.base = Path(temp.name)
+        local=patch.dict(os.environ,{'LOCALAPPDATA':str(self.base/'user-config'), 'XDG_CONFIG_HOME':str(self.base/'xdg-config')})
+        local.start(); self.addCleanup(local.stop)
         self.root = self.base / "Tools with spaces"
         self.knowledge = self.base / "Company Data"
         result = run("init_workspace.py", "--install-root", self.root,

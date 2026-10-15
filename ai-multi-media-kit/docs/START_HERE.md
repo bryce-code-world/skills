@@ -6,7 +6,7 @@
 
 请使用当前 Agent 自己的 Skill 安装方式获取**整个目录**，包含 `SKILL.md`、`scripts`、`docs`、`knowledge-templates` 与所有子 Skills。无需手动下载 ZIP，也无需预装 Python。**宿主能读取 Skill 不代表能调用本机文件或终端**；若只能文本生成，不得宣称已成片或发布。
 
-首次配置可指定三个不相互嵌套的目录：**工具工作区**、**企业知识库**、**项目成果目录**。第三个目录用于持久保存选题、脚本、审核、MP4 和发布包；若不指定则兼容 `<install_root>/outputs`。若已有本机共享索引，先核对 `config/workspace.json` 中的三个目录并复用，不另建工作区或迁移旧视频。
+**先发现、再决定要不要安装运行时**：每个 Agent 只需安装本身能识别的 Skill 入口。第一次已有其他 Agent 创建的工具工作区时，读本机共享索引，核对 `config/workspace.json` 的工具、知识库、输出三个目录，直接复用，不重复询问或重新安装 Python/FFmpeg。只有确无有效工作区且用户明确指定三目录，才执行初始化；第三目录可省略，默认 `<install_root>/outputs`。
 
 ## 不同 Agent 复用共享目录
 
@@ -15,7 +15,7 @@
 - Windows：`%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`
 - macOS / Linux：`${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`
 
-必须与 `<install_root>/config/workspace.json` 双向核对，不能在路径失效时擅自全盘扫描、重装或迁移原数据。旧版的主 Skill `config/local-install.json` 只在共享索引缺失时作为只读回退。需要恢复现有工作区时，可用其自有 Python 执行 `scripts/workspace_locator.py register --install-root <已有工具目录>`。纯云端隔离 Agent 无法自动使用 Windows 本地索引。
+**发现有效记录立即复用；不要执行 SETUP/init_workspace。** 可用已有 Python 执行 `scripts/workspace_locator.py show` 只读输出 `install_root`、`knowledge_root`、`output_root` 和启动器绝对路径；然后按实际任务运行 `doctor`，只补装必要且确实缺少的免费依赖。共享索引缺失时可尝试本 Skill 目录的旧版记录；如果用户知道旧工具路径，可用 `scripts/workspace_locator.py inspect --install-root <已有工具目录>` 只读检查，再用 `register --install-root <已有工具目录>` 恢复索引，不重新下载工具。**索引损坏、三目录不一致或无法访问，必须停止并报错，不能自动新建。** 确需第二套环境需用户另行明确授权并传 `-NewWorkspace`（Windows）或 `--new-workspace`（Unix/初始化脚本）。纯云端隔离 Agent 无法自动访问本地索引。
 
 ## 初始化本地工具
 
@@ -31,7 +31,7 @@ Linux/macOS：
 bash ./SETUP-UNIX.sh --install-root "$HOME/media-tools" --knowledge-root "$HOME/company-knowledge" --output-root "$HOME/video-projects" --non-interactive
 ```
 
-引导器将 Python 3.12/uv、便携 Git 和 FFmpeg 优先安装到工具目录，缓存不修改系统级 PATH；实际成果在 `output_root/<内容ID>/`，批量选题在 `output_root/_plans/`。再次运行保留原有配置，**不会修改已有成果目录或自动迁移已有内容**。平台、证书和联网条件仍需真实验证。必须用户处理的账号登录、扫码、验证码由 Agent 暂停等待，成功后继续执行。
+**上面的安装命令只适用于首次新建环境。** 即使从其他 Agent 再次执行安装器，只要发现已登记环境，也会在下载安装前返回 `REUSE_EXISTING_WORKSPACE`，不覆盖或迁移已有资料。Python 3.12/uv、便携 Git 和 FFmpeg 优先安装到工具目录，项目成果在 `output_root/<内容ID>/`，批量选题在 `output_root/_plans/`；不改系统 PATH。首次在线安装、平台登录和真实发布仍需按环境验证。
 
 ## 升级已有工作区而不覆盖资料
 

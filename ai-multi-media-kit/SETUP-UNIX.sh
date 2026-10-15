@@ -2,8 +2,8 @@
 # Bash 3.2+ bootstrap for macOS and glibc Linux, no system Python or Git required.
 set -euo pipefail
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOT=""; KNOWLEDGE=""; OUTPUT=""; NONINTERACTIVE=0; SKIP_FFMPEG=0; SKIP_GIT=0
-usage() { echo 'Usage: bash SETUP-UNIX.sh [--install-root DIR] [--knowledge-root DIR] [--output-root DIR] [--non-interactive] [--skip-ffmpeg]'; }
+ROOT=""; KNOWLEDGE=""; OUTPUT=""; NONINTERACTIVE=0; SKIP_FFMPEG=0; SKIP_GIT=0; NEW_WORKSPACE=0
+usage() { echo 'Usage: bash SETUP-UNIX.sh [--install-root DIR] [--knowledge-root DIR] [--output-root DIR] [--non-interactive] [--skip-ffmpeg] [--new-workspace]'; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --install-root|--knowledge-root|--output-root)
@@ -13,14 +13,55 @@ while [ "$#" -gt 0 ]; do
     --non-interactive) NONINTERACTIVE=1; shift;;
     --skip-ffmpeg) SKIP_FFMPEG=1; shift;;
     --skip-git) SKIP_GIT=1; shift;;  # Unix Git is optional, see tool install note.
+    --new-workspace) NEW_WORKSPACE=1; shift;; # Explicit user-directed second workspace only.
     -h|--help) usage; exit 0;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 2;;
   esac
 done
+# A new Agent must not bootstrap a second toolchain when this OS user already
+# has a registered workspace. No Python is required for first installation,
+# but use an available host Python only for read-only verification here.
+INDEX="${XDG_CONFIG_HOME:-$HOME/.config}/ai-multi-media-kit/local-install.json"
+[ -e "$INDEX" ] || [ -L "$INDEX" ] || INDEX="$SOURCE/config/local-install.json"
+if [ -e "$INDEX" ] || [ -L "$INDEX" ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "Existing workspace locator: $INDEX. No setup performed; Agent must validate workspace.json before reuse." >&2
+    exit 2
+  fi
+  ARGS=(show)
+  if [ "$NEW_WORKSPACE" -eq 0 ]; then
+    [ -z "$ROOT" ] || ARGS+=(--install-root "$ROOT")
+    [ -z "$KNOWLEDGE" ] || ARGS+=(--knowledge-root "$KNOWLEDGE")
+    [ -z "$OUTPUT" ] || ARGS+=(--output-root "$OUTPUT")
+  elif [ -z "$ROOT" ] || [ -z "$KNOWLEDGE" ]; then
+    echo 'Explicit new workspace requires both --install-root and --knowledge-root' >&2; exit 2
+  fi
+  python3 "$SOURCE/scripts/workspace_locator.py" "${ARGS[@]}" || exit 2
+  if [ "$NEW_WORKSPACE" -eq 0 ]; then
+    echo 'REUSE_EXISTING_WORKSPACE: verified paths above; skipping initialization and all downloads.'
+    exit 0
+  fi
+fi
 if [ -z "$ROOT" ]; then
   [ "$NONINTERACTIVE" -eq 0 ] || { echo '--install-root is required' >&2; exit 2; }
   read -r -p "Tool installation root [$HOME/AI-Media-Studio]: " ROOT || exit 2
   ROOT="${ROOT:-$HOME/AI-Media-Studio}"
+fi
+# Recover a known existing runtime without asking for paths already in its config.
+KNOWN_ROOT="$ROOT"
+case "$KNOWN_ROOT" in '~'*) KNOWN_ROOT="$HOME${KNOWN_ROOT#\~}";; esac
+case "$KNOWN_ROOT" in /*) ;; *) KNOWN_ROOT="$PWD/$KNOWN_ROOT";; esac
+KNOWN_ROOT="${KNOWN_ROOT%/}"
+if [ -f "$KNOWN_ROOT/config/workspace.json" ]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo 'Existing workspace found; Agent must inspect config/workspace.json before reuse.' >&2; exit 2
+  fi
+  ARGS=(inspect --install-root "$KNOWN_ROOT")
+  [ -z "$KNOWLEDGE" ] || ARGS+=(--knowledge-root "$KNOWLEDGE")
+  [ -z "$OUTPUT" ] || ARGS+=(--output-root "$OUTPUT")
+  python3 "$SOURCE/scripts/workspace_locator.py" "${ARGS[@]}" || exit 2
+  echo 'REUSE_EXISTING_WORKSPACE: skipping dependencies and configuration.'
+  exit 0
 fi
 if [ -z "$KNOWLEDGE" ]; then
   [ "$NONINTERACTIVE" -eq 0 ] || { echo '--knowledge-root is required' >&2; exit 2; }
@@ -124,6 +165,7 @@ PYTHON="$("$UV" python find --managed-python 3.12)"
 "$PYTHON" -c 'import sys;assert sys.version_info[:2] == (3,12)'
 INIT_ARGS=(--install-root "$ROOT" --knowledge-root "$KNOWLEDGE")
 [ -z "$OUTPUT" ] || INIT_ARGS+=(--output-root "$OUTPUT")
+[ "$NEW_WORKSPACE" -eq 0 ] || INIT_ARGS+=(--new-workspace)
 "$PYTHON" "$SOURCE/scripts/init_workspace.py" "${INIT_ARGS[@]}"
 if [ "$SKIP_FFMPEG" -eq 0 ]; then
   "$PYTHON" "$SOURCE/scripts/bootstrap_assets.py" --root "$ROOT" --ffmpeg

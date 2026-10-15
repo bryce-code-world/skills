@@ -15,6 +15,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from workspace_paths import output_directory
+
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_RELATIVE = Path("config/local-install.json")
 
@@ -69,7 +72,7 @@ def write_record(path: Path, record: dict) -> bool:
     return True
 
 
-def validate_workspace(install_root: Path, knowledge_root: Path | None = None) -> tuple[Path, Path]:
+def validate_workspace(install_root: Path, knowledge_root: Path | None = None) -> tuple[Path, Path, Path]:
     root = Path(install_root).expanduser().resolve()
     config = root / "config" / "workspace.json"
     if not config.is_file():
@@ -86,13 +89,16 @@ def validate_workspace(install_root: Path, knowledge_root: Path | None = None) -
         raise ValueError(f"企业知识库目录不可访问：{configured_k}")
     if knowledge_root is not None and Path(knowledge_root).expanduser().resolve() != configured_k:
         raise ValueError("企业知识库路径与工作区配置不一致；拒绝覆盖安装记录")
-    return root, configured_k
+    output = output_directory(root, data)
+    if not output.is_dir():
+        raise ValueError(f"项目成果目录不可访问：{output}；不会重新初始化")
+    return root, configured_k, output
 
 
 def remember_workspace(install_root: Path, knowledge_root: Path,
                        skill_root: Path = SKILL_ROOT) -> bool:
     """Remember the explicitly initialized workspace. True only if pointer changed."""
-    install, knowledge = validate_workspace(install_root, knowledge_root)
+    install, knowledge, _ = validate_workspace(install_root, knowledge_root)
     record = {"schema": 1, "install_root": str(install), "knowledge_root": str(knowledge)}
     # Per-user config is authoritative for discovery across Agent vendors.
     changed = write_record(shared_registry_path(), record)
@@ -114,11 +120,12 @@ def current_workspace(skill_root: Path = SKILL_ROOT) -> dict:
     else:
         raise ValueError(f"本机未登记工作区：{shared}（旧版：{legacy}）；请先初始化或提供已有工具目录")
     data = read_record(path)
-    root, kb = validate_workspace(Path(data["install_root"]), Path(data["knowledge_root"]))
+    root, kb, outputs = validate_workspace(Path(data["install_root"]), Path(data["knowledge_root"]))
     return {
         "schema": 1,
         "install_root": str(root),
         "knowledge_root": str(kb),
+        "output_root": str(outputs),
         "launchers": {
             "windows": str(root / "RUN-STUDIO-WINDOWS.ps1"),
             "unix": str(root / "run-studio.sh"),
@@ -132,16 +139,34 @@ def current_workspace(skill_root: Path = SKILL_ROOT) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="读取或重登记已初始化的本机 AI Media Studio 工作区")
     sub = parser.add_subparsers(dest="task", required=True)
-    sub.add_parser("show", help="只读：核验保存的默认工作区并打印绝对路径")
+    show = sub.add_parser("show", help="只读：核验共享工作区三目录及可选的预期路径")
+    show.add_argument("--install-root", help="如有指定预期工具路径，必须与已登记值一致")
+    show.add_argument("--knowledge-root")
+    show.add_argument("--output-root")
+    inspect = sub.add_parser("inspect", help="只读：校验指定工具目录里的既有工作区，不写共享索引")
+    inspect.add_argument("--install-root", required=True)
+    inspect.add_argument("--knowledge-root")
+    inspect.add_argument("--output-root")
     bind = sub.add_parser("register", help="用户明确指定已有工作区，重新登记为默认")
     bind.add_argument("--install-root", required=True)
     args = parser.parse_args()
     try:
         if args.task == "register":
-            root, knowledge = validate_workspace(Path(args.install_root))
+            root, knowledge, _ = validate_workspace(Path(args.install_root))
             changed = remember_workspace(root, knowledge)
             print("REGISTERED" if changed else "ALREADY_REGISTERED")
-        print(json.dumps(current_workspace(), indent=2, ensure_ascii=False))
+        if args.task == "inspect":
+            install, kb, output = validate_workspace(Path(args.install_root))
+            current = {"install_root": str(install), "knowledge_root": str(kb),
+                       "output_root": str(output), "checked": "existing_workspace_read_only"}
+        else:
+            current = current_workspace()
+        if args.task in ("show", "inspect"):
+            for key in ("install_root", "knowledge_root", "output_root"):
+                given = getattr(args, key)
+                if given and Path(given).expanduser().resolve() != Path(current[key]):
+                    raise ValueError(f"预期 {key} 与已有工作区不一致；拒绝重新安装")
+        print(json.dumps(current, indent=2, ensure_ascii=False))
         return 0
     except (ValueError, OSError) as exc:
         print("ERROR:", exc, file=sys.stderr)
