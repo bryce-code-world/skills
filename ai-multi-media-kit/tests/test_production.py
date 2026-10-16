@@ -29,7 +29,10 @@ class StudioProductionTests(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         base = Path(temp.name)
-        local=patch.dict(os.environ,{'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')})
+        ffmpeg=os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
+        overrides={'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')}
+        if ffmpeg:overrides['PATH']=str(Path(ffmpeg).parent)+os.pathsep+os.environ.get('PATH','')
+        local=patch.dict(os.environ,overrides)
         local.start(); self.addCleanup(local.stop)
         self.root, self.knowledge = base / "install", base / "knowledge"
         result = pyth("init_workspace.py", "--install-root", self.root,
@@ -82,12 +85,14 @@ class StudioProductionTests(unittest.TestCase):
         checked = json.loads(self.call("check", "--id", self.id).stdout)
         self.assertIn("审核标准", checked["script_ready"])
 
-    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg unavailable")
+    @unittest.skipUnless((os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')) and
+                         (os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')), "FFmpeg unavailable")
     def test_real_video_packaging_needs_ai_review_but_not_human_approval(self):
         clip = self.root / "original.mp4"
+        ffmpeg = os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
         make = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
-             "-i", "color=c=navy:s=160x280:r=15:d=2",
+            [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+             "-i", "color=c=navy:s=160x280:r=15:d=3",
              "-c:v", "libx264", "-pix_fmt", "yuv420p", str(clip)],
             capture_output=True, timeout=60,
         )
@@ -96,14 +101,19 @@ class StudioProductionTests(unittest.TestCase):
                      "--rights", "owned", "--license-note", "原生测试色块")
         self.assertEqual(added.returncode, 0, added.stderr)
         asset_id = json.loads(added.stdout)["id"]
+        voice = self.root / "voice.wav"
+        synth = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+                                "-f", "lavfi", "-i", "sine=frequency=320:duration=2.9:sample_rate=22050",
+                                "-c:a", "pcm_s16le", str(voice)], capture_output=True, timeout=25)
+        self.assertEqual(synth.returncode, 0)
         render = self.call("render", "--id", self.id, "--engine", "ffmpeg",
-                           "--material-ids", asset_id, "--rights-confirmed",
+                           "--material-ids", asset_id, "--rights-confirmed", "--audio", voice,
                            "--width", "180", "--height", "320", timeout=180)
         self.assertEqual(render.returncode, 0, render.stderr)
         video = self.d / "video" / "master.mp4"
         self.assertTrue(video.is_file())
         check = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
+            [os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe'), "-v", "error", "-show_entries", "stream=codec_type,width,height",
              "-of", "json", str(video)], capture_output=True, text=True, timeout=25,
         )
         self.assertEqual(check.returncode, 0, check.stderr)
@@ -123,6 +133,33 @@ class StudioProductionTests(unittest.TestCase):
         })
         self.assertEqual(self.call("package", "--id", self.id).returncode, 0)
         self.assertEqual(len(list((self.d / "platforms").glob("*/package.json"))), 7)
+
+    def test_script_shot_timing_mismatch_rejected_before_review(self):
+        script_path = self.d / 'script.json'
+        data = json.loads(script_path.read_text('utf8'))
+        data['shots'][0]['seconds'] = 2  # duration_seconds remains 3
+        jsonwrite(script_path, data)
+        result = self.call('check', '--id', self.id)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn('分镜', result.stderr)
+
+    @unittest.skipUnless((os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')) and
+                         (os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')), "FFmpeg unavailable")
+    def test_voiceover_cli_assembles_shot_audio_without_speedup(self):
+        ffmpeg=os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
+        raw=self.root/'shot.wav'
+        r=subprocess.run([ffmpeg, '-hide_banner','-loglevel','error','-y',
+            '-f','lavfi','-i','sine=frequency=420:duration=2.4:sample_rate=22050',
+            '-c:a','pcm_s16le',str(raw)],capture_output=True,timeout=25)
+        self.assertEqual(r.returncode,0)
+        run=self.call('voiceover','--id',self.id,'--takes',raw)
+        self.assertEqual(run.returncode,0,run.stderr)
+        p=self.d/'work/narration.wav'
+        with __import__('wave').open(str(p),'rb') as wav:
+            self.assertEqual(wav.getframerate(),48000)
+            self.assertAlmostEqual(wav.getnframes()/wav.getframerate(),3,delta=0.04)
+        report=json.loads((self.d/'work/voiceover-check.json').read_text('utf8'))
+        self.assertEqual(report['result'],'PASS')
 
     def test_fake_import_rejected(self):
         fake = self.root / "fake.mp4"

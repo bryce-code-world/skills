@@ -21,7 +21,7 @@ def owned_files():
     # Include nested own skill resources too.
     names += [p.relative_to(SOURCE).as_posix() for p in (SOURCE/'.agents/skills').rglob('*')
               if p.is_file() and p.relative_to(SOURCE/'.agents/skills').parts[0].startswith('ai-media-')]
-    names += ['config/dependencies.yaml','config/platforms.yaml','config/bootstrap-assets.json']
+    names += ['config/dependencies.yaml','config/platforms.yaml','config/bootstrap-assets.json', 'references/release.json']
     return sorted(set(names))
 
 

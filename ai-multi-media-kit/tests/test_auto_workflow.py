@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,7 +36,12 @@ class AutomaticWorkflowTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         base = Path(tmp.name)
-        local=patch.dict(os.environ,{'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')})
+        self.ffmpeg = os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
+        self.ffprobe = os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')
+        overrides={'LOCALAPPDATA':str(base/'user-config'), 'XDG_CONFIG_HOME':str(base/'xdg-config')}
+        if self.ffmpeg and self.ffprobe:
+            overrides['PATH']=str(Path(self.ffmpeg).parent)+os.pathsep+os.environ.get('PATH','')
+        local=patch.dict(os.environ,overrides)
         local.start(); self.addCleanup(local.stop)
         self.root, self.knowledge = base / "tool", base / "knowledge"
         init = subprocess.run(
@@ -69,9 +75,17 @@ class AutomaticWorkflowTests(unittest.TestCase):
         })
 
     def _video(self):
+        if not self.ffmpeg or not self.ffprobe:
+            self.skipTest('FFmpeg needed for actual video state-machine tests')
         video = self.folder / "video" / "master.mp4"
         video.parent.mkdir(parents=True, exist_ok=True)
-        video.write_bytes(b"synthetic bytes only for controlled state-machine test")
+        proc = subprocess.run([self.ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=navy:s=160x280:r=12:d=8",
+            "-f", "lavfi", "-i", "sine=frequency=340:duration=8:sample_rate=22050",
+            "-map", "0:v", "-map", "1:a", "-t", "8", "-c:v", "libx264",
+            "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video)],
+            capture_output=True, text=True, timeout=45)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
         write(self.folder / "video" / "render.json", {
             "engine": "import",
             "video_sha256": studio.filehash(video),
@@ -181,15 +195,20 @@ class AutomaticWorkflowTests(unittest.TestCase):
         # Simulate the existing external uploader without actually posting anything.
         fake_cli = self.root / "sau.exe"
         fake_cli.write_bytes(b"test-stub")
+        actual_run = subprocess.run
+        def run_except_upload(cmd, *args, **kwargs):
+            if Path(str(cmd[0])) == fake_cli:
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return actual_run(cmd, *args, **kwargs)
         with patch.object(studio, "sau_binary", return_value=fake_cli), patch.object(
-            studio.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")
+            studio.subprocess, "run", side_effect=run_except_upload
         ) as run:
             args = type("Args", (), {
                 "root": str(self.root), "id": scoped, "platform": "douyin",
                 "account": "main", "tid": None, "execute": True
             })()
             studio.cmd_publish(args)
-            self.assertEqual(run.call_count, 1)
+            self.assertEqual(sum(1 for call in run.call_args_list if Path(str(call.args[0][0])) == fake_cli), 1)
         ledger = json.loads((authorized_dir / "publish-ledger.json").read_text("utf-8"))
         self.assertEqual(ledger["platforms"]["douyin"]["state"], "submitted_unknown")
         self.assertEqual(self.studio("publish", "--id", scoped, "--platform", "douyin",

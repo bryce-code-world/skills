@@ -49,6 +49,6 @@ Windows 在 `%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`，macOS/Linux
 
 ## 工具与能力边界
 
-优先本地已许可视频素材和 FFmpeg；按需使用 MoneyPrinterTurbo 与 `social-auto-upload` 等经验证工具。文本关键词命中不等于 AI 看过画面；FFmpeg 默认只拼接已有素材，没有配音就可能是静音，不能用无声视频冒充口播成片。素材来源和传播许可必须可追溯，未经核实的网络素材不能随意使用。
+优先合法素材、真实操作/场景/对比镜头，不能因为 Pillow 稳定就把六张技术 PPT 当成可发布短视频。新增 `studio voiceover`：TTS 先生成逐镜头 WAV，由 FFmpeg 统一重采样与合成，禁止 Agent 临时手写 PCM 循环。`studio check/package` 会解码实际 MP4 拦截严重加速/长静音，AI 自报 PASS 不能覆盖；中文自然度、字幕真实时间点、镜头节奏仍需 Agent 实际试听/看画面。Windows SAPI/Huihui 只能当技术验证回退，非成片级配音保证。素材许可必须可追溯。
 
 安装脚本、审批迁移、平台兼容和已测范围参见 [首次使用](docs/START_HERE.md) · [Agent 兼容](docs/AGENT_COMPATIBILITY.md) · [内容与质量](docs/CONTENT_SCHEMA.md) · [素材源](docs/MATERIAL_SOURCES.md) · [工具链](docs/TOOLCHAIN.md) · [验收矩阵](docs/ACCEPTANCE_V3.md)。

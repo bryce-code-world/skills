@@ -25,6 +25,12 @@
 
 只要 CLI 现成脚本可完成稳定上传，就无需多余 MCP。MCP 只是连接协议，底层官方 API/浏览器自动化的可靠性、账号风险和授权范围各不相同。管理 Cookie 的 MCP 必须用户确认并独立登录。
 
+## 中文 TTS 与合成质量
+
+FFmpeg 负责处理音频，不自动生成口播。选择已验证免费/合法且听感自然的中文 TTS（可复用已配置 MPT 或宿主配音服务）；Windows SAPI/Huihui 适合技术验证，不自动视为成片级品质。无需注册收费语音 API。
+
+将逐镜头原始 WAV 交给 `studio voiceover --id <ID> --takes ...`，使用 FFmpeg 完成采样率转换与配音槽位装配，禁止每个 Agent 重写采样循环。最终 `studio check/package` 会重解码音轨并检查异常静音，但自然度、发音及字幕实际同步仍需试听，不能用 `volumedetect` 有声和 SRT 文本相同冒充音频验收。FFmpeg 缺少 `subtitles` 滤镜时可逐帧烧录字幕，但仍需实际观看核对。
+
 ## MPT 与宿主 Agent 订阅
 
 任何宿主 AI Agent 的订阅登录，都不会自动支付第三方项目的模型、素材或 TTS API 费用。本 Skill 让当前 Agent 根据企业知识库生成脚本，再尽量用 MPT 的 `--video-script` + 本地素材 + Edge TTS 减少额外模型 API；仍需验证 MPT 依赖与配置，不承诺所有场景零成本。

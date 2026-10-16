@@ -62,7 +62,18 @@
 }
 ```
 
-只有 **PASS + 每条 checks PASS + 无待核事实 + 无问题 + 哈希有效**，才会通过 `studio check` 的 `script_ready`；否则 Agent 自主查证、修改和重新审核（默认最多三轮）。文件本身是 AI 审核声明，CLI 不能代替 AI 发现语义错误，更不能默许伪造 PASS。
+只有 **PASS + 每条 checks PASS + 无待核事实 + 无问题 + 哈希有效**，才会通过 `studio check` 的 `script_ready`；否则自主查证、修改和重新审核（最多三轮）。`shots[].seconds` 之和必须等于 `duration_seconds`。内容质量还需审查前 3～5 秒的观众看点、具体使用案例/前后对比、自然口语以及非 PPT 式分镜。CLI 不能代替模型判断内容是否有吸引力。
+
+## 配音生成与可靠重采样
+
+优先使用已配置、许可明确且实测听感自然的中文 TTS。先将每个镜头合成为独立 WAV，再执行：
+
+```powershell
+RUN-STUDIO-WINDOWS.ps1 -Task studio voiceover --id my-video-001 --takes shot1.wav shot2.wav
+RUN-STUDIO-WINDOWS.ps1 -Task studio render --id my-video-001 --engine ffmpeg --material-ids <素材ID...> --rights-confirmed --audio <output_root>/my-video-001/work/narration.wav
+```
+
+`studio voiceover` 由 FFmpeg 负责正确的 48kHz 单声道重采样和时间轴装配，输出 `work/narration.wav`、`work/voiceover-check.json`。如果口播超出镜头时长，应修改文案或镜头，不允许硬加速。严禁每个 Agent 手写 PCM 重采样，尤其注意 22050→48000 的采样步长倒置问题。SAPI/Huihui 只能作为技术演示回退，不能仅凭有声就宣称正式质量。
 
 ## 素材、成片和视频 AI 审核
 
@@ -84,7 +95,7 @@
 }
 ```
 
-`studio check/status` 报告 `video_ready`。视频审核必须全项通过且与当前脚本、成片及审核标准版本吻合，`studio package` 才允许生成视频平台的发布包；任一修改将使相关审核过期。Agent 应自动返工且如实记录，不能用“FFmpeg 退出 0”替代视听验收。
+`studio render/import-video` 和 `studio check/status/package/publish` 会解码真实 MP4、逐镜头检查有效发声占比和异常连续静音；技术检查未过，即使 AI 自报 `PASS` 也无法通过视频门禁。此能量检测只能识别严重静音/异常速度，不能识别配音语义、自然度及背景音乐冒充语音。Agent 必须试听音轨和抽看每段首/中/尾画面，核对品牌英文名发音、音量、字幕实际时序、镜头叙事、空镜和 PPT 化问题，并以时间点说明写入 `video/review.json`。不能真实试听/查看就不得宣称创作体验通过。任何修改后相关审核仍失效。
 
 ## 发布与状态
 

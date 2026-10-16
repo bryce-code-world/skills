@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_paths import output_directory
+from media_audio import inspect_video, mix_takes
 
 PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat_oa', 'zhihu')
 VIDEO_PLATFORMS = PLATFORMS[:5]
@@ -105,7 +106,7 @@ def video_path(d):
     return d / 'video' / 'master.mp4'
 
 
-def ensure_video_ready(d: Path, knowledge: Path):
+def ensure_video_ready(d: Path, knowledge: Path, root: Path):
     script = ensure_reviewed_script(d, knowledge)
     v = video_path(d)
     meta_path = d / 'video' / 'render.json'
@@ -126,6 +127,14 @@ def ensure_video_ready(d: Path, knowledge: Path):
     if (review.get('video_sha256') != v_sha or review.get('script_sha256') != s_sha or
             review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md')):
         fail('成片或审核标准已变化，需要重新执行 AI 成片审核')
+    # An AI-authored PASS is insufficient: inspect the *actual* encoded soundtrack.
+    ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
+    ffprobe = load_ffmpeg_bin(root, 'ffprobe')
+    if not ffmpeg or not ffprobe:
+        fail('技术音频验收需要已安装的 FFmpeg/ffprobe，不能仅靠 AI 自报 PASS')
+    technical = inspect_video(ffmpeg, ffprobe, v, script['shots'])
+    if technical['result'] != 'PASS':
+        fail('成片技术音频验收失败：' + '; '.join(technical['issues']))
     return script
 
 
@@ -192,6 +201,11 @@ def check_script(d):
     for shot in shots:
         if not isinstance(shot,dict) or not isinstance(shot.get('visual'),str) or not shot['visual'].strip():
             fail('每个分镜需要 visual 描述')
+        if not isinstance(shot.get('seconds'),(int,float)) or shot['seconds'] <= 0:
+            fail('每个分镜必须设置正数 seconds')
+    if not isinstance(j.get('duration_seconds'),(int,float)) or (
+            abs(sum(x['seconds'] for x in shots) - j['duration_seconds']) > 0.1):
+        fail('分镜 seconds 总和与 duration_seconds 不一致，不能继续制作')
     if not isinstance(j.get('platforms'),dict): fail('platforms 必须是对象')
     for p in PLATFORMS:
         item=j['platforms'].get(p)
@@ -210,7 +224,7 @@ def cmd_check(a):
     except ValueError as e:
         result['script_ready']='not_ready: '+str(e)
     try:
-        ensure_video_ready(d,k)
+        ensure_video_ready(d,k,root)
         result['video_ready']='valid'
     except ValueError as e:
         result['video_ready']='not_ready: '+str(e)
@@ -276,11 +290,31 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
     aud=[s for s in streams if s.get('codec_type')=='audio']
     if not vids or not aud or vids[0].get('width')!=width or vids[0].get('height')!=height:
         fail('实际视频校验失败：音视频轨道或尺寸有误')
+    quality = inspect_video(ffmpeg, ffprobe, out, load(d/'script.json')['shots'])
+    if quality['result'] != 'PASS':
+        fail('生成 MP4 后发现异常配音，未登记成功渲染：' + '; '.join(quality['issues']))
     save(d/'video'/'render.json',{'engine':'ffmpeg','video_sha256':filehash(out),
          'script_sha256':filehash(d/'script.json'),'created_at_utc':now(),
          'clips':[str(x) for x in clips],'audio':str(audio) if audio else None,
          'subtitles':str(subtitles) if subtitles else None,'duration_seconds':float(result['format']['duration'])})
     return out
+
+
+def cmd_voiceover(a):
+    root, _ = workspace(a.root)
+    d = paths(root, a.id)
+    script = check_script(d)
+    ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
+    ffprobe = load_ffmpeg_bin(root, 'ffprobe')
+    if not ffmpeg or not ffprobe:
+        fail('合成配音需要 FFmpeg/ffprobe，不要手写采样率转换')
+    output = d / 'work' / 'narration.wav'
+    take_paths = [Path(x).expanduser().resolve() for x in a.takes]
+    report = mix_takes(ffmpeg, ffprobe, script['shots'], take_paths, output, replace=a.replace)
+    save(d/'work'/'voiceover-check.json', {
+        **report, 'audio_sha256': filehash(output), 'script_sha256': filehash(d/'script.json'),
+        'takes': [str(p) for p in take_paths], 'output': str(output), 'checked_at_utc': now()})
+    print('VOICEOVER_READY:', output, '\\n', json.dumps(report, ensure_ascii=False))
 
 
 def cmd_render(a):
@@ -350,6 +384,11 @@ def cmd_import_video(a):
             not any(x.get('codec_type')=='audio' for x in streams) or
             float(info.get('format',{}).get('duration',0))<=0):
         fail('导入的视频必须是有效的音视频 MP4')
+    ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
+    if not ffmpeg: fail('导入需要 FFmpeg 验证音频节奏')
+    quality = inspect_video(ffmpeg, ffprobe, src, load(d/'script.json')['shots'])
+    if quality['result'] != 'PASS':
+        fail('导入 MP4 音频异常：' + '; '.join(quality['issues']))
     dst=video_path(d); dst.parent.mkdir(parents=True,exist_ok=True)
     if dst.exists() and not a.replace: fail('已有成片，需要 --replace 明确覆盖')
     if src!=dst: shutil.copy2(src,dst)
@@ -363,9 +402,9 @@ def cmd_package(a):
     root,k=workspace(a.root); d=paths(root,a.id)
     script=check_script(d)
     targets=list(PLATFORMS) if a.platform=='all' else [a.platform]
-    for p in targets:
-        if p in VIDEO_PLATFORMS: ensure_video_ready(d,k)
-        else: ensure_reviewed_script(d,k)
+    # A seven-platform package must not decode the same MP4 five times.
+    if any(p in VIDEO_PLATFORMS for p in targets): ensure_video_ready(d,k,root)
+    if any(p not in VIDEO_PLATFORMS for p in targets): ensure_reviewed_script(d,k)
     for p in targets:
         if (d/'platforms'/p/'package.json').exists() and not a.replace:
             fail(f'{p} 发布包已存在，使用 --replace 才能覆盖；没有修改任何平台包')
@@ -424,7 +463,7 @@ def cmd_publish(a):
             pack.get('script_sha256')!=filehash(d/'script.json')):
         fail('发布包与当前脚本版本不一致，需要重新打包')
     if p in VIDEO_PLATFORMS:
-        ensure_video_ready(d,k)
+        ensure_video_ready(d,k,root)
         if (pack.get('video_sha256')!=filehash(video_path(d)) or
                 pack.get('video_review_sha256')!=filehash(d/'video'/'review.json')):
             fail('发布包与当前成片/AI 审核版本不一致，需要重新打包')
@@ -500,7 +539,10 @@ def cmd_status(a):
             'prepared_platforms':[p for p in PLATFORMS if (d/'platforms'/p/'package.json').exists()],
             'publish':load(d/'publish-ledger.json')['platforms']}
     for key,fn in (('script_ready',ensure_reviewed_script),('video_ready',ensure_video_ready)):
-        try:fn(d,k);result[key]=True
+        try:
+            if key=='video_ready': fn(d,k,root)
+            else: fn(d,k)
+            result[key]=True
         except ValueError as e:result[key]=False;result[key+'_reason']=str(e)
     print(json.dumps(result,indent=2,ensure_ascii=False))
 
@@ -516,6 +558,7 @@ def parse():
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)
     c=sub.add_parser('check');c.add_argument('--id',required=True);c.set_defaults(func=cmd_check)
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
+    voice=sub.add_parser('voiceover');voice.add_argument('--id',required=True);voice.add_argument('--takes',nargs='+',required=True);voice.add_argument('--replace',action='store_true');voice.set_defaults(func=cmd_voiceover)
     ren=sub.add_parser('render');ren.add_argument('--id',required=True);ren.add_argument('--engine',choices=['ffmpeg','mpt'],default='ffmpeg');
     ren.add_argument('--materials',nargs='+',help='手动指定本地视频，兼容原流程')
     ren.add_argument('--material-ids',nargs='+',help='从 materials search 返回的素材 ID 按指定顺序剪辑')
