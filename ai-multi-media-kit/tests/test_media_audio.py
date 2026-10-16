@@ -105,16 +105,20 @@ class MediaAudioTests(unittest.TestCase):
         import hashlib
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
+            # A host-installed Skill may carry a private legacy locator; isolate it
+            # so a unit test never reads or changes the host's actual workspace.
+            isolated = base / 'isolated-skill'
+            shutil.copytree(ROOT, isolated, ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'local-install.json'))
             with patch.dict(os.environ, {"LOCALAPPDATA": str(base / "user-config"),
                                          "XDG_CONFIG_HOME": str(base / "xdg-config"),
                                          "PATH": str(Path(ffbin("ffmpeg")).parent) + os.pathsep + os.environ.get("PATH", "")}):
                 root, kb = base / "tools", base / "knowledge"
                 init = subprocess.run([sys.executable, "-X", "utf8",
-                    str(ROOT / "scripts/init_workspace.py"), "--install-root", str(root),
+                    str(isolated / "scripts/init_workspace.py"), "--install-root", str(root),
                     "--knowledge-root", str(kb)], capture_output=True, text=True, timeout=25)
                 self.assertEqual(init.returncode, 0, init.stderr)
                 created = subprocess.run([sys.executable, "-X", "utf8",
-                    str(ROOT / "scripts/studio.py"), "--root", str(root), "new",
+                    str(isolated / "scripts/studio.py"), "--root", str(root), "new",
                     "--id", "damaged-voice", "--title", "异常语音示例"],
                     capture_output=True, text=True, timeout=25)
                 self.assertEqual(created.returncode, 0, created.stderr)
