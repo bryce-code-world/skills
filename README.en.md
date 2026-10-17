@@ -16,7 +16,7 @@ This repository follows the standard `SKILL.md` directory structure.
 
 | Skill | Purpose |
 |---|---|
-| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Agent-agnostic Chinese social-media skill with shared local runtime, owned footage catalogs, review, video rendering, and Python-free bootstrap. |
+| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Video-production workflow with creator attribution, pronunciation preflight, editorial review, media rendering, and reusable local tools. |
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled, layered personal profile package through ongoing interviews and cross-session candidate discovery; the panorama file is an aggregate index in the target layout, while compatibility spaces still keep the legacy single-file body. |
 | [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |

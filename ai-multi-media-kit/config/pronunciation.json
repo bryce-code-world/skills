@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "scope": "Known risky words only; not a complete Chinese pronunciation dictionary. Suggestions require contextual rewriting by the Agent, never global character replacement.",
+  "terms": [
+    {"term": "重复", "expected_reading": "chong2 fu4", "suggestion": "按语境改为反复、再次或同样的；例如重复配置→反复配置。不能把所有重字统一替换。"},
+    {"term": "重新", "expected_reading": "chong2 xin1", "suggestion": "按语境改为再次、从头或再一次。"},
+    {"term": "重装", "expected_reading": "chong2 zhuang1 (安装语境)", "suggestion": "软件安装语境可改为再次安装；重装装备等语境应另行判断。"},
+    {"term": "重配", "expected_reading": "chong2 pei4 (配置语境)", "suggestion": "配置语境可改为再次配置。"},
+    {"term": "重试", "expected_reading": "chong2 shi4", "suggestion": "可改为再试一次。"},
+    {"term": "重做", "expected_reading": "chong2 zuo4", "suggestion": "可改为再做一次或返工。"},
+    {"term": "重来", "expected_reading": "chong2 lai2", "suggestion": "可改为从头再做；按具体语境保持原义。"},
+    {"term": "重用", "expected_reading": "chong2 yong4 / zhong4 yong4 (依语境)", "suggestion": "工具再次使用可改为复用；人事任用语境不可用此替代。"}
+  ]
+}

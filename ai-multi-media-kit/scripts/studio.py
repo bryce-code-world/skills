@@ -23,6 +23,8 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_paths import output_directory
 from media_audio import inspect_video, mix_takes
+from content_identity import new_identity, provenance
+from speech_plan import load_rules, build_plan, validate_plan, validate_audio_review
 
 PLATFORMS = ('xiaohongshu', 'douyin', 'tencent', 'bilibili', 'kuaishou', 'wechat_oa', 'zhihu')
 VIDEO_PLATFORMS = PLATFORMS[:5]
@@ -73,7 +75,10 @@ def workspace(root: str):
 def content_dir(root: Path, content_id: str):
     if not ID_RE.fullmatch(content_id):
         fail('内容 ID 仅允许字母、数字、下划线和连字符（最长64位）')
-    return output_directory(root, load(root / 'config' / 'workspace.json')) / content_id
+    base = output_directory(root, load(root / 'config' / 'workspace.json'))
+    candidate = base / content_id
+    if not candidate.resolve().is_relative_to(base.resolve()): fail('内容目录越界，拒绝跟随外部链接')
+    return candidate
 
 
 def paths(root: Path, content_id: str):
@@ -99,6 +104,11 @@ def ensure_reviewed_script(d: Path, knowledge: Path):
         fail('脚本内容发生变化，需要重新 AI 审核')
     if review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md'):
         fail('企业审核标准已经更新，需要重新 AI 审核')
+    if load(d/'content.json').get('schema',3) >= 4:
+        focus = review.get('focus_alignment', {})
+        if (not isinstance(focus,dict) or focus.get('result') != 'PASS' or
+                not isinstance(focus.get('reason'),str) or not focus['reason'].strip()):
+            fail('缺少核心价值/次级卖点的对齐审核 focus_alignment，不能仅以工程测试通过代替内容质量')
     return script
 
 
@@ -127,6 +137,12 @@ def ensure_video_ready(d: Path, knowledge: Path, root: Path):
     if (review.get('video_sha256') != v_sha or review.get('script_sha256') != s_sha or
             review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md')):
         fail('成片或审核标准已变化，需要重新执行 AI 成片审核')
+    validate_plan(d, root, knowledge)
+    if load(d/'content.json').get('schema',3) >= 4:
+        plan_sha = filehash(d/'work/speech-plan.json')
+        if meta.get('speech_plan_sha256') != plan_sha:
+            fail('配音计划/音色已变化，需重新生成并渲染，不能复用旧成片验收')
+        validate_audio_review(review, script['duration_seconds'], plan_sha)
     # An AI-authored PASS is insufficient: inspect the *actual* encoded soundtrack.
     ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
     ffprobe = load_ffmpeg_bin(root, 'ffprobe')
@@ -154,28 +170,62 @@ def publish_targets(values):
 
 def cmd_new(a):
     root, knowledge = workspace(a.root)
+    identity = new_identity(a)
+    a.id = identity['content_id']
     d = content_dir(root, a.id)
     if d.exists():
         fail(f'内容 ID 已存在，不允许覆盖：{a.id}')
     targets = publish_targets(a.publish_target)
     if a.task_ref and (len(a.task_ref) > 256 or any(c in a.task_ref for c in '\r\n')):
         fail('任务来源引用不合法')
-    d.mkdir(parents=True)
-    data = {'schema': 3, 'content_id': a.id, 'title': a.title, 'created_at_utc': now(),
-            'knowledge_root': str(knowledge), 'platforms': list(PLATFORMS),
-            'publish_targets': targets, 'task_ref': a.task_ref or None}
-    save(d/'content.json', data)
-    (d/'brief.md').write_text('# '+a.title+'\n\n目标用户：\n\n证据与参考：\n\n创作角度：\n', encoding='utf-8')
-    save(d/'script.template.json', {'content_id': a.id, 'title': a.title, 'duration_seconds': 30,
-          'narration': '请由 当前 AI Agent 完成真实口播稿', 'shots': [{'seconds': 10, 'visual': '实拍镜头', 'voiceover': '示例'}],
-          'platforms': {p: {'title': '', 'description': '', 'tags': []} for p in PLATFORMS},
-          'article_markdown': '公众号/知乎衍生图文（如适用）'})
+    parent = None
+    if getattr(a,'parent_id',None):
+        source = paths(root,a.parent_id)
+        parent_content = load(source/'content.json')
+        if parent_content.get('topic_id') and parent_content['topic_id'] != identity['topic_id']:
+            fail('接力项目的 topic_id 与源项目不一致')
+        parent = {'content_id':a.parent_id,'content_sha256':filehash(source/'content.json')}
+        for key, rel in (('script_sha256','script.json'),('video_sha256','video/master.mp4')):
+            if (source/rel).is_file(): parent[key] = filehash(source/rel)
+    release = Path(__file__).resolve().parents[1]/'references/release.json'
+    version = load(release).get('version') if release.is_file() else None
+    d.mkdir(parents=True)  # Atomic final mkdir rejects colliding concurrent creators.
+    data = {**identity, 'title':a.title, 'created_at_utc':now(), 'skill_version':version,
+            'parent':parent, 'knowledge_root':str(knowledge), 'platforms':list(PLATFORMS),
+            'publish_targets':targets, 'task_ref':a.task_ref or None}
+    save(d/'content.json',data)
+    if identity['schema'] < 4:
+        print('WARN: 旧 --id 调用未提供创作 Agent；保留兼容但归属记为 unknown。新任务请使用 --topic/--agent。',file=sys.stderr)
+    (d/'brief.md').write_text('# '+a.title+'\n\n目标用户：\n\n核心用户价值（主线）：\n\n次级优势（不得抢占主线）：\n\n要展示的过程/证据：\n\n本次测试项（只写报告，不默认变成宣传卖点）：\n', encoding='utf-8')
+    save(d/'script.template.json', {'content_id':a.id,'title':a.title,'duration_seconds':30,
+          'narration':'请由当前 AI Agent 完成真实口播稿',
+          'editorial_intent':{'audience':'','primary_value':'','secondary_values':[], 'evidence_plan':[]},
+          'shots':[{'seconds':30,'visual':'可取得的实际演示镜头','voiceover':'请填写最终口播'}],
+          'platforms':{p:{'title':'','description':'','tags':[]} for p in PLATFORMS},
+          'article_markdown':'公众号/知乎衍生图文（如适用）'})
     save(d/'review.template.json', {'result': 'REVISE', 'score': 0,
          'script_sha256': '运行 studio hash 获得', 'review_standard_sha256': filehash(knowledge/'review-rules.md'),
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
          'facts_to_verify': ['待 AI 核查的事实'], 'issues': ['请先由 AI 根据真实证据完成审核']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
-    print(f'CREATED {d}\n下一步：当前 AI Agent 读取知识库完成 brief.md / script.json / review.json，运行 hash/check')
+    print(f'CREATED {d}\nCONTENT_ID={a.id}\n下一步：完成核心价值简报和脚本，speech-plan 预检，再按实际内容审核。')
+
+
+def cmd_list(a):
+    root,_ = workspace(a.root)
+    output = output_directory(root,load(root/'config/workspace.json'))
+    items, invalid = [], []
+    for directory in sorted(output.iterdir()):
+        record = directory/'content.json'
+        if directory.is_symlink() or not directory.resolve().is_relative_to(output.resolve()) or not directory.is_dir() or not record.is_file(): continue
+        try:
+            content = load(record)
+            if not isinstance(content,dict) or content.get('content_id') != directory.name:
+                raise ValueError('identity mismatch')
+            item = {**provenance(content),'title':content.get('title'), 'directory':str(directory)}
+            if not a.topic or item['topic_id'] == a.topic: items.append(item)
+        except (ValueError,OSError): invalid.append(directory.name)
+    print(json.dumps({'items':items,'invalid_records':invalid},ensure_ascii=False,indent=2))
 
 
 def cmd_hash(a):
@@ -184,8 +234,9 @@ def cmd_hash(a):
     sj = d/'script.json'
     if not sj.is_file():
         fail('请先由 当前 AI Agent 创建 script.json')
-    print(json.dumps({'script_sha256':filehash(sj),
-          'review_standard_sha256':filehash(knowledge/'review-rules.md')}, ensure_ascii=False, indent=2))
+    hashes={'script_sha256':filehash(sj),'review_standard_sha256':filehash(knowledge/'review-rules.md')}
+    if (d/'work/speech-plan.json').is_file(): hashes['speech_plan_sha256']=filehash(d/'work/speech-plan.json')
+    print(json.dumps(hashes,ensure_ascii=False,indent=2))
 
 
 def check_script(d):
@@ -206,6 +257,14 @@ def check_script(d):
     if not isinstance(j.get('duration_seconds'),(int,float)) or (
             abs(sum(x['seconds'] for x in shots) - j['duration_seconds']) > 0.1):
         fail('分镜 seconds 总和与 duration_seconds 不一致，不能继续制作')
+    if load(d/'content.json').get('schema',3) >= 4:
+        intent = j.get('editorial_intent')
+        if not isinstance(intent,dict) or any(not isinstance(intent.get(k),str) or not intent[k].strip() for k in ('audience','primary_value')):
+            fail('新项目必须写明 editorial_intent 的 audience 和 primary_value')
+        for key in ('secondary_values','evidence_plan'):
+            if not isinstance(intent.get(key),list) or not all(isinstance(x,str) and x.strip() for x in intent[key]):
+                fail(f'editorial_intent.{key} 必须为文本列表')
+        if not intent['evidence_plan']: fail('必须给出核心价值的实际展示计划 evidence_plan')
     if not isinstance(j.get('platforms'),dict): fail('platforms 必须是对象')
     for p in PLATFORMS:
         item=j['platforms'].get(p)
@@ -294,16 +353,40 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
     if quality['result'] != 'PASS':
         fail('生成 MP4 后发现异常配音，未登记成功渲染：' + '; '.join(quality['issues']))
     save(d/'video'/'render.json',{'engine':'ffmpeg','video_sha256':filehash(out),
+         'provenance':provenance(load(d/'content.json')),
+         'speech_plan_sha256':filehash(d/'work/speech-plan.json') if (d/'work/speech-plan.json').is_file() else None,
          'script_sha256':filehash(d/'script.json'),'created_at_utc':now(),
          'clips':[str(x) for x in clips],'audio':str(audio) if audio else None,
          'subtitles':str(subtitles) if subtitles else None,'duration_seconds':float(result['format']['duration'])})
     return out
 
 
+def cmd_speech_plan(a):
+    root, knowledge = workspace(a.root)
+    d = paths(root,a.id)
+    script = check_script(d)
+    rules, rules_sha = load_rules(root,knowledge)
+    report = build_plan(script,filehash(d/'script.json'),rules,rules_sha,a.tts_engine,a.voice)
+    target = d/'work/speech-plan.json'
+    if target.exists() and not a.replace:
+        if load(target) != report: fail('已有发音计划；改稿后请加 --replace 更新，旧音频须重新生成')
+    if report['result'] == 'READY':
+        for take in report['takes']:
+            dest = d/take['text_file']
+            if not dest.resolve().is_relative_to(d.resolve()) or dest.is_symlink(): fail('TTS 输入稿路径越界')
+            dest.parent.mkdir(parents=True,exist_ok=True)
+            if dest.exists() and filehash(dest) != take['text_sha256']: fail('同版本 TTS 输入稿被改写，不自动覆盖')
+            if not dest.exists(): dest.write_text(take['text'],encoding='utf8',newline='\n')
+    save(target,report)
+    print(json.dumps(report,ensure_ascii=False,indent=2))
+    if report['result'] != 'READY': fail('发现多音词/易错读音，请按语境改写正式口播及字幕后重跑 speech-plan')
+
+
 def cmd_voiceover(a):
-    root, _ = workspace(a.root)
+    root, knowledge = workspace(a.root)
     d = paths(root, a.id)
     script = check_script(d)
+    speech = validate_plan(d, root, knowledge)
     ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
     ffprobe = load_ffmpeg_bin(root, 'ffprobe')
     if not ffmpeg or not ffprobe:
@@ -313,6 +396,10 @@ def cmd_voiceover(a):
     report = mix_takes(ffmpeg, ffprobe, script['shots'], take_paths, output, replace=a.replace)
     save(d/'work'/'voiceover-check.json', {
         **report, 'audio_sha256': filehash(output), 'script_sha256': filehash(d/'script.json'),
+        'provenance':provenance(load(d/'content.json')),
+        'speech_plan_sha256':filehash(d/'work/speech-plan.json') if speech else None,
+        'tts_engine':speech['tts_engine'] if speech else None, 'voice':speech['voice'] if speech else None,
+        'take_sha256':[filehash(p) for p in take_paths],
         'takes': [str(p) for p in take_paths], 'output': str(output), 'checked_at_utc': now()})
     print('VOICEOVER_READY:', output, '\\n', json.dumps(report, ensure_ascii=False))
 
@@ -320,6 +407,16 @@ def cmd_voiceover(a):
 def cmd_render(a):
     root,k=workspace(a.root); d=paths(root,a.id)
     script=ensure_reviewed_script(d,k)
+    speech = validate_plan(d,root,k)
+    if speech and load(d/'content.json').get('schema',3) >= 4 and a.engine == 'ffmpeg':
+        audio = Path(a.audio).expanduser().resolve() if a.audio else None
+        report_path = d/'work/voiceover-check.json'
+        if not audio or not audio.is_file() or not report_path.is_file():
+            fail('新项目请先用 speech-plan 的输入生成 TTS，再执行 studio voiceover 并传入 --audio')
+        report = load(report_path)
+        if (report.get('audio_sha256') != filehash(audio) or report.get('script_sha256') != filehash(d/'script.json') or
+                report.get('speech_plan_sha256') != filehash(d/'work/speech-plan.json')):
+            fail('配音文件与当前脚本/发音计划不一致，必须重新生成配音')
     if a.material_ids and a.materials:
         fail('--material-ids 与 --materials 只能选择一种')
     selected = []
@@ -374,6 +471,7 @@ def cmd_render(a):
 
 def cmd_import_video(a):
     root,k=workspace(a.root); d=paths(root,a.id); ensure_reviewed_script(d,k)
+    validate_plan(d,root,k)
     src=Path(a.file).expanduser().resolve()
     if not src.is_file() or src.suffix.lower()!='.mp4': fail('只允许导入存在的 .mp4 视频文件')
     ffprobe = load_ffmpeg_bin(root, 'ffprobe')
@@ -393,6 +491,8 @@ def cmd_import_video(a):
     if dst.exists() and not a.replace: fail('已有成片，需要 --replace 明确覆盖')
     if src!=dst: shutil.copy2(src,dst)
     save(d/'video'/'render.json',{'engine':'import','source':str(src),'video_sha256':filehash(dst),
+                                  'provenance':provenance(load(d/'content.json')),
+                                 'speech_plan_sha256':filehash(d/'work/speech-plan.json') if (d/'work/speech-plan.json').is_file() else None,
                                  'script_sha256':filehash(d/'script.json'),
                                  'duration_seconds':float(info['format']['duration']),'created_at_utc':now()})
     print('IMPORTED:',dst)
@@ -414,6 +514,7 @@ def cmd_package(a):
         item=script['platforms'][p]
         article=script.get('article_markdown','') if p not in VIDEO_PLATFORMS else None
         pack={'schema':1,'content_id':a.id,'platform':p,'state':'prepared_not_published',
+              'provenance':provenance(load(d/'content.json')),'suggested_video_filename':a.id+'.mp4',
               'title':item['title'],'description':item.get('description',''), 'tags':item.get('tags',[]),
               'category_id': item.get('category_id'),
               'script_sha256':filehash(d/'script.json'),
@@ -534,7 +635,7 @@ def cmd_confirm_published(a):
 
 def cmd_status(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    result={'content_id':a.id,'script_exists':(d/'script.json').is_file(),
+    result={'content_id':a.id,'provenance':provenance(load(d/'content.json')),'script_exists':(d/'script.json').is_file(),
             'review_exists':(d/'review.json').is_file(),'video_exists':video_path(d).is_file(),
             'prepared_platforms':[p for p in PLATFORMS if (d/'platforms'/p/'package.json').exists()],
             'publish':load(d/'publish-ledger.json')['platforms']}
@@ -551,10 +652,17 @@ def parse():
     parser=argparse.ArgumentParser(description='AI Media Studio - 一次任务授权与 AI 自主质量闭环')
     parser.add_argument('--root',required=True,help='安装根目录（与 config/workspace.json 一致）')
     sub=parser.add_subparsers(dest='command',required=True)
-    n=sub.add_parser('new');n.add_argument('--id',required=True);n.add_argument('--title',required=True)
+    n=sub.add_parser('new');n.add_argument('--id',help='旧项目兼容；新任务用 --topic --agent 自动生成 ID');n.add_argument('--title',required=True)
+    n.add_argument('--topic',help='共用主题标识，小写英文/数字/连字符，最多24字符')
+    n.add_argument('--agent',help='实际执行宿主标识，如 codex/trae/workbuddy，最多16字符')
+    n.add_argument('--model',help='宿主能核实的模型名称；未知则省略，不猜测')
+    n.add_argument('--run-id',help='轮次标识；省略时生成带时间与随机后缀的唯一轮次')
+    n.add_argument('--parent-id',help='接力来源内容 ID，只记录版本哈希，不修改或复制源项目')
     n.add_argument('--publish-target',action='append',help='仅在初始用户任务明确要求公开发布时填写 platform:account；可重复')
     n.add_argument('--task-ref',help='原始用户任务消息引用（有则记录，不包含凭据）')
     n.set_defaults(func=cmd_new)
+    ls=sub.add_parser('list');ls.add_argument('--topic');ls.set_defaults(func=cmd_list)
+    speech=sub.add_parser('speech-plan');speech.add_argument('--id',required=True);speech.add_argument('--tts-engine',required=True);speech.add_argument('--voice',required=True);speech.add_argument('--replace',action='store_true');speech.set_defaults(func=cmd_speech_plan)
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)
     c=sub.add_parser('check');c.add_argument('--id',required=True);c.set_defaults(func=cmd_check)
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
@@ -573,7 +681,7 @@ def parse():
 def main():
     a=parse()
     try: a.func(a);return 0
-    except (ValueError,FileNotFoundError,RuntimeError,json.JSONDecodeError,subprocess.TimeoutExpired) as e:
+    except (ValueError,OSError,RuntimeError,json.JSONDecodeError,subprocess.TimeoutExpired) as e:
         print('ERROR:',str(e),file=sys.stderr);return 2
 
 

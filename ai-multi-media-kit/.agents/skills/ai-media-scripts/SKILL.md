@@ -1,11 +1,13 @@
 ---
 name: ai-media-scripts
-description: 根据企业知识库与用户任务自动生成中文短视频脚本、口播、分镜和七平台文案，并支持 AI 审核返工。
+description: 结合真实用户目标与企业知识库编写短视频主线、口播、分镜和平台文案，区分核心价值与辅助卖点，并配合发音预检与自动返工。
 ---
 # 脚本生产
 
-- 使用当前任务范围创建不可覆盖的内容 ID：`studio new --id <ID> --title "主题"`。只有任务原话明确指定公开发布的平台与账号时才添加 `--publish-target platform:account`；制作/导出不等于发布。
-- 根据品牌、受众、事实与素材能力生成 `<output_root>/<id>/script.json`（读取工具工作区的 `config/workspace.json`）：包括 `content_id`、`title`、`narration`、`shots`、`duration_seconds`、七平台 `platforms` 适配、`article_markdown`。
-- **按短视频创作，不按功能说明书编稿**：明确目标观众与一个具体痛点；前 3～5 秒用可感知的情境/问题/结果吸引注意，主体优先用实际操作、前后对比或一个具体案例证明价值，最后收束为观众能得到什么。禁止默认按“背景→功能列表→口号”生成六段连续科技卡片或照搬需求词条；纯技术信息图仅在确实更易理解时使用。无法取得真实素材时可做标注清楚的示意，不虚构实测效果或产品页面。
-- 口播应自然、适合中文听觉理解，少缩写连读和重复品牌全称；分镜 `seconds` 之和必须等于 `duration_seconds`，逐镜头按 TTS 实测时长调整文字/槽位，不得用强制变速压缩语音。医疗、金融、法律、政策、热点等事实要核对可靠来源，素材许可须真实。
-- 使用 `studio hash` 与 `ai-media-review`，根据审核问题自动修稿，最多三轮；禁止带着未核事实直接渲染。无需用户读稿或逐条选题审批。公众号/知乎适配为图文，不假装与短视频平台直传一样。
+- 新任务用 `studio new --topic <共同主题> --agent <实际宿主> --title "主题"`；可核实的模型才传 `--model`，自动生成轮次和含 Agent 的内容目录。别的 Agent 接力用同 topic、新内容 ID 和 `--parent-id`，不覆盖源稿。
+- `brief.md` 先写观众、核心用户价值、辅助优势、要展示的真实过程/证据，以及哪些只是工程测试事项。工程测试通过不应自动变成产品宣传主题。产品专用资料按任务读取，不把本 Skill 的安装/复用说明误当成所有产品的核心卖点。
+- 正式 `script.json` 包含 `content_id/title/narration/shots/duration_seconds/platforms`，新项目还须有 `editorial_intent`：`audience`、`primary_value`、`secondary_values`（列表）、`evidence_plan`（非空列表）。这里只检查结构，是否真正围绕主线需 AI 审稿。
+- 前 3～5 秒给出观众可感知的问题/结果，主体以一个实际任务的推进、操作或对比证明核心价值，结尾收束。不要默认六张技术卡片、功能列表或口号。真实素材不足时使用标注清楚的示意，不编造产品界面、经验或效果数字。
+- `shots[].voiceover` 是最终送给 TTS 的普通口播，`narration` 汇总同一文案；`subtitle_text/subtitle_lines` 若存在必须与口播一致（可改标点断句，不可漏词或替换成拼音）。分镜 seconds 总和与 duration_seconds 一致。
+- 用 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>` 检查已知易错词和文案一致性。发现“重复”等风险时自主按上下文改成“反复/再次”等自然表达，同步口播与字幕后 `--replace` 重跑。不能全局替换单个汉字，不能靠改审核结果消除风险。文本预检不是声音验证。
+- 随后 `studio hash`，调用 `ai-media-review` 完成当前版本审核；最多三轮内容返工，不请求用户逐稿审批。事实无法核实、付费或越权事项保留阻塞。细节见 `docs/CONTENT_SCHEMA.md`。

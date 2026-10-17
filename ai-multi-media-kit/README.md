@@ -1,4 +1,4 @@
-# ai-multi-media-kit — 跨 AI Agent 自动内容生产 Skill
+# ai-multi-media-kit — AI 短视频自动化生产 Skill
 
 这是符合 [Agent Skills / SKILL.md](https://agentskills.io/specification) 的跨宿主 Skill。使用企业知识库和已验证免费的本地工具，将中文短视频的**选题、脚本、AI 审核返工、素材检索、视频合成和内容交付**串成自动流程；若用户在**初始任务**明确指定发布平台和账号，则在受支持且已登录的平台上自动投稿。
 
@@ -15,6 +15,16 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 > 请使用你自身的 Skill 安装功能安装上面的完整 Skill（包括 scripts、docs、knowledge-templates 和子 Skills），读取 `SKILL.md`、`AGENTS.md`、`docs/START_HERE.md`。我指定工具目录、独立企业知识库目录和项目成果目录；先检查同一系统用户的共享工作区，存在就复用已有三个路径，否则按指定路径初始化。使用已验证免费的工具完成一条 45～60 秒中文 9:16 竖屏视频，自动选题、编稿、审核、选材、返工和生成 MP4。除我必须完成的账号登录、扫码、验证码外，不要在脚本、成片、素材和工具安装阶段要求逐项审批。**本次只制作不公开发布。** 交付真实视频及审核记录，不得调用收费服务或覆盖既有用户数据。
 
 **不需要用户先下载 ZIP 或预装 Python。** Skill 源码安装和运行环境安装是两件事。宿主不支持本机文件/命令时只能做文案等文本任务，不得冒充已成片。云端隔离 Agent 也不能自动访问用户电脑的 D: 盘。
+
+## 新项目的归属、主次与发音准备
+
+`studio new --topic <共同主题> --agent <实际宿主> --title "主题"` 自动创建 `<topic>-<agent>-<run_id>/`，保存主题、宿主、模型（未知为 null）和轮次；`studio list --topic` 用于对比，`--parent-id` 记录接力来源哈希。旧目录不移动，旧 `--id` 命令只作为兼容入口，未知作者不猜测。
+
+脚本以 `editorial_intent` 明确核心价值和次级优势，审核以 `focus_alignment` 核对实际口播/镜头。**视频生产流程是本套件介绍的主线，跨 Agent 复用是辅助优势**；[本套件专用定位](docs/examples/ai-multi-media-kit-introduction.md) 只用于介绍本产品，不绑定其他产品创作。
+
+新项目先 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>`；发现已知易错词时由 Agent 自主改稿并同步字幕，READY 后按导出的逐镜头文本生成 WAV。它不是完整汉字注音器，也不保证 TTS 必然读对；最终仍需实际试听并留下 `pronunciation_check`。发音词典默认在 `config/pronunciation.json`，企业可在自己的 `pronunciation.json` 增补词条，升级不覆盖企业自有词典。
+
+完整流程与兼容边界见 [内容契约](docs/CONTENT_SCHEMA.md)。[可复用测试提示词](docs/TEST_PROMPT.md) 会引导 Agent 安装或安全更新最新版，再完成实际视频测试。
 
 ## 三个用户目录与共享定位
 

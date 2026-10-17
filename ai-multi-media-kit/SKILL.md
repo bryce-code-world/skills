@@ -1,32 +1,27 @@
 ---
 name: ai-multi-media-kit
-description: 面向兼容 Agent Skills 的本地 AI Agent，利用企业知识库和免费/已授权工具自动完成短视频选题、脚本、AI 审核返工、素材匹配、FFmpeg/MoneyPrinterTurbo 成片、平台适配及明确授权范围内的发布；首次安装、共享环境诊断和全链路交付同样适用。
+description: 根据用户内容目标与企业知识库，自动完成短视频选题、脚本、审核返工、素材匹配、配音字幕、视频合成、质量检查和交付；支持任务归属追踪、易错读音预检及共享本地环境。仅在初始用户任务明确授权的平台和账号范围内发布。
 ---
 
-# ai-multi-media-kit — 一次任务、自主生产
+# AI 短视频自动化生产 Skill
 
-面向 Codex、WorkBuddy、Claude Code 等实际支持 Agent Skills 的宿主；支持 Skill 不等于支持本机文件、终端、账号和发布能力。先读 [AGENTS.md](AGENTS.md) 和 [Agent 兼容指南](docs/AGENT_COMPATIBILITY.md)，再执行。
+**核心是视频生产工作流，不是安装工具或展示多 Agent 复用。** 当前 AI Agent 负责理解目标、策划/编稿、分镜、工具选择和质量判断；本 Skill 提供方法与可追溯流程；TTS、FFmpeg、CLI/MCP 等执行具体操作。工具执行成功不代表内容质量合格。先读 [AGENTS.md](AGENTS.md)，按宿主实际文件、终端和视听能力执行。
 
-## 初始化与复用
+## 内容生产
 
-1. 当前 Agent 只需用自身方式安装/加载 **Skill 入口**。**每次开始必须先只读发现**：检查 Windows `%LOCALAPPDATA%/ai-multi-media-kit/local-install.json` 或 macOS/Linux `${XDG_CONFIG_HOME:-~/.config}/ai-multi-media-kit/local-install.json`；共享记录缺失时检查当前 Skill 的旧版 `config/local-install.json`。能运行 Python 时执行 `scripts/workspace_locator.py show`；否则读取 JSON 并核对 `<install_root>/config/workspace.json` 的工具、知识库、`output_root` 三个实际目录。
-2. **发现有效工作区即复用并停止初始化**：不再次询问三个目录，不运行 SETUP / `init_workspace.py`，不再次安装已存在的 Python、uv、FFmpeg 或第三方依赖。直接调用现有工作区的绝对路径启动器，需要时运行 `doctor` 检查实际缺失能力。即使用户再次提供同一组路径，也只能复用，不得创建第二套工具/知识库/输出环境。
-3. **发现缺失才允许新建**：若共享索引不存在、但用户已给出旧工具路径，先用 `workspace_locator.py inspect --install-root <旧目录>` 验证 `workspace.json`，可按需 `register` 恢复索引，不运行安装器。若索引损坏、目录失效、三路径冲突，则停止并报告，**不得静默回退或转而新建**。只有确认确无已有工作区且用户明确选择三个目录，才能调用 `SETUP-WINDOWS.ps1` 或 `SETUP-UNIX.sh`；输出目录缺省兼容 `<install_root>/outputs`。用户确实要创建另一套环境时，需明确授权并指定 `-NewWorkspace` / `--new-workspace`，Agent 不得自行加此选项。
-4. 已复用环境但 `doctor` 发现本任务需要的缺失工具时，只补齐该项经验证免费、合法的依赖；不得以“新 Agent 初次安装”为由重装全套。不同 Agent 可先后接管同一项目，但不应**同时写入同一内容 ID**；接管前确认前一 Agent 的写入已结束。宿主专属登录态/MCP 注册可能仍需检查；登录或验证码由用户本人操作，不修改系统 PATH。
+1. 从真实用户任务区分“观众要了解的核心价值”和“本次工程测试项”。在 `brief.md` 中明确目标受众、主线、次级优势与证据展示；测试安装、路径复用不自动成为视频的宣传主线。通用 Skill 不替所有产品固定卖点。只有本次明确介绍本套件时，才参考 [套件介绍样例定位](docs/examples/ai-multi-media-kit-introduction.md)。
+2. **新项目必须有归属**：`studio new --topic <共同主题> --agent <当前实际宿主> --title "主题"` 自动生成 `<topic>-<agent>-<run_id>` 目录。模型能核实才传 `--model`，不能猜。用 `studio list --topic <主题>` 对比成果。协作接力用 `--parent-id <来源ID>` 新建独立轮次并记录源哈希，不覆盖另一 Agent 的项目；不并发写同一 ID。旧 `--id` 仅用于兼容，不作为新任务默认入口。
+3. 结合知识库调用 `ai-media-topics/scripts`，形成正式 `script.json` 和 `editorial_intent`。先由 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>` 检查口播、字幕一致性及已知易错词。出现风险则由 Agent 在保持原义的前提下改写正式口播/字幕后重跑；不得将拼音或不受支持的 SSML 塞进最终字幕/TTS，也不逐字全局替换多音字。
+4. 调用 `ai-media-review`，检查 `focus_alignment`：主线是否对应核心价值、次级卖点是否喧宾夺主。`review.json` 必须与当前脚本、审核标准绑定。AI 未通过就自行修正，最多三轮，不请求用户逐阶段读稿审批。语义对齐需要真实审稿，CLI 仅验证结构与记录。
+5. `speech-plan` READY 后只使用其导出的逐镜头文本生成 TTS WAV；`studio voiceover --takes ...` 交给 FFmpeg 正确重采样、配时并记录音色与输入哈希。预检只覆盖已知词典，**不是所有汉字的发音验证**。优先真实操作/使用场景/结果对比和合法素材，不默认把流程图/PPT 当成吸引人的视频。
+6. `studio render` 或 `import-video` 生成真实 MP4，自动检查时长、音轨有效声音与长静音。Agent 另需实际查看镜头/字幕并试听配音，在 `video/review.json` 写入有时间点的 `pronunciation_check`。ASR/波形/无静音不能充当试听证明；无音频输入能力时保留未验证状态、交付技术测试结果，不编造 PASS。无需真人阶段批准。
+7. 全部质量检查通过才 `studio package`。`content.json`、渲染记录、配音记录和发布包保留主题、Agent、模型（未知为 null）、轮次及来源信息。用户仅要求制作/测试时不设置 `publish_targets`，不登录或投稿；公开发布必须来自初始用户任务明确的平台/账号授权，详情见 [内容契约](docs/CONTENT_SCHEMA.md)。
 
-## 自动内容流水线
+## 环境是执行条件，不是默认创作主题
 
-1. 从真实用户任务确定交付目标。默认**只制作不公开发布**。仅当该任务明确要求公开发布并给出平台及账号别名，在创建内容时添加 `studio new --id <ID> --title "主题" --publish-target douyin:main`；多个发布目标重复该参数。可用 `--task-ref` 记录原始用户消息引用。不要依据对话推断、虚构或扩大发布范围。
-2. 结合知识库，调用 `ai-media-topics`、`ai-media-scripts` 形成 `brief.md`、`script.json`，根据 `ai-media-review` 生成 `review.json`。运行 `studio hash/check`；不合格自动修改再审核，最多 3 轮。**不请求用户审批脚本。**
-3. 用 `ai-media-materials` 寻找合法素材，优先真实操作演示/使用情境/结果对比，不默认生成连续六张 PPT 技术卡片。配音优先使用已许可且试听自然的中文 TTS；逐镜头 WAV 交给 `studio voiceover --takes ...`，**由 FFmpeg 装配和重采样，禁止手写 PCM 采样循环**。再用 `studio render --audio ...` 或 `studio import-video` 成片，`--rights-confirmed` 仅表示 Agent 已核验素材权利。
-4. `studio check/package` 会独立解码成片音轨，按分镜检查长静音、有效发声占比与时长，即使 AI 自报 PASS 也不能绕过。该检测不识别配音语义/自然度；Agent 还必须实际试听音轨、检查各镜头首/中/尾画面，核对发音、字幕同步、开头看点、真实案例、空白章节和视觉节奏，输出有时间点证据的 `video/review.json`。无真实试听/看图能力不能声称体验质量通过。**不请求用户验片批准。**
-5. `studio package` 仅生成待发布包。初始任务授权了公开发布的平台与账号，且该平台已有经验证投稿工具和登录态时，`studio publish --platform <p> --account <alias> --execute` 自动投稿，不再人工复批。发布状态未知时不盲重试；获取官方作品链接并核对后用 `studio confirm-published` 记录。
-6. 在 `config/workspace.json` 的 `output_root` 下按 `内容ID/` 持久保存脚本、审核、素材选择、MP4、平台包与发布记录，批量选题放 `output_root/_plans/`；所有 Agent 使用同一配置定位，不把正式成果放 Skill 源码、工具运行缓存或临时目录。若工具能力不足，只报告已完成部分与阻塞，不能把模板、dry-run 当成成片。
+- 同设备/系统用户，先只读检查共享安装索引和 `workspace.json` 的三个路径；有效则直接复用，不再次初始化或安装 Python/FFmpeg。共享索引缺失时凭已有工具路径 `workspace_locator.py inspect/register` 恢复；损坏或路径冲突时停止，不擅自新建第二环境。
+- 只有确无既有环境才按用户指定工具、知识库、成果目录首次安装。已有源码更新应使用**新源码**的 `upgrade_core.py --root <工具目录> --apply` 备份更新自有核心，不覆盖用户修改、资料、配置和旧视频。操作细则见 [首次使用](docs/START_HERE.md)。
+- Windows 以绝对路径调用 `<install_root>/RUN-STUDIO-WINDOWS.ps1 -Task studio|materials|doctor|installer ...`；Unix 使用 `bash <install_root>/run-studio.sh ...`。不修改系统 PATH，不重复安装。仅补齐任务必需、来源和费用已核实的缺失依赖。
+- 仅登录/验证码等用户身份步骤需要本人处理；超出授权、收费、隐私外传和无许可素材不能因“自动化”而放行。具体宿主权限、MCP 注册及音频输入支持需分别验证。
 
-**停止条件**：默认至多 3 轮内容返工；需要账号登录/扫码/验证码时暂停等待用户完成后继续。收费、越权发布、未经许可素材、缺失真实上传能力均不得绕过，不以“无审批”为理由突破用户原始任务范围。
-
-## CLI 与说明
-
-Windows `<install_root>/RUN-STUDIO-WINDOWS.ps1 -Task studio|materials|installer|doctor ...`；Unix `bash <install_root>/run-studio.sh studio|materials|installer|doctor ...`。基于当前宿主可用终端按绝对路径调用。
-
-按需查阅：[首次安装](docs/START_HERE.md) · [内容及质量结构](docs/CONTENT_SCHEMA.md) · [素材源](docs/MATERIAL_SOURCES.md) · [工具链](docs/TOOLCHAIN.md) · [验收矩阵](docs/ACCEPTANCE_V3.md)。业务子 Skills 在 `.agents/skills/ai-media-*/SKILL.md`，宿主未自动发现时由主 Agent 按阶段直接读取。
+成果根目录只取 `workspace.json.output_root`。每个新项目使用自己的归属 ID；不得在 Skill 源码、临时目录或另一个 Agent 的项目中放正式作品。批量选题使用 `_plans/<date>-<agent>-<run>-topics.*` 避免互相覆盖。业务子 Skills 位于 `.agents/skills/ai-media-*/SKILL.md`，按阶段读取。参见 [内容与发音协议](docs/CONTENT_SCHEMA.md)、[工具链](docs/TOOLCHAIN.md)、[验收](docs/ACCEPTANCE_V3.md)。

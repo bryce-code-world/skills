@@ -49,3 +49,8 @@ python scripts/configure_mcp.py --root . --enable-xhs    # 初始任务范围内
 ```
 
 这段脚本**只支持 Codex 项目级适配**：生成 `.codex/config.toml`，通过 `XHS_MCP_TOKEN` 环境变量引用密钥，不保存明文 Token。Codex 仅在信任工作区时加载其项目配置；重启后实际调用才能证明连通。其他 AI Agent 请根据当前宿主支持的 MCP 配置方式自行完成授权和连接验收，勿直接套用 Codex TOML；详见 [Agent 兼容指南](AGENT_COMPATIBILITY.md)。
+## 已知多音词的 TTS 输入准备
+
+V0.9 的 `speech-plan` 读取可配置词典，输出普通文本逐镜头输入。默认用上下文改写处理风险词，不内置任何厂商的 phoneme/SSML 适配。edge-tts 上游明确说明不支持任意自定义 SSML，不能假定追加音标标签即可纠正发音；来源：[edge-tts Custom SSML](https://github.com/rany2/edge-tts#custom-ssml)（核验于2026-10-17）。
+
+已知词预检不是完整汉字多音识别器；同一模型和不同音色的读音可能不同。服务/音色、脚本、输入文本和音轨都记录哈希便于复核，但输入哈希不能证明 TTS 读对，实际音频验收仍独立进行。

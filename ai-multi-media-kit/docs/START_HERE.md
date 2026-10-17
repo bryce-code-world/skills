@@ -43,7 +43,7 @@ Agent 使用已初始化工具目录的绝对路径调用启动器：
 
 ```powershell
 & "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task doctor --scope core --strict
-& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio new --id demo-001 --title "我的第一条视频"
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio new --topic first-video --agent workbuddy --title "我的第一条视频"
 & "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task installer --component mpt
 ```
 
@@ -52,3 +52,10 @@ Agent 使用已初始化工具目录的绝对路径调用启动器：
 之后 Agent 自行读取 `brand.md`、`audience.md`、`review-rules.md`，完成编稿、AI 审核、素材、实际渲染、视频 AI 验收、平台包。**制作任务不需要中间阶段审批**；默认至多三轮纠错。
 
 如果原始用户请求中明确要求“发布到指定平台的指定账号”，创建内容时可以在 `studio new` 添加 `--publish-target 平台:账号`，但制作/导出不能推断为公开发布。后续 `studio publish --execute` 不要求再次批准，只能按该范围执行。无实际投稿工具或作品链接时不能宣称已发布。详见 [内容数据](CONTENT_SCHEMA.md)、[素材](MATERIAL_SOURCES.md)、[兼容](AGENT_COMPATIBILITY.md)。
+## 新项目测试入口
+
+新任务用 `studio new --topic <共同主题> --agent <实际宿主> --title "主题"` 自动生成含 Agent 和轮次的目录；上例 workbuddy 只作说明，需替换为实际宿主，模型未知不填。用 `studio list --topic` 查看同主题成果。
+
+V0.9 新项目还需明确 `editorial_intent` 和 `focus_alignment`，TTS 前执行 `speech-plan`，处理已知风险词并同步字幕。只有真实试听才能填写成片 `pronunciation_check`；不能把文本预检或 ASR 当作发音验证。详细字段见 [内容契约](CONTENT_SCHEMA.md)。
+
+进行本套件介绍视频测试时，使用 [测试提示词](TEST_PROMPT.md) 和 [专用产品定位](examples/ai-multi-media-kit-introduction.md)：主线是视频自动化工作流，安装与跨 Agent 复用只是技术测试和辅助优势。

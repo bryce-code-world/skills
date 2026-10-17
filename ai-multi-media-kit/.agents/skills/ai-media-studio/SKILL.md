@@ -1,18 +1,16 @@
 ---
 name: ai-media-studio
-description: 在已初始化的 AI Media Studio 工作区组织一次任务授权下的选题、脚本、AI 审核返工、合法素材、视频合成、质量验收、平台包和已授权发布。
+description: 在已初始化工作区组织从目标理解、策划编稿、读音预检、审核返工、素材和视频合成到质量验收与交付的可追溯流程。
 ---
+# 内容生产主编排
 
-# 媒体生产主编排
+先读取本工作区 AGENTS.md、config/workspace.json 与 docs/CONTENT_SCHEMA.md。AI Agent 是策划者、编导、工具调度者和质量审核者；Skill 是业务流程与约束；TTS/FFmpeg/CLI/MCP 才执行具体操作。环境复用是基础设施能力，不是所有产品视频的默认主线。
 
-先读根目录 `AGENTS.md` 与 `config/workspace.json`，核对企业知识库、宿主本机执行权限及目标交付。使用工作区绝对路径调用 `RUN-STUDIO-WINDOWS.ps1` / `run-studio.sh`，无须系统级 PATH。
+1. 从用户任务固定核心价值、次级卖点、展示证据和发布边界，生成 brief；仅制作不获得发布权限。
+2. 用 `studio new --topic <共用主题> --agent <实际宿主> --title "主题"` 新建独立运行目录，模型可核实才传 --model。接力用 --parent-id 记录来源哈希，不修改其他 Agent 的目录。studio list --topic 用于对比。
+3. 按 ai-media-topics/scripts 编稿，填 editorial_intent。按 ai-media-review 审查主次对齐并记录 focus_alignment；这是语义判断，不是填字段就算通过。
+4. 选择实际可用的 TTS 服务与音色，执行 speech-plan。遇到已知多音词风险自动按语境改稿、同步字幕并重跑。READY 后使用导出的逐镜头文本生成 WAV，再 voiceover 交给 FFmpeg 装配。此流程不声称词典能解决所有中文读音。
+5. ai-media-materials 核对合法素材，ai-media-video 制作真实 MP4，工程检查之外实际试听和查看画面。pronunciation_check 需有真实时间点证据，ASR 不能取代试听；能力不足保留 BLOCK/部分完成，不虚构验收。
+6. 审核通过再 package，发布仅限初始明确指定的平台和账号。无需用户逐阶段审批，最多三轮返工。身份操作、越权与收费边界遵守 AGENTS.md。
 
-1. **只在起点解释一次任务范围**。用户要求制作即授权完整生产链；默认不能公开发布。若用户原始请求明确指定平台与账号，`studio new` 传 `--publish-target platform:account` 并按可用性传 `--task-ref`，之后不需要为脚本、成片或该范围内投稿重复审批。原始请求未指定的范围一律不得推断补写。
-2. 调用 `ai-media-topics` 与 `ai-media-scripts` 生成 `script.json`，`ai-media-review` 生成当前哈希绑定的 `review.json`。仅 PASS 且无待核事实可继续，否则自主查证或修正，最多 3 轮，不请求用户读稿。
-3. 调用 `ai-media-materials` 从授权素材源匹配镜头并核验许可、画面；没有素材优先改镜头和选择免费合法来源，不能为了过审谎称素材已授权。
-4. 调用 `ai-media-video` 以成熟 TTS + `studio voiceover`（FFmpeg 装配）+ FFmpeg/MPT 制作真实成片，禁止临时手写重采样。`studio check/package` 会重算真实音轨质量，不相信 AI 自报 PASS。AI 另需实际试听与查看首/中/尾画面，审查吸引力、叙事、字幕、自然发音、节奏和非 PPT 化的视觉表达；未达标自动返工最多 3 轮。不请用户验片批准，但没有审看能力不得伪造通过。
-5. 通过 `studio package` 生成发布包；只有真实初始任务授权的平台及账号才可 `studio publish --execute`。缺少平台登录时通知用户完成扫码/验证码，成功后续跑；缺少可靠投稿工具或作品链接时如实报告，不能假称已发布。上传未知状态不得重复盲发。
-
-`studio check/status` 显示当前版本的脚本/成片质量门禁。AI 审核不得伪造 PASS；工具、素材、额度或平台不可用时说清阻塞，不交还不必要的人工质量审查。
-
-子 Skill 根据阶段读取 `.agents/skills/ai-media-*/SKILL.md`；内容结构见 `docs/CONTENT_SCHEMA.md`。
+所有正式成果存放 output_root 下当前含 Agent 标识的内容 ID；执行命令用既有工作区绝对路径。先复用环境，不重复初始化。产品自身介绍任务可按需读 docs/examples/ai-multi-media-kit-introduction.md，其他主题不要加载该专用定位。

@@ -109,7 +109,7 @@ def main() -> int:
         source = PROJECT_ROOT / rel
         if rel == "config":
             # Never copy a host-specific locator into another user's runtime workspace.
-            for file in ("bootstrap-assets.json", "dependencies.yaml", "platforms.yaml"):
+            for file in ("bootstrap-assets.json", "dependencies.yaml", "platforms.yaml", "pronunciation.json"):
                 if (source / file).is_file():
                     safe_copy(source / file, install / rel / file)
             continue
@@ -124,6 +124,7 @@ def main() -> int:
 
     for base_file in ["AGENTS.md", "README.md", ".gitignore", "SETUP-WINDOWS.cmd", "SETUP-WINDOWS.ps1", "SETUP-UNIX.sh", "RUN-STUDIO-WINDOWS.ps1", "run-studio.sh", "start-codex.cmd", "start-codex.sh"]:
         safe_copy(PROJECT_ROOT / base_file, install / base_file)
+    safe_copy(PROJECT_ROOT / 'references/release.json', install / 'references/release.json')
     for folder in ["tools", "mcp", "runtime/browsers", "runtime/uv-cache", "runtime/uv-python", "runtime/bootstrap/uv", "runtime/downloads", "runtime/cache", "runtime/tmp", "auth", "cache", "logs"]:
         (install / folder).mkdir(parents=True, exist_ok=True)
     for folder in ["examples", "materials", "review-history", "platform-rules", "methodologies", "successful-examples"]:

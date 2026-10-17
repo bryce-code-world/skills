@@ -1,14 +1,14 @@
 ---
 name: ai-media-video
-description: 使用通过 AI 审核的脚本和合法素材由 FFmpeg/MoneyPrinterTurbo 自动成片、验收、返工，并记录当前内容哈希。
+description: 将已审核脚本、经过发音预检的 TTS 文本和合法素材合成为真实短视频，验证工程质量与实际视听体验并自动返工。
 ---
-# 视频制作 Skill
+# 视频制作
 
-1. `studio check` 确认脚本 AI 审核通过（`script_ready=valid`），**不需要真人脚本批准**。通过 `materials resolve/preview` 验证已登记素材与画面，必要时裁剪镜头。
-2. 有中文口播时，先比较宿主已验证的免费/已获授权 TTS 的**自然度、停顿、中文和英文词发音**，选择实际听感更好的；Windows SAPI/Huihui 只能作为技术回退，不能仅因免费且能发声便判定成片级质量。任一 TTS 均可生成逐镜头 WAV，但**禁止自己写重采样、线性插值或改变 PCM 播放速度**。统一使用 `studio voiceover --id <ID> --takes <镜头1.wav> <镜头2.wav> ...` 由 FFmpeg 重采样与装配，保存 `work/narration.wav` 和音频检测报告；槽位容不下就修改口播/时长，不得强制加速硬塞。随后 `studio render --id <ID> --engine ffmpeg --material-ids <ID1> ... --audio <output_root>/<ID>/work/narration.wav --rights-confirmed` 真实成片，字幕应基于实际配音时序校准。dry-run 不算成片。
-3. MPT 需要先按经验证的免费依赖配置运行，生成的真实 MP4 经 `studio import-video` 重新验收。CLI 成功但没有找到输出文件不代表成片。
-4. `studio render/import-video/check/package` 的音频技术检查会独立解码 MP4 并按分镜检查有效发声比例与异常长静音，**即便 AI 审核写 PASS 也不可绕过**。这只能识别严重静音/节奏错误，不能证明说的是人话或语音自然。Agent 还必须实际试听成片音轨，抽看每个章节开头、中间、结尾的真实画面（关注最后一幕是否空白/过场过长），核对配音清晰度、发音、情绪、字幕同步、音量、真实操作/案例与镜头变化，记录时间点和具体证据到 `video/review.json`。没有试听能力时不得声称“配音自然”“音画一致”已通过。
-5. PPT/纯几何图形只能做必要辅助，不得默认代替真实操作演示；优先使用可授权的屏幕录制、实拍、结果对比和富有叙事目的的动态场景。无素材/无高质量 TTS 可用时，明确交付“技术演示”并保留体验质量问题，不写成可发布成片。
-6. AI 审核未 PASS 就自主修复并再渲染（`--replace` 只能覆盖本内容 ID 的成片），最多三轮。**不请求真人验片批准**，不得为了通过验收虚构观看视频、音频或场景质量。
+1. 先 `studio check` 核实当前脚本审核，再准备配音。新项目必须先有 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>` 的 READY 记录。它将普通口播逐镜头导出为 `work/tts-inputs/<脚本哈希>/shot-NNN.txt`，只用这些文本合成 WAV。已知多音词风险由 Agent 按语境改稿并同步字幕，不自动把中文替换为拼音，也不假设所有 TTS 支持 SSML/phoneme。
+2. 选择已获许可、费用可确认且实际可用的中文 TTS；记录服务/音色。不同音色不能等同不同 Agent 的语言能力。SAPI/Huihui 可作技术回退，不自动代表正式内容质量。`speech-plan` READY 只是已知词风险预检，不保证不存在其他错读。
+3. 按镜头顺序将真实 WAV 交给 `studio voiceover --id <ID> --takes ...`。FFmpeg 负责正确重采样与时间轴装配，禁止手写 PCM 插值或加速语音硬塞镜头。输出 `work/narration.wav`、输入音频哈希和绑定当前脚本/发音计划的 `voiceover-check.json`。脚本或音色改变后，重新规划、生成配音，不复用旧音轨。
+4. 使用合法素材与 `studio render --id <ID> --audio <本项目/work/narration.wav> --materials ... --rights-confirmed`，或经验证的外部成片再 `import-video`。优先真实制作过程、场景或结果对比；动画辅助讲清事实，不用六页 PPT 卡片掩盖没有故事。
+5. 技术门禁会从最终 MP4 解码音轨，检测时长、有效声音与异常静音；这不是读音/语义检查。Agent 必须实际试听最终音频并查看镜头、字幕时序和末尾画面，特别核对多音词、品牌英文名、数字及停顿。新项目在 `video/review.json` 写入 `pronunciation_check`，方法为 `actual_audio_review`，包含真实时间段、听到的结果和当前 `speech_plan_sha256`。ASR 和波形仅可作辅助，不能伪装成试听；格式见 `docs/CONTENT_SCHEMA.md`。
+6. 没有音频输入能力时，仍可生成测试 MP4、运行工程检查并交付已有结果，但必须标明发音/自然度未验证，保留 BLOCK，不能伪造 PASS 后打包。最多三轮自主返工，不请求用户逐稿/逐片审批，不把后台安装或测试参数写成视频主体。
 
-成片质量验收绑定最新版本；完成后由 `studio package` 生成待发布包。
+`studio package` 仅对质量检查通过的当前版本生成平台包，并附带 Agent/主题/轮次归属及建议导出文件名。默认不发布，版权、外部服务费用和原始任务授权边界不变。
