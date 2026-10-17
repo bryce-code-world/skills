@@ -5,13 +5,13 @@
 从工作区启动器调用以下 studio 子命令；Windows 使用 `RUN-STUDIO-WINDOWS.ps1 -Task studio ...`，Unix 使用 `bash run-studio.sh studio ...`。
 
 ```text
-new --topic product-intro --agent workbuddy --run-id demo --title "从一个选题到一条视频"
+new --topic product-intro --agent workbuddy --model GLM-5.3-Flash --run-id demo --title "从一个选题到一条视频"
 list --topic product-intro
 ```
 
-新任务应使用 `--topic` 和 `--agent`；`--run-id` 不传时自动生成 UTC 时间+随机后缀。目录/内容 ID 为 `<topic>-<agent>-<run_id>`，不超过64字符，topic 最多24、agent 最多16、run-id 最多22字符（小写字母、数字、连字符）。`--model` 仅记录宿主可核实的实际模型名，未知省略。
+新任务应使用 `--topic` 和 `--agent`；能核实当前模型时再传 `--model`，不得猜测。`--run-id` 不传时自动生成 UTC 分钟+随机后缀（例如 `202610172025-abcde`）。**目录/内容 ID 为 `<topic>-<agent>-<model_slug>-<run_id>`**，例如 `product-intro-workbuddy-glm-5-3-flash-demo`；没有可靠模型名时目录含 `model-unknown`，而 `model_id` 保持 null。模型原名不修改，路径使用小写、数字、连字符及必要时带哈希的截断标签。整个内容 ID 最长 64 字符；过长时先缩短模型标签（保留哈希以区分不同模型），仍放不下则要求缩短 topic 或 run-id；原项目不重命名。
 
-`content.json` schema 4 包含 `content_id/topic_id/agent_id/model_id/run_id/skill_version`、创建时间、初始发布范围和可选 parent。身份是当前宿主声明，不是身份认证。后续脚本、音轨检查、渲染记录和平台包可通过该身份追溯；平台包额外提供 `<content_id>.mp4` 建议导出文件名。内部 `video/master.mp4` 路径保持兼容。
+`content.json` schema 4 包含 `content_id/topic_id/agent_id/model_id/model_slug/run_id/skill_version`、创建时间、初始发布范围和可选 parent。身份是当前宿主声明，不是身份认证。后续脚本、音轨检查、渲染记录和平台包可通过该身份追溯；平台包额外提供 `<content_id>.mp4` 建议导出文件名。内部 `video/master.mp4` 路径保持兼容。
 
 同一主题的独立 A/B 作品使用相同 topic、不同 Agent/轮次；接力创作加 `--parent-id <来源ID>`，会记录源 content/script/video 已存在文件的哈希，**不会复制、修改源文件或扩大原发布授权**。源主题不符、ID 已占用、非法路径会在创建前拒绝。一个内容 ID 同时只允许一个写者；本版本不是并发协作锁系统。
 
@@ -35,6 +35,21 @@ list --topic product-intro
 该例只演示字段，不是所有产品的固定定位。`title/narration/shots/duration_seconds/platforms/article_markdown` 仍由 Agent 真实编写；分镜每项有 `seconds/visual/voiceover`，时间之和应等于总时长。平台使用 `xiaohongshu/douyin/tencent/bilibili/kuaishou/wechat_oa/zhihu`，每个平台至少有 title、tags。
 
 `review.json` 保留 `result/checks/facts_to_verify/issues/script_sha256/review_standard_sha256`；schema 4 另须 `focus_alignment: {"result":"PASS","reason":"具体口播、镜头如何服务主线的依据"}`。CLI 检查结构和版本，不会替 Agent 理解观众或判断主次是否真的正确。禁止以“填了字段”“环境检查通过”冒充内容质量。
+
+## 字幕排版：预留画面空间并检查碰撞
+
+烧录字幕时不能把正文卡片和字幕独立地画到同一高度。1080×1920 的程序化竖屏画面推荐使用：
+- **主要内容区**：重要文字、卡片、图表的底边不超过画高 72%（1920p 约 y=1382）；
+- **字幕专用区**：高度 76%～92%（约 y=1459～1766），两侧至少 7%（约 76 像素），字幕最多两行；不在此区放页脚注释、手机框或其他重要信息。
+- **平台 UI 预留**：92% 以下不应放必须阅读的信息，考虑各平台控件的实际遮挡。
+
+自绘渲染器应使用实际字体 `textbbox` 连同背景条、描边计算 bounding boxes，并按镜头输出布局 JSON，例如：
+
+```json
+{"width":1080,"height":1920,"shots":[{"content_boxes":[[90,200,990,1320]],"subtitle_boxes":[[90,1490,990,1680]]}]}
+```
+
+运行 `python scripts/subtitle_layout.py --layout <布局文件.json>`，失败必须移开冲突元素、重新计算布局再渲染。**此工具只检查渲染器声明的坐标，不自动识别 MP4 里的物体。** 成片后仍需从最终 MP4 的每个含字幕镜头抽取字幕正在显示的帧，检查字幕是否压住正文、内容卡片、底部说明及文字自身换行。`video/review.json` 中应独立记录字幕无遮挡检查的具体时间点；无实际画面核对证据不能以“SRT 正确”“字幕可读”冒充布局 PASS。
 
 ## 发音预检 → TTS → 装配
 

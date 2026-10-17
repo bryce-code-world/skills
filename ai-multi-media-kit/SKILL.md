@@ -10,11 +10,11 @@ description: 根据用户内容目标与企业知识库，自动完成短视频�
 ## 内容生产
 
 1. 从真实用户任务区分“观众要了解的核心价值”和“本次工程测试项”。在 `brief.md` 中明确目标受众、主线、次级优势与证据展示；测试安装、路径复用不自动成为视频的宣传主线。通用 Skill 不替所有产品固定卖点。只有本次明确介绍本套件时，才参考 [套件介绍样例定位](docs/examples/ai-multi-media-kit-introduction.md)。
-2. **新项目必须有归属**：`studio new --topic <共同主题> --agent <当前实际宿主> --title "主题"` 自动生成 `<topic>-<agent>-<run_id>` 目录。模型能核实才传 `--model`，不能猜。用 `studio list --topic <主题>` 对比成果。协作接力用 `--parent-id <来源ID>` 新建独立轮次并记录源哈希，不覆盖另一 Agent 的项目；不并发写同一 ID。旧 `--id` 仅用于兼容，不作为新任务默认入口。
+2. **新项目必须有归属**：`studio new --topic <共同主题> --agent <当前实际宿主> --title "主题"` 自动生成 `<topic>-<agent>-<model_slug>-<run_id>` 目录。模型能核实必须传 `--model`，目录名可读缩写，原始值完整保存在 `content.json.model_id`；未知时目录标为 `model-unknown`，不能猜。用 `studio list --topic <主题>` 对比成果。协作接力用 `--parent-id <来源ID>` 新建独立轮次并记录源哈希，不覆盖另一 Agent 的项目；不并发写同一 ID。旧 `--id` 仅用于兼容，不作为新任务默认入口。
 3. 结合知识库调用 `ai-media-topics/scripts`，形成正式 `script.json` 和 `editorial_intent`。先由 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>` 检查口播、字幕一致性及已知易错词。出现风险则由 Agent 在保持原义的前提下改写正式口播/字幕后重跑；不得将拼音或不受支持的 SSML 塞进最终字幕/TTS，也不逐字全局替换多音字。
 4. 调用 `ai-media-review`，检查 `focus_alignment`：主线是否对应核心价值、次级卖点是否喧宾夺主。`review.json` 必须与当前脚本、审核标准绑定。AI 未通过就自行修正，最多三轮，不请求用户逐阶段读稿审批。语义对齐需要真实审稿，CLI 仅验证结构与记录。
 5. `speech-plan` READY 后只使用其导出的逐镜头文本生成 TTS WAV；`studio voiceover --takes ...` 交给 FFmpeg 正确重采样、配时并记录音色与输入哈希。预检只覆盖已知词典，**不是所有汉字的发音验证**。优先真实操作/使用场景/结果对比和合法素材，不默认把流程图/PPT 当成吸引人的视频。
-6. `studio render` 或 `import-video` 生成真实 MP4，自动检查时长、音轨有效声音与长静音。Agent 另需实际查看镜头/字幕并试听配音，在 `video/review.json` 写入有时间点的 `pronunciation_check`。ASR/波形/无静音不能充当试听证明；无音频输入能力时保留未验证状态、交付技术测试结果，不编造 PASS。无需真人阶段批准。
+6. 烧录字幕前给画面保留独立安全区：重要文字/卡片底边不得超过画高的 72%；字幕在 76%～92% 高度之间，左右留至少 7%。用 `scripts/subtitle_layout.py --layout <分镜坐标JSON>` 检查声明的坐标/碰撞，随后**从最终 MP4 每个有字幕的镜头抽帧检查遮挡**，不能把“字幕可读”当成“字幕没有压住正文”。`studio render` 或 `import-video` 生成真实 MP4，自动检查时长、音轨有效声音与长静音。Agent 另需实际查看镜头/字幕并试听配音，在 `video/review.json` 写入有时间点的 `pronunciation_check`。ASR/波形/无静音不能充当试听证明；无音频输入能力时保留未验证状态、交付技术测试结果，不编造 PASS。无需真人阶段批准。
 7. 全部质量检查通过才 `studio package`。`content.json`、渲染记录、配音记录和发布包保留主题、Agent、模型（未知为 null）、轮次及来源信息。用户仅要求制作/测试时不设置 `publish_targets`，不登录或投稿；公开发布必须来自初始用户任务明确的平台/账号授权，详情见 [内容契约](docs/CONTENT_SCHEMA.md)。
 
 ## 环境是执行条件，不是默认创作主题

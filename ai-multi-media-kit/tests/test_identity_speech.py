@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(SOURCE/'scripts'))
 
 
 class IdentitySpeechTests(unittest.TestCase):
@@ -37,7 +38,8 @@ class IdentitySpeechTests(unittest.TestCase):
         p = self.call('new', '--topic', 'intro', '--agent', agent, '--run-id', run,
                       '--title', '从主题到视频的自动化流程', *args)
         self.assertEqual(p.returncode, 0, p.stderr)
-        return self.output/f'intro-{agent}-{run}'
+        cid=next(line.split('=',1)[1] for line in p.stdout.splitlines() if line.startswith('CONTENT_ID='))
+        return self.output/cid
 
     def script(self, d, text='告诉助手一个主题，就能开始制作视频。'):
         data = {'content_id': d.name, 'title': '从主题到视频的自动化流程', 'duration_seconds': 5,
@@ -71,6 +73,35 @@ class IdentitySpeechTests(unittest.TestCase):
         self.assertEqual(p.returncode,0,p.stderr)
         self.assertEqual({x['agent_id'] for x in json.loads(p.stdout)['items']},{'trae','workbuddy'})
         self.assertEqual(json.loads(self.call('list','--topic','other').stdout)['items'],[])
+
+    def test_model_slug_appears_in_folder_but_original_model_preserved(self):
+        d = self.new('trae', 'r2', '--model', 'MiMo-V2.6-Flash')
+        self.assertEqual(d.name, 'intro-trae-mimo-v2-6-flash-r2')
+        data=json.loads((d/'content.json').read_text('utf8'))
+        self.assertEqual(data['model_id'], 'MiMo-V2.6-Flash')
+        self.assertEqual(data['model_slug'], 'mimo-v2-6-flash')
+
+    def test_missing_model_is_labeled_unknown_in_folder_not_invented(self):
+        d=self.new()
+        self.assertEqual(d.name, 'intro-workbuddy-model-unknown-r1')
+        data=json.loads((d/'content.json').read_text('utf8'))
+        self.assertIsNone(data['model_id'])
+        self.assertEqual(data['model_slug'], 'model-unknown')
+
+    def test_distinct_long_models_truncate_with_hash_and_preserve_source(self):
+        from content_identity import new_identity
+        from types import SimpleNamespace
+        common={'topic':'amk-workflow-intro', 'agent':'workbuddy', 'id':None,
+                'run_id':'202610172023-ab123','parent_id':None}
+        models=['Claude Sonnet 4.5 - Optimized-Alpha', 'Claude Sonnet 4.5 - Optimized-Beta']
+        ids=[]
+        for raw in models:
+            result=new_identity(SimpleNamespace(**common, model=raw))
+            self.assertLessEqual(len(result['content_id']),64)
+            self.assertEqual(result['model_id'],raw)
+            self.assertIn('workbuddy-',result['content_id'])
+            ids.append(result['content_id'])
+        self.assertNotEqual(ids[0],ids[1])
 
     def test_auto_run_ids_are_unique_and_keep_agent_in_path(self):
         for _ in range(2):

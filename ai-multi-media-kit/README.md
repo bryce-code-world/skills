@@ -18,7 +18,7 @@ https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
 
 ## 新项目的归属、主次与发音准备
 
-`studio new --topic <共同主题> --agent <实际宿主> --title "主题"` 自动创建 `<topic>-<agent>-<run_id>/`，保存主题、宿主、模型（未知为 null）和轮次；`studio list --topic` 用于对比，`--parent-id` 记录接力来源哈希。旧目录不移动，旧 `--id` 命令只作为兼容入口，未知作者不猜测。
+`studio new --topic <共同主题> --agent <实际宿主> --title "主题"` 自动创建 `<topic>-<agent>-<model_slug>-<run_id>/`，原始模型名保存在 `content.json.model_id`，目录使用可读、合法的短标签（未知显示 `model-unknown`）；`studio list --topic` 用于对比，`--parent-id` 记录接力来源哈希。旧目录不移动，旧 `--id` 命令只作为兼容入口，未知作者不猜测。
 
 脚本以 `editorial_intent` 明确核心价值和次级优势，审核以 `focus_alignment` 核对实际口播/镜头。**视频生产流程是本套件介绍的主线，跨 Agent 复用是辅助优势**；[本套件专用定位](docs/examples/ai-multi-media-kit-introduction.md) 只用于介绍本产品，不绑定其他产品创作。
 
@@ -59,6 +59,6 @@ Windows 在 `%LOCALAPPDATA%\ai-multi-media-kit\local-install.json`，macOS/Linux
 
 ## 工具与能力边界
 
-优先合法素材、真实操作/场景/对比镜头，不能因为 Pillow 稳定就把六张技术 PPT 当成可发布短视频。新增 `studio voiceover`：TTS 先生成逐镜头 WAV，由 FFmpeg 统一重采样与合成，禁止 Agent 临时手写 PCM 循环。`studio check/package` 会解码实际 MP4 拦截严重加速/长静音，AI 自报 PASS 不能覆盖；中文自然度、字幕真实时间点、镜头节奏仍需 Agent 实际试听/看画面。Windows SAPI/Huihui 只能当技术验证回退，非成片级配音保证。素材许可必须可追溯。
+优先合法素材、真实操作/场景/对比镜头，不能因为 Pillow 稳定就把六张技术 PPT 当成可发布短视频。新增 `studio voiceover`：TTS 先生成逐镜头 WAV，由 FFmpeg 统一重采样与合成，禁止 Agent 临时手写 PCM 循环。`studio check/package` 会解码实际 MP4 拦截严重加速/长静音，AI 自报 PASS 不能覆盖；中文自然度、字幕真实时间点、镜头节奏仍需 Agent 实际试听/看画面。烧录字幕须预留独立的 76%～92% 画高安全区、重要内容不得低于 72%，用 `scripts/subtitle_layout.py --layout` 预检坐标，并逐镜头检查最终 MP4；否则字幕可能像前期测试一样遮挡正文。Windows SAPI/Huihui 只能当技术验证回退，非成片级配音保证。素材许可必须可追溯。
 
 安装脚本、审批迁移、平台兼容和已测范围参见 [首次使用](docs/START_HERE.md) · [Agent 兼容](docs/AGENT_COMPATIBILITY.md) · [内容与质量](docs/CONTENT_SCHEMA.md) · [素材源](docs/MATERIAL_SOURCES.md) · [工具链](docs/TOOLCHAIN.md) · [验收矩阵](docs/ACCEPTANCE_V3.md)。
