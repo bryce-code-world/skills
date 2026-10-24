@@ -16,7 +16,7 @@ This repository follows the standard `SKILL.md` directory structure.
 
 | Skill | Purpose |
 |---|---|
-| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Video-production workflow with creator attribution, pronunciation preflight, editorial review, media rendering, and reusable local tools. |
+| [ai-multi-media-kit](./ai-multi-media-kit/SKILL.md) | Fast, editable Remotion videos using video-shotcraft, plus an optional full workflow for scripting, voice, reviews, assets, distribution, and cross-agent reuse. |
 | [Hello](./hello/SKILL.md) | Build and maintain a user-controlled, layered personal profile package through ongoing interviews and cross-session candidate discovery; the panorama file is an aggregate index in the target layout, while compatibility spaces still keep the legacy single-file body. |
 | [Eagle Eye](./eagle-eye/SKILL.md) | Find and verify timely AI topics for a target audience, with evidence-backed original angles. |
 | [Lightning](./lightning/SKILL.md) | Reshape internal documents for fast human reading and clear AI action without losing critical information. |

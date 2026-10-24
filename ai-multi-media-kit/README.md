@@ -4,6 +4,21 @@
 
 支持小红书、抖音、微信视频号、B站、快手的短视频准备，以及微信公众号、知乎的图文衍生稿；真实投稿能力须按具体工具、平台和账号单独验证，不能把发布包等同于已发布。
 
+## 快速创作（单条视频首选）
+
+`studio quick` 复用本机安装的 **video-shotcraft + Remotion**，让 Agent 把用户需求、真实截图和配音转成一条可编辑的短片。不用为单条视频先配置七个平台、Model API 或多 Agent 流程；默认 9:16，支持 16:9。素材不足时使用明确的概念画面，不伪造真实软件界面。
+
+Agent 准备最小 [JSON 分镜](docs/QUICK_VIDEO.md) 后，在已有工作区运行：
+
+```powershell
+& "<已有工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic demo --agent codex --dry-run
+& "<已有工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic demo --agent codex
+```
+
+输出统一在 `workspace.json.output_root/<内容ID>/`：`video/master.mp4`、`src/`（Remotion 工程）、`public/`（原始授权素材）及回溯记录。没有配音会明确标注，不冒充成片级语音。**快速模式仅产生技术预览**：`studio package` / `publish` 的原双层审核与权限检查不变。
+
+完整制作、知识库、跨 Agent、自动校验、平台适配仍使用下面的全流程。详细输入/技术边界和验证方法见 [快速创作说明](docs/QUICK_VIDEO.md)。
+
 ## 交给 AI Agent 安装
 
 将下面的 Skill 地址交给当前支持 Agent Skills、且拥有本机文件和终端权限的 Agent：

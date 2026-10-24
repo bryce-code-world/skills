@@ -34,6 +34,9 @@ class UpgradeTests(unittest.TestCase):
             self.assertEqual(legacy.read_bytes(),(SRC/'AGENTS.md').read_bytes())
             self.assertEqual(marker.read_text(encoding='utf-8'),'用户自有品牌定位，请勿覆盖')
             self.assertEqual((home/'references/release.json').read_bytes(),(SRC/'references/release.json').read_bytes())
+            self.assertEqual((home/'SKILL.md').read_bytes(), (SRC/'SKILL.md').read_bytes())
+            self.assertEqual((home/'assets/quick-remotion/Quick.tsx').read_bytes(),
+                             (SRC/'assets/quick-remotion/Quick.tsx').read_bytes())
             backups=list((home/'backups').glob('core-before-*/AGENTS.md'))
             self.assertEqual(len(backups),1)
             self.assertEqual(backups[0].read_text(encoding='utf-8'),'旧版本用户已有规则')

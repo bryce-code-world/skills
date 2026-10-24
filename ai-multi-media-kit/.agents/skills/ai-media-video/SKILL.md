@@ -4,6 +4,8 @@ description: 将已审核脚本、经过发音预检的 TTS 文本和合法素�
 ---
 # 视频制作
 
+用户只要求快速生成可编辑的单条视频时，优先使用 [快速创作模式](../../../docs/QUICK_VIDEO.md)：Agent 准备真实素材、简短分镜和可用自然配音，再由 `studio quick` 调用 video-shotcraft/Remotion 输出技术预览；保留关键帧检查和素材许可，不伪造审核或发布。以下步骤用于**完整内容生产、审核和正式发布**。
+
 1. 先 `studio check` 核实当前脚本审核，再准备配音。新项目必须先有 `studio speech-plan --id <ID> --tts-engine <实际服务> --voice <实际音色>` 的 READY 记录。它将普通口播逐镜头导出为 `work/tts-inputs/<脚本哈希>/shot-NNN.txt`，只用这些文本合成 WAV。已知多音词风险由 Agent 按语境改稿并同步字幕，不自动把中文替换为拼音，也不假设所有 TTS 支持 SSML/phoneme。
 2. 选择已获许可、费用可确认且实际可用的中文 TTS；记录服务/音色。不同音色不能等同不同 Agent 的语言能力。SAPI/Huihui 可作技术回退，不自动代表正式内容质量。`speech-plan` READY 只是已知词风险预检，不保证不存在其他错读。
 3. 按镜头顺序将真实 WAV 交给 `studio voiceover --id <ID> --takes ...`。FFmpeg 负责正确重采样与时间轴装配，禁止手写 PCM 插值或加速语音硬塞镜头。输出 `work/narration.wav`、输入音频哈希和绑定当前脚本/发音计划的 `voiceover-check.json`。脚本或音色改变后，重新规划、生成配音，不复用旧音轨。

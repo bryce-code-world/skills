@@ -15,8 +15,8 @@ def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
 def owned_files():
-    names=['AGENTS.md','README.md','SETUP-WINDOWS.cmd','SETUP-WINDOWS.ps1','SETUP-UNIX.sh','RUN-STUDIO-WINDOWS.ps1','run-studio.sh','start-codex.cmd','start-codex.sh','.gitignore']
-    names += [p.relative_to(SOURCE).as_posix() for f in ('scripts','docs','knowledge-templates')
+    names=['SKILL.md','AGENTS.md','README.md','SETUP-WINDOWS.cmd','SETUP-WINDOWS.ps1','SETUP-UNIX.sh','RUN-STUDIO-WINDOWS.ps1','run-studio.sh','start-codex.cmd','start-codex.sh','.gitignore']
+    names += [p.relative_to(SOURCE).as_posix() for f in ('scripts','docs','knowledge-templates','assets/quick-remotion')
               for p in (SOURCE/f).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc']
     # Include nested own skill resources too.
     names += [p.relative_to(SOURCE).as_posix() for p in (SOURCE/'.agents/skills').rglob('*')

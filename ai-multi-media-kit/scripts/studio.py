@@ -648,6 +648,11 @@ def cmd_status(a):
     print(json.dumps(result,indent=2,ensure_ascii=False))
 
 
+def cmd_quick(a):
+    from quick_video import run_quick
+    run_quick(a, sys.modules[__name__])
+
+
 def parse():
     parser=argparse.ArgumentParser(description='AI Media Studio - 一次任务授权与 AI 自主质量闭环')
     parser.add_argument('--root',required=True,help='安装根目录（与 config/workspace.json 一致）')
@@ -661,6 +666,15 @@ def parse():
     n.add_argument('--publish-target',action='append',help='仅在初始用户任务明确要求公开发布时填写 platform:account；可重复')
     n.add_argument('--task-ref',help='原始用户任务消息引用（有则记录，不包含凭据）')
     n.set_defaults(func=cmd_new)
+    q=sub.add_parser('quick',help='用简短分镜和现有 video-shotcraft 生成可编辑 MP4，不启用发布流程')
+    q.add_argument('--spec',required=True,help='AI 编写的 JSON 分镜（可含本地图片和配音路径）')
+    q.add_argument('--topic',required=True,help='项目主题标识，供多 Agent 成果分组')
+    q.add_argument('--agent',required=True,help='当前 Agent/宿主标识')
+    q.add_argument('--model',help='仅传已经核实的实际模型名称')
+    q.add_argument('--run-id',help='可选轮次 ID；省略时自动生成')
+    q.add_argument('--shotcraft-dir',help='video-shotcraft Skill 根目录，默认 ~/.codex/skills/video-shotcraft')
+    q.add_argument('--dry-run',action='store_true',help='只检查输入、依赖和目标路径，不创建项目')
+    q.set_defaults(func=cmd_quick)
     ls=sub.add_parser('list');ls.add_argument('--topic');ls.set_defaults(func=cmd_list)
     speech=sub.add_parser('speech-plan');speech.add_argument('--id',required=True);speech.add_argument('--tts-engine',required=True);speech.add_argument('--voice',required=True);speech.add_argument('--replace',action='store_true');speech.set_defaults(func=cmd_speech_plan)
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)

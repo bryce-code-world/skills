@@ -16,7 +16,7 @@
 
 | Skill | 作用 |
 |---|---|
-| [AI 多媒体生产套件（ai-multi-media-kit）](./ai-multi-media-kit/SKILL.md) | 把选题、脚本、读音预检、素材、视频制作与质量闭环组织成自动流程，支持创作归属、可追溯交付和跨宿主环境复用。 |
+| [AI 多媒体生产套件（ai-multi-media-kit）](./ai-multi-media-kit/SKILL.md) | 既可借助 video-shotcraft / Remotion 快速生成可编辑视频，也可使用完整的选题、脚本、配音、审核、素材、发布和跨 Agent 工作流。 |
 | [你好（hello）](./hello/SKILL.md) | 通过持续访谈和跨会话候选发现，建立并维护用户掌控的分层个人资料包；目标架构中《个人全景档案》是聚合索引，当前兼容空间仍保留单文件正文。 |
 | [鹰眼（eagle-eye）](./eagle-eye/SKILL.md) | 面向目标读者发现、核验并交付值得写且具有独特角度的 AI 选题。 |
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |

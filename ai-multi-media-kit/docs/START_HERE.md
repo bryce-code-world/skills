@@ -37,6 +37,12 @@ bash ./SETUP-UNIX.sh --install-root "$HOME/media-tools" --knowledge-root "$HOME/
 
 重新安装 Skill 源码不会自动覆盖用户的旧运行环境或独立项目成果目录。应由 Agent 使用**新获取的 Skill 源码目录**下的 `scripts/upgrade_core.py --root <已有工具目录> --apply`，先备份将覆盖的 Skill 自有文件，再更新；用户知识库、outputs、账号与 runtime 不变。当前版本 `--apply` 不要求额外升级口令。完成后从原绝对路径重新运行 `doctor` 和回归检查。只运行已有工作区内部的旧版升级脚本可能无法获取新源码，不能误报已更新。
 
+## 快速成片（避免冗余配置）
+
+已经有共享工具工作区时，Agent 可直接执行 `RUN-STUDIO-WINDOWS.ps1 -Task studio quick --spec <分镜.json> --topic <主题> --agent <宿主>`，不需要重新初始化工具、知识库或七个平台。先用 `--dry-run` 只读检查，再生成 MP4 和可编辑 Remotion 工程。必须已安装 Node/npm 及 video-shotcraft；未安装时明确报告，不自动申请付费服务。
+
+**此模式只是技术预览**，不代表脚本、读音和成片质量已获批准，更不会直接发布。具体格式见 [快速创作指南](QUICK_VIDEO.md)。
+
 ## 自动化日常执行
 
 Agent 使用已初始化工具目录的绝对路径调用启动器：
