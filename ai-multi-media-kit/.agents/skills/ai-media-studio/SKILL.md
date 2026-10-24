@@ -9,7 +9,7 @@ description: 在已初始化工作区执行需要企业知识库、脚本审核�
 1. 从用户任务固定核心价值、次级卖点、展示证据和发布边界，生成 brief；仅制作不获得发布权限。
 2. 用 `studio new --topic <共用主题> --agent <实际宿主> --title "主题"` 新建独立运行目录，已知模型传 `--model`，未知则省略、不猜测。接力用 `--parent-id` 记录来源哈希，不修改其他 Agent 的目录；`studio list --topic` 用于对比。
 3. 按任务读取 ai-media-topics/ai-media-scripts 编稿，填 editorial_intent。选择实际可用的 TTS 服务与音色，执行 speech-plan；按上下文处理已知读音风险，同步口播、字幕后重跑至 READY。
-4. 按 ai-media-review 审核稳定脚本及主次对齐，记录与当前脚本绑定的 focus_alignment。此后如再改稿，重新生成计划并审核，不能沿用旧记录。使用 READY 导出的文本生成逐镜头 WAV，再由 voiceover 交给 FFmpeg 装配。
+4. 按 ai-media-review 审核稳定脚本及主次对齐。使用 READY 导出的完整语义段生成 WAV，再由 voiceover 装配。改稿后更新计划和审核；原始音频的复用条件见根 docs/CONTENT_SCHEMA.md，不因画面调整重做全部 TTS。
 5. 按需读取 ai-media-materials 核对合法素材，由 ai-media-video 制作真实 MP4。工程检查、画面检查和实际试听分别完成；pronunciation_check 需有真实时间点证据，ASR 不能取代试听，能力不足保留未验收状态。
 6. 当前版本全部审核通过再 package；公开发布按初始指定平台与账号范围执行。无需逐阶段人工审批，最多三轮返工。具体质量与发布约束不在此重复，按根 docs/CONTENT_SCHEMA.md 执行。
 

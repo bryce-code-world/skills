@@ -88,12 +88,12 @@ def paths(root: Path, content_id: str):
     return d
 
 
-def ensure_reviewed_script(d: Path, knowledge: Path):
+def ensure_reviewed_script(d: Path, knowledge: Path, *, platforms=None):
     j = d / 'script.json'
     r = d / 'review.json'
     if not j.is_file() or not r.is_file():
         fail('缺少脚本或 AI 审核结果，请自动生成并审核')
-    script = check_script(d)
+    script = check_script(d, platforms=platforms)
     review = load(r)
     if review.get('result') != 'PASS' or not review.get('checks') or any(
             not isinstance(c, dict) or c.get('result') != 'PASS' for c in review['checks']):
@@ -116,8 +116,8 @@ def video_path(d):
     return d / 'video' / 'master.mp4'
 
 
-def ensure_video_ready(d: Path, knowledge: Path, root: Path):
-    script = ensure_reviewed_script(d, knowledge)
+def ensure_video_ready(d: Path, knowledge: Path, root: Path, *, platforms=None):
+    script = ensure_reviewed_script(d, knowledge, platforms=platforms)
     v = video_path(d)
     meta_path = d / 'video' / 'render.json'
     review_path = d / 'video' / 'review.json'
@@ -141,7 +141,7 @@ def ensure_video_ready(d: Path, knowledge: Path, root: Path):
     if load(d/'content.json').get('schema',3) >= 4:
         plan_sha = filehash(d/'work/speech-plan.json')
         if meta.get('speech_plan_sha256') != plan_sha:
-            fail('配音计划/音色已变化，需重新生成并渲染，不能复用旧成片验收')
+            fail('配音计划已变化；请核对配音、更新装配和渲染并重新审核，不能复用旧成片验收')
         validate_audio_review(review, script['duration_seconds'], plan_sha)
     # An AI-authored PASS is insufficient: inspect the *actual* encoded soundtrack.
     ffmpeg = load_ffmpeg_bin(root, 'ffmpeg')
@@ -201,8 +201,7 @@ def cmd_new(a, *, quiet=False):
           'narration':'请由当前 AI Agent 完成真实口播稿',
           'editorial_intent':{'audience':'','primary_value':'','secondary_values':[], 'evidence_plan':[]},
           'shots':[{'seconds':30,'visual':'可取得的实际演示镜头','voiceover':'请填写最终口播'}],
-          'platforms':{p:{'title':'','description':'','tags':[]} for p in PLATFORMS},
-          'article_markdown':'公众号/知乎衍生图文（如适用）'})
+          'platforms':{}})
     save(d/'review.template.json', {'result': 'REVISE', 'score': 0,
          'script_sha256': '运行 studio hash 获得', 'review_standard_sha256': filehash(knowledge/'review-rules.md'),
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
@@ -240,7 +239,7 @@ def cmd_hash(a):
     print(json.dumps(hashes,ensure_ascii=False,indent=2))
 
 
-def check_script(d):
+def check_script(d, *, platforms=None):
     script_path = d/'script.json'
     if not script_path.is_file():
         fail('缺少 script.json（不是 script.template.json），请由 当前 AI Agent 生成')
@@ -266,11 +265,14 @@ def check_script(d):
             if not isinstance(intent.get(key),list) or not all(isinstance(x,str) and x.strip() for x in intent[key]):
                 fail(f'editorial_intent.{key} 必须为文本列表')
         if not intent['evidence_plan']: fail('必须给出核心价值的实际展示计划 evidence_plan')
-    if not isinstance(j.get('platforms'),dict): fail('platforms 必须是对象')
-    for p in PLATFORMS:
-        item=j['platforms'].get(p)
-        if not isinstance(item,dict) or not item.get('title') or not isinstance(item.get('tags'),list):
-            fail(f'平台 {p} 缺少 title 或 tags')
+    metadata = j.get('platforms', {})
+    if not isinstance(metadata,dict): fail('platforms 必须是对象；只制作 MP4 时可省略或留空')
+    for p in metadata if platforms is None else platforms:
+        if p not in PLATFORMS: fail(f'不支持的平台 {p}')
+        item = metadata.get(p)
+        if (not isinstance(item,dict) or not isinstance(item.get('title'),str) or not item['title'].strip()
+                or not isinstance(item.get('tags'),list) or not all(isinstance(tag,str) for tag in item['tags'])):
+            fail(f'平台 {p} 缺少 title 或 tags；发布包只需补齐本次选定的平台')
     return j
 
 
@@ -370,7 +372,9 @@ def cmd_speech_plan(a):
     report = build_plan(script,filehash(d/'script.json'),rules,rules_sha,a.tts_engine,a.voice)
     target = d/'work/speech-plan.json'
     if target.exists() and not a.replace:
-        if load(target) != report: fail('已有发音计划；改稿后请加 --replace 更新，旧音频须重新生成')
+        if load(target) != report:
+            fail('已有发音计划；请加 --replace 更新。口播文本及实际引擎/音色未变的原始 take 可复用，'
+                 '随后重新执行 voiceover 装配和检查；仅重新生成改稿涉及的片段')
     if report['result'] == 'READY':
         for take in report['takes']:
             dest = d/take['text_file']
@@ -417,7 +421,8 @@ def cmd_render(a):
         report = load(report_path)
         if (report.get('audio_sha256') != filehash(audio) or report.get('script_sha256') != filehash(d/'script.json') or
                 report.get('speech_plan_sha256') != filehash(d/'work/speech-plan.json')):
-            fail('配音文件与当前脚本/发音计划不一致，必须重新生成配音')
+            fail('配音装配记录与当前脚本/发音计划不一致；更新 speech-plan 后重新执行 voiceover 装配和检查。'
+                 '口播文本及实际引擎/音色未变的原始 take 可复用，仅重新生成改稿涉及的片段')
     if a.material_ids and a.materials:
         fail('--material-ids 与 --materials 只能选择一种')
     selected = []
@@ -501,11 +506,11 @@ def cmd_import_video(a):
 
 def cmd_package(a):
     root,k=workspace(a.root); d=paths(root,a.id)
-    script=check_script(d)
     targets=list(PLATFORMS) if a.platform=='all' else [a.platform]
+    script=check_script(d,platforms=targets)
     # A seven-platform package must not decode the same MP4 five times.
-    if any(p in VIDEO_PLATFORMS for p in targets): ensure_video_ready(d,k,root)
-    if any(p not in VIDEO_PLATFORMS for p in targets): ensure_reviewed_script(d,k)
+    if any(p in VIDEO_PLATFORMS for p in targets): ensure_video_ready(d,k,root,platforms=targets)
+    if any(p not in VIDEO_PLATFORMS for p in targets): ensure_reviewed_script(d,k,platforms=targets)
     for p in targets:
         if (d/'platforms'/p/'package.json').exists() and not a.replace:
             fail(f'{p} 发布包已存在，使用 --replace 才能覆盖；没有修改任何平台包')
@@ -565,12 +570,12 @@ def cmd_publish(a):
             pack.get('script_sha256')!=filehash(d/'script.json')):
         fail('发布包与当前脚本版本不一致，需要重新打包')
     if p in VIDEO_PLATFORMS:
-        ensure_video_ready(d,k,root)
+        ensure_video_ready(d,k,root,platforms=[p])
         if (pack.get('video_sha256')!=filehash(video_path(d)) or
                 pack.get('video_review_sha256')!=filehash(d/'video'/'review.json')):
             fail('发布包与当前成片/AI 审核版本不一致，需要重新打包')
     else:
-        ensure_reviewed_script(d,k)
+        ensure_reviewed_script(d,k,platforms=[p])
     if p not in VIDEO_PLATFORMS:
         print(f'{p} 暂未接入经验证的自动投稿接口，已准备图文包：{pack.get("article_path")}')
         return

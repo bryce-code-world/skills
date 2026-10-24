@@ -183,6 +183,93 @@ class IdentitySpeechTests(unittest.TestCase):
         self.write(d/'script.json',data)
         self.assertEqual(self.plan(d).returncode,2)
 
+    def test_tts_rejects_internal_layout_breaks_but_preserves_semantic_spaces(self):
+        d=self.new()
+        for separator in ('\n', '\r\n', '\t'):
+            with self.subTest(separator=repr(separator)):
+                data=self.script(d,'逐镜头配音按真实时长排进时间轴。')
+                data['shots'][0]['voiceover']='逐镜头配音按真实时'+separator+'长排进时间轴。'
+                self.write(d/'script.json',data)
+                p=self.plan(d)
+                self.assertEqual(p.returncode,2)
+                self.assertIn('内部换行或制表符',p.stderr)
+                self.assertFalse((d/'work/speech-plan.json').exists())
+        self.script(d,' \n请用 AI Agent 制作视频。\t\n')
+        p=self.plan(d)
+        self.assertEqual(p.returncode,0,p.stderr)
+        plan=json.loads((d/'work/speech-plan.json').read_text('utf8'))
+        self.assertEqual((d/plan['takes'][0]['text_file']).read_text('utf8'),'请用 AI Agent 制作视频。')
+
+    def test_speech_plan_needs_no_platforms_and_package_names_missing_target(self):
+        d=self.new();data=self.script(d)
+        self.assertEqual(json.loads((d/'script.template.json').read_text('utf8'))['platforms'],{})
+        data.pop('platforms');self.write(d/'script.json',data)
+        p=self.plan(d)
+        self.assertEqual(p.returncode,0,p.stderr)
+        p=self.call('package','--id',d.name,'--platform','douyin')
+        self.assertEqual(p.returncode,2)
+        self.assertIn('平台 douyin 缺少 title 或 tags',p.stderr)
+        self.assertNotIn('Traceback',p.stderr)
+        data['platforms']={'douyin':{'title':'从主题到视频','tags':[]}}
+        self.write(d/'script.json',data)
+        p=self.plan(d,'--replace')
+        self.assertEqual(p.returncode,0,p.stderr)
+        p=self.call('package','--id',d.name,'--platform','zhihu')
+        self.assertEqual(p.returncode,2)
+        self.assertIn('平台 zhihu 缺少 title 或 tags',p.stderr)
+        self.assertFalse((d/'platforms').exists())
+        data['platforms']['zhihu']={'title':'实际任务的内容结果','tags':[]}
+        data['platforms']['douyin']['title']=''  # An unrelated draft is not a prerequisite.
+        data['article_markdown']='# 本次内容\n原始文章测试夹具。'
+        self.write(d/'script.json',data)
+        hashes=json.loads(self.call('hash','--id',d.name).stdout)
+        self.write(d/'review.json',{**hashes,'result':'PASS','checks':[{'result':'PASS','rule':'测试夹具'}],
+            'facts_to_verify':[],'issues':[],
+            'focus_alignment':{'result':'PASS','reason':'测试夹具验证单个平台包的结构边界。'}})
+        p=self.call('package','--id',d.name,'--platform','zhihu')
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertEqual(json.loads((d/'platforms/zhihu/package.json').read_text('utf8'))['title'],'实际任务的内容结果')
+        self.assertFalse((d/'platforms/douyin').exists())
+
+    @unittest.skipUnless((os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')) and
+                         (os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')), 'FFmpeg not installed')
+    def test_timing_edit_reuses_original_take_but_requires_current_assembly(self):
+        import hashlib
+        import wave
+        d=self.new();data=self.script(d)
+        ff=os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
+        self.env['PATH']=str(Path(ff).parent)+os.pathsep+self.env.get('PATH','')
+        raw=self.base/'take.wav'
+        p=subprocess.run([ff,'-v','error','-y','-f','lavfi','-i',
+            'sine=frequency=300:duration=4.5:sample_rate=48000','-c:a','pcm_s16le',str(raw)],
+            capture_output=True,text=True,timeout=25)
+        self.assertEqual(p.returncode,0,p.stderr)
+        original_sha=hashlib.sha256(raw.read_bytes()).hexdigest()
+        self.assertEqual(self.plan(d).returncode,0)
+        old_plan=json.loads((d/'work/speech-plan.json').read_text('utf8'))
+        p=self.call('voiceover','--id',d.name,'--takes',raw)
+        self.assertEqual(p.returncode,0,p.stderr)
+        data['duration_seconds']=data['shots'][0]['seconds']=6
+        data['shots'][0]['visual']='放大实际结果，口播内容保持原样'
+        self.write(d/'script.json',data)
+        p=self.call('voiceover','--id',d.name,'--takes',raw,'--replace')
+        self.assertEqual(p.returncode,2)
+        self.assertIn('过期',p.stderr)
+        p=self.plan(d)
+        self.assertEqual(p.returncode,2)
+        self.assertIn('原始 take 可复用',p.stderr)
+        self.assertEqual(self.plan(d,'--replace').returncode,0)
+        current=json.loads((d/'work/speech-plan.json').read_text('utf8'))
+        self.assertEqual(current['takes'][0]['text_sha256'],old_plan['takes'][0]['text_sha256'])
+        p=self.call('voiceover','--id',d.name,'--takes',raw,'--replace')
+        self.assertEqual(p.returncode,0,p.stderr)
+        self.assertEqual(hashlib.sha256(raw.read_bytes()).hexdigest(),original_sha)
+        report=json.loads((d/'work/voiceover-check.json').read_text('utf8'))
+        self.assertEqual(report['script_sha256'],hashlib.sha256((d/'script.json').read_bytes()).hexdigest())
+        self.assertEqual(report['speech_plan_sha256'],hashlib.sha256((d/'work/speech-plan.json').read_bytes()).hexdigest())
+        with wave.open(str(d/'work/narration.wav'),'rb') as f:
+            self.assertAlmostEqual(f.getnframes()/f.getframerate(),6,places=3)
+
     def test_new_work_requires_speech_preflight_before_tts_assembly(self):
         d=self.new(); self.script(d)
         p=self.call('voiceover','--id',d.name,'--takes',self.base/'not-needed.wav')

@@ -56,6 +56,10 @@ def build_plan(script: dict, script_sha: str, rules: list[dict], rules_sha: str,
         spoken = shot.get('voiceover')
         if not isinstance(spoken, str) or not spoken.strip():
             raise ValueError(f'分镜 {i} 缺少正式口播 voiceover')
+        spoken = spoken.strip()
+        if re.search(r'[\r\n\t]', spoken):
+            raise ValueError(f'分镜 {i} 口播含内部换行或制表符；请保留完整连续语句，'
+                             '字幕显示换行放入 subtitle_lines，不要按显示行切分 TTS')
         if re.search(r'<[^>]+>', spoken):
             raise ValueError('口播须为普通文本；不能把未经适配验证的 SSML/phoneme 标签送给 TTS')
         if 'subtitle_text' in shot:
@@ -65,7 +69,7 @@ def build_plan(script: dict, script_sha: str, rules: list[dict], rules_sha: str,
             lines = shot['subtitle_lines']
             if not isinstance(lines, list) or not all(isinstance(x, str) for x in lines) or text_key(''.join(lines)) != text_key(spoken):
                 raise ValueError(f'分镜 {i} 字幕行与口播不一致')
-        texts.append(spoken.strip())
+        texts.append(spoken)
     if text_key(script['narration']) != text_key(''.join(texts)):
         raise ValueError('narration 与分镜口播不一致，发音改稿须同步更新')
     findings = [{'shot': i, **row} for i, text in enumerate(texts, 1) for row in rules if row['term'] in text]

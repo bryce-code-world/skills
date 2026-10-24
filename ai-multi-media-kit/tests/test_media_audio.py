@@ -98,6 +98,40 @@ class MediaAudioTests(unittest.TestCase):
             self.assertEqual(checked["result"], "PASS", checked)
 
     @unittest.skipUnless(ffbin("ffmpeg") and ffbin("ffprobe"), "FFmpeg not installed")
+    def test_last_take_must_fit_after_lead_in_without_truncating_tail(self):
+        from media_audio import mix_takes
+        with tempfile.TemporaryDirectory() as tmp:
+            raw, target = Path(tmp) / "take.wav", Path(tmp) / "narration.wav"
+            shots = [{"seconds": 2, "voiceover": "完整保留句尾"}]
+            wav(raw, 1.9, 48000)  # Previously accepted, then cut by the final atrim.
+            with self.assertRaisesRegex(ValueError, "0.15s 起点余量"):
+                mix_takes(ffbin("ffmpeg"), ffbin("ffprobe"), shots, [raw], target)
+            self.assertFalse(target.exists())
+            wav(raw, 1.85, 48000)
+            mix_takes(ffbin("ffmpeg"), ffbin("ffprobe"), shots, [raw], target)
+            with wave.open(str(raw), "rb") as f:
+                original = f.readframes(f.getnframes())
+            with wave.open(str(target), "rb") as f:
+                self.assertEqual(f.getnframes(), 2 * 48000)
+                rendered = f.readframes(f.getnframes())
+            lead_in_bytes = int(0.15 * 48000) * 2
+            self.assertEqual(rendered[:lead_in_bytes], b"\x00" * lead_in_bytes)
+            self.assertEqual(rendered[lead_in_bytes:], original)
+
+    def test_nonfinite_or_nonpositive_take_duration_is_rejected_before_render(self):
+        from media_audio import mix_takes
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            raw, target = Path(tmp) / "take.wav", Path(tmp) / "narration.wav"
+            raw.write_bytes(b"probe is mocked")
+            for duration in ("nan", "inf", "-inf", "0", "-1"):
+                with self.subTest(duration=duration), patch("media_audio._run", return_value=json.dumps({
+                        "format": {"duration": duration}})):
+                    with self.assertRaisesRegex(ValueError, "配音时长必须是有限正数"):
+                        mix_takes("ffmpeg", "ffprobe", [{"seconds": 2, "voiceover": "完整语句"}], [raw], target)
+                    self.assertFalse(target.exists())
+
+    @unittest.skipUnless(ffbin("ffmpeg") and ffbin("ffprobe"), "FFmpeg not installed")
     def test_studio_video_ready_blocks_broken_audio_despite_ai_pass(self):
         """An AI-written PASS must not override the deterministic audible-duration failure."""
         import studio

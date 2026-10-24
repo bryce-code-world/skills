@@ -36,7 +36,9 @@ list --topic product-intro
 }
 ```
 
-该例只演示字段，不是所有产品的固定定位。`title/narration/shots/duration_seconds/platforms/article_markdown` 仍由 Agent 真实编写；分镜每项有 `seconds/visual/voiceover`，时间之和应等于总时长。平台使用 `xiaohongshu/douyin/tencent/bilibili/kuaishou/wechat_oa/zhihu`，每个平台至少有 title、tags。
+该例只演示字段，不是所有产品的固定定位。`title/narration/shots/duration_seconds` 由 Agent 真实编写；分镜每项有 `seconds/visual/voiceover`，时间之和应等于总时长。
+
+只制作 MP4 时可省略 `platforms/article_markdown`。需要平台包时才补目标平台的 title、tags 和适配文案；支持 `xiaohongshu/douyin/tencent/bilibili/kuaishou/wechat_oa/zhihu`。只有公众号/知乎图文交付需要完整 `article_markdown`，不为凑字段生成占位文章。
 
 `review.json` 保留 `result/checks/facts_to_verify/issues/script_sha256/review_standard_sha256`；schema 4 另须 `focus_alignment: {"result":"PASS","reason":"具体口播、镜头如何服务主线的依据"}`。CLI 检查结构和版本，不会替 Agent 理解观众或判断主次是否真的正确。禁止以“填了字段”“环境检查通过”冒充内容质量。
 
@@ -67,17 +69,22 @@ render --id <内容ID> --materials <合法剪辑...> --rights-confirmed --audio 
 `speech-plan` 本身不调用语音服务，也不保证发音正确。它会：
 
 - 核对 `narration` 与各镜头 `voiceover`；已有 `subtitle_text/subtitle_lines` 也必须一致（允许标点/空格变化）。
+- 口播内部不得包含排版换行或制表符；字幕折行只保留在显示字段。分段与试听原则见 [口播、镜头与字幕](QUICK_VIDEO.md#口播镜头与字幕)。
 - 读取套件 `config/pronunciation.json` 中的已知易错词；可合并用户知识库的 `pronunciation.json`（同名词条以后者为准）。词典 schema=1，每项有 term、expected_reading、suggestion。默认只覆盖一组已知风险，不是完整汉字注音引擎。
 - 命中“重复”等词时输出 `work/speech-plan.json` 的 REVISE 和改写建议，退出2。Agent 按语境保留原义改写正式脚本及字幕，然后 `speech-plan ... --replace`；不全局替换单个汉字，不把拼音当字幕，不自行改为 READY。
 - READY 时导出 `work/tts-inputs/<脚本哈希>/shot-NNN.txt`。记录脚本/词典/文本哈希、服务、音色及 `pronunciation_verified=false`。这只表示已知文字风险已处理，**不是音频已经试听过**。
 
-Agent 使用导出的文本生成逐镜头 WAV，再经 `studio voiceover` 交给 FFmpeg 装配，不手写重采样，不加速硬塞时长。报告记录原始 WAV 哈希、当前脚本、speech-plan、服务音色和创作归属。schema 4 的 FFmpeg 渲染必须引用匹配的音轨与装配报告。改稿、换音色或更新词典后旧计划/音轨不再可用；旧渲染与新计划不匹配时不能通过验收。
+Agent 使用导出的完整语义段生成 WAV，再经 `studio voiceover` 交给 FFmpeg 装配；当前接口每个分镜对应一份 WAV，分镜内可包含多个画面变化。装配在每段起点加 0.15 秒，音频连同该偏移必须装得下；不手写重采样，不加速硬塞。报告记录原始 WAV 哈希、当前脚本、speech-plan、服务音色和创作归属。
 
-默认用**上下文改写规避风险**，不内置某家服务的 phoneme/SSML 适配。不能假设 edge-tts 接受任意自定义 SSML；见其[上游说明](https://github.com/rany2/edge-tts#custom-ssml)。如必须保留原词并指定读音，需要验证实际语音引擎的能力。改稿后对最终脚本重新审核，不能沿用改稿前的 `review.json`。
+脚本或词典改变后更新计划与审核；这不意味着所有配音都要重新合成。对照新旧计划的 `text_sha256/tts_engine/voice`，文本和实际合成设置未变的 take 可以复用；文本或音色变化才重做受影响段。镜头时长变化后重新装配、同步字幕，并更新当前版本的音轨报告。旧计划或旧报告不能直接冒充新版本验收。
+
+默认用**保留原义的上下文改写**规避已知风险，例如“重做”可改“再做一遍”，不能改成含义不同的“对齐”。风险命中不等于已经听到错读，也不应为展示返工流程而刻意制造错误。
+
+不内置某家服务的 phoneme/SSML 适配。不能假设 edge-tts 接受任意自定义 SSML；见其[上游说明](https://github.com/rany2/edge-tts#custom-ssml)。必须保留原词并指定读音时，先验证实际引擎能力。改稿后重新审核最终脚本。
 
 ## 成片验收：技术检查与实际试听分开
 
-工程门禁会重新解码真实 MP4，检查有口播分镜的有效声音、异常静音、时长和版本哈希。波形正常、ASR 转写正常、TTS 输入文字正确，都不能证明声调/自然度正确。
+工程门禁会重新解码真实 MP4，检查有口播分镜的有效声音、异常静音、时长和版本哈希。它主要拦截严重技术异常，不能把“停顿未超过阈值”判成自然，也不能识别每个词内断句。波形、ASR 和输入文字只作辅助。
 
 `video/review.json` 保留当前 `video_sha256/script_sha256/review_standard_sha256`、checks、issues、facts_to_verify。新项目还需：
 
@@ -100,6 +107,6 @@ Agent 使用导出的文本生成逐镜头 WAV，再经 `studio voiceover` 交�
 
 默认内容创建的 `publish_targets` 为空，只制作不投稿。只有用户初始任务明确给出平台和账号，才可在 `new` 时传 `--publish-target platform:account`（同平台不重复）。脚本修改、parent 接力或打包不能自动增加权限；新任务也不继承 parent 的发布权限。
 
-`studio package` 对审核通过的当前版本生成平台包；`publish --execute` 再核对初始范围和实际工具/登录态。退出码0仍是 `submitted_unknown`，不能声称已公开发布，需核对官方作品链接再 `confirm-published`；未知状态不盲重试。公众号/知乎没有经验证通用投稿适配时仅输出图文包。旧人工审批记录仅作历史，不恢复逐阶段人为审批流程。
+`studio package --platform <目标平台>` 对审核通过的当前版本生成指定平台包，只检查该平台的文案；省略参数或指定 `all` 时保留全平台打包。`publish --execute` 再核对初始范围和实际工具/登录态。退出码0仍是 `submitted_unknown`，需核对官方作品链接再 `confirm-published`；未知状态不盲重试。公众号/知乎没有经验证通用投稿适配时仅输出图文包。
 
 所有正式产物保存在 `workspace.json.output_root/<内容ID>/`；批量选题文件名带 Agent/轮次。共享目录并不意味着允许改写他人结果，也不自动提供同步锁。升级不覆盖企业自有词典、原始资料或历史成片。

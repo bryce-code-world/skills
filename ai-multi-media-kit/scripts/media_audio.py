@@ -101,6 +101,7 @@ def mix_takes(ffmpeg: str, ffprobe: str, shots: list[dict], takes: list[Path],
         raise ValueError("TTS 文件数量必须与分镜数量一致")
     if output.exists() and not replace:
         raise ValueError("配音文件已存在；如需返工请显式 --replace")
+    lead_in = 0.15
     labels, cmd, start, parts = [], [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"], 0.0, []
     for i, (shot, path) in enumerate(zip(shots, takes)):
         path = Path(path).expanduser().resolve()
@@ -109,13 +110,17 @@ def mix_takes(ffmpeg: str, ffprobe: str, shots: list[dict], takes: list[Path],
         duration = float(json.loads(_run([ffprobe, "-v", "error", "-show_format",
                                          "-of", "json", path]))["format"]["duration"])
         slot = float(shot["seconds"])
-        if duration > slot - 0.1:
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError(f"分镜 {i+1} 配音时长必须是有限正数")
+        if not math.isfinite(slot) or slot <= lead_in:
+            raise ValueError(f"分镜 {i+1} 槽位须为有限时长且大于 {lead_in:.2f}s 起点余量")
+        if duration > slot - lead_in:
             raise ValueError(f"分镜 {i+1} 语音 {duration:.2f}s 超出槽位 {slot:.2f}s；"
-                             "请调整文案或延长分镜，禁止加速音频硬塞")
+                             f"需计入 {lead_in:.2f}s 起点余量，请调整文案或延长分镜，禁止加速音频硬塞")
         cmd.extend(["-i", path])
         label = f"a{i}"
         parts.append(f"[{i}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=mono,"
-                     f"adelay={round((start+0.15)*1000)}[{label}]")
+                     f"adelay={round((start+lead_in)*1000)}[{label}]")
         labels.append(f"[{label}]")
         start += slot
     if len(labels) == 1:
