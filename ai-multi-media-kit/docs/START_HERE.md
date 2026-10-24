@@ -41,7 +41,7 @@ Linux/macOS：
 bash ./SETUP-UNIX.sh --install-root "$HOME/media-tools" --knowledge-root "$HOME/company-knowledge" --output-root "$HOME/video-projects" --non-interactive
 ```
 
-安装器发现已有登记环境时返回 `REUSE_EXISTING_WORKSPACE`，不搬迁资料。确需第二套环境须有单独授权，再用 `-NewWorkspace` 或 `--new-workspace`。本地依赖放在工具目录，不修改系统 PATH；项目成果只写 `output_root/<内容ID>/`。
+安装器发现已有登记环境时返回 `REUSE_EXISTING_WORKSPACE`，不搬迁资料。确需第二套环境须有单独授权，再用 `-NewWorkspace` 或 `--new-workspace`。本地依赖放在工具目录，不修改系统 PATH；项目成果只写 `output_root/<内容ID>/`，新作品采用 [中文作品目录](PROJECT_LAYOUT.md)。新项目只复制真正用到的素材，专业工程集中存储机器文件。
 
 ## 升级共享工作区
 

@@ -208,30 +208,32 @@ def run_quick(args, studio):
     data = [{"title": s["title"], "caption": s["caption"], "seconds": s["seconds"],
              "frames": s["frames"], "voiceover": s["voiceover"], "image": None,
              "audio": None} for s in spec["shots"]]
-    for folder in ("src", "public/screens", "public/audio", "docs", "video"):
+    for folder in ("src", "docs", "video"):
         (project / folder).mkdir(parents=True, exist_ok=True)
     for name in ("index.tsx", "Quick.tsx"):
         shutil.copy2(source / name, project / "src" / name)
-    for name in ("package.json", "package-lock.json", "tsconfig.json", "remotion.config.ts"):
+    for name in ("package.json", "package-lock.json", "tsconfig.json"):
         shutil.copy2(template / name, project / name)
+    # Always use the user-centered media directory as Remotion's publicDir,
+    # regardless of which optional package lockfile supplies dependencies.
+    shutil.copy2(source / "remotion.config.ts", project / "remotion.config.ts")
     package = studio.load(project / "package.json")
     package["scripts"] = {
         "dev": "remotion studio src/index.tsx",
-        "render": "remotion render src/index.tsx QuickVideo video/master.mp4",
+        "render": "remotion render src/index.tsx QuickVideo ../成品视频.mp4",
         "still": "remotion still src/index.tsx QuickVideo",
     }
     studio.save(project / "package.json", package)
     if upstream:
         shutil.copy2(upstream / "LICENSE", project / "docs" / "video-shotcraft-LICENSE.txt")
+    from project_layout import store_asset, relative_media, project_root
     for i, (shot, item) in enumerate(zip(spec["shots"], data), 1):
         if shot["image"]:
-            name = f"shot-{i:02d}{shot['image'].suffix.lower()}"
-            shutil.copy2(shot["image"], project / "public" / "screens" / name)
-            item["image"] = "screens/" + name
+            dest=store_asset(project,shot["image"],"image",i)
+            item["image"]=relative_media(project,dest)
         if shot["audio"]:
-            name = f"shot-{i:02d}{shot['audio'].suffix.lower()}"
-            shutil.copy2(shot["audio"], project / "public" / "audio" / name)
-            item["audio"] = "audio/" + name
+            dest=store_asset(project,shot["audio"],"audio",i)
+            item["audio"]=relative_media(project,dest)
     width, height = (1080, 1920) if spec["aspect"] == "9:16" else (1920, 1080)
     studio.save(project / "shotlist.json", {"width":width, "height":height, "fps":30, "shots":data})
     script = {
@@ -250,6 +252,7 @@ def run_quick(args, studio):
         "platforms":{p:{"title":spec["title"],"description":"","tags":[]} for p in studio.PLATFORMS},
     }
     studio.save(project / "script.json", script)
+    studio.export_storyboard(project)
     (project / "brief.md").write_text(
         f"# {spec['title']}\n\n目标用户：{spec['audience']}\n\n核心用户价值："
         f"{spec['primary_value']}\n\n输出性质：未经过 AI 内容审核的技术预览；不能直接发布。\n",
@@ -258,9 +261,9 @@ def run_quick(args, studio):
     # Lockfile keeps dependencies reproducible; all packages remain project-local.
     run_cmd([npm, "ci", "--ignore-scripts", "--no-audit", "--no-fund"], project, timeout=240)
     run_cmd([npx, "--no-install", "remotion", "render", "src/index.tsx",
-             "QuickVideo", "video/master.mp4", "--codec=h264", "--crf=23",
+             "QuickVideo", "../成品视频.mp4", "--codec=h264", "--crf=23",
              "--concurrency=4", "--log=error"], project, timeout=540)
-    mp4 = project / "video" / "master.mp4"
+    mp4 = studio.video_path(project)
     if not mp4.is_file() or mp4.stat().st_size < 1024:
         raise RuntimeError("Remotion 没有生成有效 MP4")
     checked = json.loads(run_cmd([local_probe(project), "-v", "error", "-show_streams",
@@ -274,6 +277,10 @@ def run_quick(args, studio):
         raise RuntimeError("实际 MP4 缺少预期配音音轨")
     if abs(float(checked["format"]["duration"]) - summary["duration_seconds"]) > 0.15:
         raise RuntimeError("实际 MP4 时长与分镜不一致")
+    cover=project_root(project)/"视频封面.png"
+    cover_frame=min(max(0,sum(s["frames"] for s in data)-1),35)
+    run_cmd([npx,"--no-install","remotion","still","src/index.tsx","QuickVideo",
+             str(cover),f"--frame={cover_frame}","--log=error"],project,120)
     studio.save(project / "video" / "render.json", {
         "engine": "remotion", "video_sha256": studio.filehash(mp4),
         "script_sha256": studio.filehash(project / "script.json"),
@@ -285,7 +292,7 @@ def run_quick(args, studio):
         "provenance": studio.provenance(studio.load(project / "content.json")),
     })
     print("QUICK_VIDEO_READY " + json.dumps({
-        **summary, "content_id":creator.id,"video_path":str(mp4),
+        **summary, "content_id":creator.id,"project_dir":str(project_root(project)),"video_path":str(mp4),
         "studio_command":"npx remotion studio src/index.tsx",
         "review_status":"NOT_REVIEWED",
         "publish_status":"NOT_AUTHORIZED",

@@ -207,46 +207,72 @@ class QuickVideoTests(unittest.TestCase):
         outputs = list(self.output.iterdir())
         self.assertEqual(len(outputs), 1)
         project = outputs[0]
-        self.assertTrue((project / "video" / "master.mp4").stat().st_size > 4000)
-        self.assertTrue((project / "src" / "Quick.tsx").is_file())
+        self.assertTrue((project / "成品视频.mp4").stat().st_size > 4000)
+        self.assertTrue((project / "视频封面.png").stat().st_size > 1000)
+        engine=project/"99-专业工程"
+        self.assertTrue((engine / "src" / "Quick.tsx").is_file())
         npx = shutil.which("npx")
         self.assertIsNotNone(npx)
         typing = subprocess.run([npx, "--no-install", "tsc", "--noEmit"],
-                                cwd=project, capture_output=True, text=True,
+                                cwd=engine, capture_output=True, text=True,
                                 encoding="utf8", errors="replace", timeout=35)
         self.assertEqual(typing.returncode, 0, typing.stderr)
-        frame = project / "check-frame.png"
+        frame = engine / "check-frame.png"
         still = subprocess.run([npx, "--no-install", "remotion", "still", "src/index.tsx",
                                 "QuickVideo", str(frame), "--frame=35", "--log=error"],
-                               cwd=project, capture_output=True, text=True,
+                               cwd=engine, capture_output=True, text=True,
                                encoding="utf8", errors="replace", timeout=80)
         self.assertEqual(still.returncode, 0, still.stderr)
         with frame.open("rb") as image:
             self.assertEqual(image.read(8), b"\x89PNG\r\n\x1a\n")
             image.read(8)
             self.assertEqual(struct.unpack(">II", image.read(8)), (1080, 1920))
-        self.assertFalse((project / "src" / "FlashCut.tsx").exists())
-        self.assertFalse((project / "public" / "audio" / "bgm.mp3").exists())
-        scripts = json.loads((project / "package.json").read_text("utf8"))["scripts"]
+        self.assertFalse((engine / "src" / "FlashCut.tsx").exists())
+        self.assertFalse((engine / "public").exists())
+        scripts = json.loads((engine / "package.json").read_text("utf8"))["scripts"]
         self.assertIn("QuickVideo", scripts["render"])
         self.assertIn("src/index.tsx", scripts["dev"])
-        self.assertTrue((project / "public" / "screens" / "shot-01.svg").exists())
-        self.assertTrue((project / "public" / "audio" / "shot-01.wav").exists())
+        self.assertEqual(len(list((project / "02-媒体素材" / "图片").glob("*.svg"))),1)
+        self.assertEqual(len(list((project / "02-媒体素材" / "配音").glob("*.wav"))),1)
+        self.assertTrue((project / "01-文案与分镜" / "分镜脚本.md").is_file())
         self.assertFalse((project / "review.json").exists())
-        self.assertFalse((project / "video" / "review.json").exists())
-        self.assertTrue((project / "publish-ledger.json").exists())
+        self.assertFalse((engine / "video" / "review.json").exists())
+        self.assertTrue((engine / "publish-ledger.json").exists())
         check = subprocess.run([sys.executable, "-X", "utf8", str(STUDIO), "--root",
                                 str(self.root), "package", "--id", project.name],
                                capture_output=True, text=True, encoding="utf8", errors="replace",
                                timeout=30)
         self.assertNotEqual(check.returncode, 0)
-        meta = json.loads((project / "video" / "render.json").read_text("utf8"))
+        meta = json.loads((engine / "video" / "render.json").read_text("utf8"))
         self.assertEqual(meta["engine"], "remotion")
         self.assertTrue(meta["video_sha256"])
         self.assertEqual(meta["video_sha256"], __import__("hashlib").sha256(
-            (project / "video" / "master.mp4").read_bytes()).hexdigest())
+            (project / "成品视频.mp4").read_bytes()).hexdigest())
         self.assertEqual(meta["render_status"], "technical_only")
-        self.assertFalse((project / "platforms").exists())
+        self.assertFalse((engine / "platforms").exists())
+        original=(project/"成品视频.mp4").read_bytes()
+        board=project/"01-文案与分镜"/"分镜脚本.md"
+        board.write_text(board.read_text("utf8").replace("- 时长：3 秒","- 时长：4 秒")
+                         .replace("Local tools + cloud AI","Edit here via Chinese storyboard"),encoding="utf8")
+        plan=subprocess.run([sys.executable,"-X","utf8",str(STUDIO),"--root",str(self.root),
+                             "rebuild","--id",project.name,"--dry-run"],
+                             capture_output=True,text=True,encoding="utf8",timeout=30)
+        self.assertEqual(plan.returncode,0,plan.stderr)
+        self.assertEqual((project/"成品视频.mp4").read_bytes(),original)
+        rerender=subprocess.run([sys.executable,"-X","utf8",str(STUDIO),"--root",str(self.root),
+                                 "rebuild","--id",project.name],capture_output=True,
+                                 text=True,encoding="utf8",timeout=600)
+        self.assertEqual(rerender.returncode,0,rerender.stderr)
+        self.assertIn("VIDEO_REBUILT",rerender.stdout)
+        self.assertNotEqual((project/"成品视频.mp4").read_bytes(),original)
+        self.assertEqual(len(list((project/"03-修改与版本").glob("旧成片-*.mp4"))),1)
+        self.assertEqual(len(list((project/"03-修改与版本").glob("旧封面-*.png"))),1)
+        self.assertTrue((project/"视频封面.png").stat().st_size>1000)
+        self.assertEqual(json.loads((engine/"shotlist.json").read_text("utf8"))["shots"][0]["frames"],120)
+        refreshed=json.loads((engine/"video"/"render.json").read_text("utf8"))
+        self.assertEqual(refreshed["video_sha256"],__import__("hashlib").sha256(
+            (project/"成品视频.mp4").read_bytes()).hexdigest())
+        self.assertFalse((engine/"video"/"review.json").exists())
 
 
 if __name__ == "__main__":

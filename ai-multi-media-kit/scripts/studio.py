@@ -22,6 +22,8 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_paths import output_directory
+from project_layout import (engine_dir, project_root, project_id, modern, create_project, video_file,
+    narration_file, check_storyboard, export_storyboard, apply_storyboard, store_asset, archive_video)
 from media_audio import inspect_video, mix_takes
 from content_identity import new_identity, provenance
 from speech_plan import load_rules, build_plan, validate_plan, validate_audio_review
@@ -82,7 +84,8 @@ def content_dir(root: Path, content_id: str):
 
 
 def paths(root: Path, content_id: str):
-    d = content_dir(root, content_id)
+    p = content_dir(root, content_id)
+    d = engine_dir(p)
     if not (d / 'content.json').is_file():
         fail(f'内容不存在：{content_id}；先执行 new')
     return d
@@ -113,7 +116,7 @@ def ensure_reviewed_script(d: Path, knowledge: Path, *, platforms=None):
 
 
 def video_path(d):
-    return d / 'video' / 'master.mp4'
+    return video_file(d)
 
 
 def ensure_video_ready(d: Path, knowledge: Path, root: Path, *, platforms=None):
@@ -185,11 +188,14 @@ def cmd_new(a, *, quiet=False):
         if parent_content.get('topic_id') and parent_content['topic_id'] != identity['topic_id']:
             fail('接力项目的 topic_id 与源项目不一致')
         parent = {'content_id':a.parent_id,'content_sha256':filehash(source/'content.json')}
-        for key, rel in (('script_sha256','script.json'),('video_sha256','video/master.mp4')):
-            if (source/rel).is_file(): parent[key] = filehash(source/rel)
+        for key, target in (('script_sha256',source/'script.json'),('video_sha256',video_path(source))):
+            if target.is_file(): parent[key] = filehash(target)
     release = Path(__file__).resolve().parents[1]/'references/release.json'
     version = load(release).get('version') if release.is_file() else None
-    d.mkdir(parents=True)  # Atomic final mkdir rejects colliding concurrent creators.
+    if identity['schema'] < 4:
+        d.mkdir(parents=True)  # Legacy --id retains its original root-level file layout.
+    else:
+        d = create_project(d)  # Modern projects expose a Chinese user-facing surface.
     data = {**identity, 'title':a.title, 'created_at_utc':now(), 'skill_version':version,
             'parent':parent, 'knowledge_root':str(knowledge), 'platforms':list(PLATFORMS),
             'publish_targets':targets, 'task_ref':a.task_ref or None}
@@ -208,7 +214,7 @@ def cmd_new(a, *, quiet=False):
          'facts_to_verify': ['待 AI 核查的事实'], 'issues': ['请先由 AI 根据真实证据完成审核']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
     if not quiet:
-        print(f'CREATED {d}\nCONTENT_ID={a.id}\n下一步：完成核心价值简报和脚本，speech-plan 预检，再按实际内容审核。')
+        print(f'CREATED {project_root(d)}\nCONTENT_ID={a.id}\n新建作品：成片放根目录、素材与分镜放中文目录，技术文件在 99-专业工程。')
 
 
 def cmd_list(a):
@@ -216,7 +222,7 @@ def cmd_list(a):
     output = output_directory(root,load(root/'config/workspace.json'))
     items, invalid = [], []
     for directory in sorted(output.iterdir()):
-        record = directory/'content.json'
+        record = engine_dir(directory)/'content.json'
         if directory.is_symlink() or not directory.resolve().is_relative_to(output.resolve()) or not directory.is_dir() or not record.is_file(): continue
         try:
             content = load(record)
@@ -240,11 +246,12 @@ def cmd_hash(a):
 
 
 def check_script(d, *, platforms=None):
+    check_storyboard(d)
     script_path = d/'script.json'
     if not script_path.is_file():
         fail('缺少 script.json（不是 script.template.json），请由 当前 AI Agent 生成')
     j=load(script_path)
-    if j.get('content_id') != d.name: fail('script.json 的 content_id 与目录不一致')
+    if j.get('content_id') != project_id(d): fail('script.json 的 content_id 与目录不一致')
     for field in ('title','narration'):
         if not isinstance(j.get(field),str) or len(j[field].strip())<5: fail(f'script.{field} 必须是有效文本')
     shots=j.get('shots')
@@ -314,11 +321,12 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
         if not clip.is_file(): fail('素材不存在：'+str(clip))
     if audio and not audio.is_file(): fail('音频不存在')
     if subtitles and not subtitles.is_file(): fail('字幕不存在')
-    out=video_path(d)
-    out.parent.mkdir(exist_ok=True,parents=True)
-    if out.exists() and not getattr(render_ffmpeg,'allow_replace',False): fail('成片已存在。重新渲染请显式加 --replace，之后需要重新审核')
-    with tempfile.TemporaryDirectory(prefix='ai-media-') as td:
+    final_video=video_path(d)
+    final_video.parent.mkdir(exist_ok=True,parents=True)
+    if final_video.exists() and not getattr(render_ffmpeg,'allow_replace',False): fail('成片已存在。重新渲染请显式加 --replace，之后需要重新审核')
+    with tempfile.TemporaryDirectory(prefix='ai-media-',dir=project_root(d) if modern(d) else None) as td:
         tmp=Path(td)
+        out=tmp/'待校验成片.mp4' if modern(d) else final_video
         pieces=[]
         for i,src in enumerate(clips):
             dst=tmp/f'part-{i:03d}.mp4'
@@ -351,15 +359,29 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
                     '-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k',
                     '-movflags','+faststart',out])
         run(cmd,cwd=tmp,timeout=360)
-    result=json.loads(run([ffprobe,'-v','error','-show_streams','-show_format','-of','json',out]))
-    streams=result.get('streams',[])
-    vids=[s for s in streams if s.get('codec_type')=='video']
-    aud=[s for s in streams if s.get('codec_type')=='audio']
-    if not vids or not aud or vids[0].get('width')!=width or vids[0].get('height')!=height:
-        fail('实际视频校验失败：音视频轨道或尺寸有误')
-    quality = inspect_video(ffmpeg, ffprobe, out, load(d/'script.json')['shots'])
-    if quality['result'] != 'PASS':
-        fail('生成 MP4 后发现异常配音，未登记成功渲染：' + '; '.join(quality['issues']))
+        result=json.loads(run([ffprobe,'-v','error','-show_streams','-show_format','-of','json',out]))
+        streams=result.get('streams',[])
+        vids=[s for s in streams if s.get('codec_type')=='video']
+        aud=[s for s in streams if s.get('codec_type')=='audio']
+        if not vids or not aud or vids[0].get('width')!=width or vids[0].get('height')!=height:
+            fail('实际视频校验失败：音视频轨道或尺寸有误')
+        quality = inspect_video(ffmpeg, ffprobe, out, load(d/'script.json')['shots'])
+        if quality['result'] != 'PASS':
+            fail('生成 MP4 后发现异常配音，未登记成功渲染：' + '; '.join(quality['issues']))
+        if modern(d):
+            still=tmp/"视频封面.png"
+            run([ffmpeg,"-hide_banner","-loglevel","error","-y","-ss",f"{min(1.0,duration/2):.3f}",
+                 "-i",out,"-frames:v","1",still],timeout=40)
+            if not still.is_file() or still.stat().st_size<200:
+                fail("成片封面未生成，暂不替换已存在的作品")
+            cover=project_root(d)/"视频封面.png"
+            if final_video.exists():archive_video(d)
+            if cover.exists():
+                saved=project_root(d)/"03-修改与版本"/("旧封面-"+datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")+".png")
+                shutil.copy2(cover,saved)
+            os.replace(out,final_video)
+            os.replace(still,cover)
+    out=final_video
     save(d/'video'/'render.json',{'engine':'ffmpeg','video_sha256':filehash(out),
          'provenance':provenance(load(d/'content.json')),
          'speech_plan_sha256':filehash(d/'work/speech-plan.json') if (d/'work/speech-plan.json').is_file() else None,
@@ -372,7 +394,9 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
 def cmd_speech_plan(a):
     root, knowledge = workspace(a.root)
     d = paths(root,a.id)
+    check_storyboard(d)
     script = check_script(d)
+    export_storyboard(d)
     rules, rules_sha = load_rules(root,knowledge)
     report = build_plan(script,filehash(d/'script.json'),rules,rules_sha,a.tts_engine,a.voice)
     target = d/'work/speech-plan.json'
@@ -401,8 +425,8 @@ def cmd_voiceover(a):
     ffprobe = load_ffmpeg_bin(root, 'ffprobe')
     if not ffmpeg or not ffprobe:
         fail('合成配音需要 FFmpeg/ffprobe，不要手写采样率转换')
-    output = d / 'work' / 'narration.wav'
-    take_paths = [Path(x).expanduser().resolve() for x in a.takes]
+    output = narration_file(d)
+    take_paths = [store_asset(d,Path(x),'audio',i) for i,x in enumerate(a.takes,1)]
     report = mix_takes(ffmpeg, ffprobe, script['shots'], take_paths, output, replace=a.replace)
     save(d/'work'/'voiceover-check.json', {
         **report, 'audio_sha256': filehash(output), 'script_sha256': filehash(d/'script.json'),
@@ -416,7 +440,9 @@ def cmd_voiceover(a):
 
 def cmd_render(a):
     root,k=workspace(a.root); d=paths(root,a.id)
+    check_storyboard(d)
     script=ensure_reviewed_script(d,k)
+    export_storyboard(d)
     speech = validate_plan(d,root,k)
     if speech and load(d/'content.json').get('schema',3) >= 4 and a.engine == 'ffmpeg':
         audio = Path(a.audio).expanduser().resolve() if a.audio else None
@@ -449,14 +475,28 @@ def cmd_render(a):
               ensure_ascii=False))
         return
     if a.engine=='ffmpeg':
+        if modern(d) and video_path(d).exists() and not a.replace:
+            fail('成品视频已存在，不复制或覆盖任何素材；重新渲染请显式 --replace')
+        source_files=list(files)
+        files=[store_asset(d,p,'video',i) for i,p in enumerate(files,1)]
+        audio_file=store_asset(d,Path(a.audio),'audio') if a.audio else None
+        captions_file=Path(a.subtitles).expanduser().resolve() if a.subtitles else None
+        if captions_file and modern(d):
+            dst=project_root(d)/'01-文案与分镜'/'字幕文件.srt'
+            if captions_file!=dst:
+                if dst.is_file() and filehash(dst)!=filehash(captions_file):
+                    if not a.replace:fail('字幕已有不同内容，需 --replace 才可更新并备份')
+                    backup=project_root(d)/'03-修改与版本'/('旧字幕-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')+'.srt')
+                    shutil.copy2(dst,backup)
+                shutil.copy2(captions_file,dst)
+            captions_file=dst
         render_ffmpeg.allow_replace=a.replace
-        result=render_ffmpeg(root,d,files,Path(a.audio).expanduser().resolve() if a.audio else None,
-            Path(a.subtitles).expanduser().resolve() if a.subtitles else None, a.width,a.height)
+        result=render_ffmpeg(root,d,files,audio_file,captions_file,a.width,a.height)
         save(d/'video'/'materials-used.json',
              {'video_sha256': filehash(result), 'rights_acknowledged': True,
               'assets': selected if selected else
-              [{'source': 'manual', 'path': str(p), 'rights': 'agent-verified-no-index'}
-               for p in files]})
+              [{'source': 'manual', 'path': str(source), 'project_media':str(saved),
+                'rights': 'agent-verified-no-index'} for source,saved in zip(source_files,files)]})
         print('RENDERED:',result,'\n备注：未提供 audio 时为静音视频。FFmpeg 不会自动生成 TTS。')
     else:
         mpt=root/'tools'/'MoneyPrinterTurbo'
@@ -481,7 +521,7 @@ def cmd_render(a):
 
 
 def cmd_import_video(a):
-    root,k=workspace(a.root); d=paths(root,a.id); ensure_reviewed_script(d,k)
+    root,k=workspace(a.root); d=paths(root,a.id); check_storyboard(d); ensure_reviewed_script(d,k)
     validate_plan(d,root,k)
     src=Path(a.file).expanduser().resolve()
     if not src.is_file() or src.suffix.lower()!='.mp4': fail('只允许导入存在的 .mp4 视频文件')
@@ -500,7 +540,24 @@ def cmd_import_video(a):
         fail('导入 MP4 音频异常：' + '; '.join(quality['issues']))
     dst=video_path(d); dst.parent.mkdir(parents=True,exist_ok=True)
     if dst.exists() and not a.replace: fail('已有成片，需要 --replace 明确覆盖')
-    if src!=dst: shutil.copy2(src,dst)
+    if modern(d):
+        with tempfile.TemporaryDirectory(prefix="导入视频-",dir=project_root(d)) as td:
+            cover_tmp=Path(td)/"视频封面.png"
+            run([ffmpeg,"-hide_banner","-loglevel","error","-y","-ss",
+                 f"{min(1.0,float(info['format']['duration'])/2):.3f}",
+                 "-i",src,"-frames:v","1",cover_tmp],timeout=40)
+            if not cover_tmp.is_file() or cover_tmp.stat().st_size<200:
+                fail("导入视频的封面无法生成，原项目保持不变")
+            if src!=dst:
+                if dst.exists():archive_video(d)
+                shutil.copy2(src,dst)
+            cover=project_root(d)/"视频封面.png"
+            if cover.exists():
+                saved=project_root(d)/"03-修改与版本"/("旧封面-"+datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")+".png")
+                shutil.copy2(cover,saved)
+            os.replace(cover_tmp,cover)
+    elif src!=dst:
+        shutil.copy2(src,dst)
     save(d/'video'/'render.json',{'engine':'import','source':str(src),'video_sha256':filehash(dst),
                                   'provenance':provenance(load(d/'content.json')),
                                  'speech_plan_sha256':filehash(d/'work/speech-plan.json') if (d/'work/speech-plan.json').is_file() else None,
@@ -544,6 +601,23 @@ def cmd_package(a):
         dest=target/'package.json'
         if dest.exists() and not a.replace: fail(f'{p} 发布包已存在，使用 --replace 才能覆盖')
         save(dest,pack)
+        if modern(d):
+            names={'xiaohongshu':'小红书','douyin':'抖音','tencent':'视频号',
+                   'bilibili':'哔哩哔哩','kuaishou':'快手','wechat_oa':'微信公众号','zhihu':'知乎'}
+            public=project_root(d)/'04-平台内容'/names[p]
+            public.mkdir(parents=True,exist_ok=True)
+            friendly=public/'发布文案.md'
+            content=('# '+names[p]+'（仅供准备，尚未公开发布）\n\n'
+                     '## 标题\n'+item['title']+'\n\n## 简介\n'+item.get('description','')+'\n\n'
+                     '## 话题\n'+' '.join('#'+tag for tag in item.get('tags',[]))+'\n\n'
+                     +('成品视频：../../成品视频.mp4\n\n' if p in VIDEO_PLATFORMS else '')
+                     +(('## 图文内容\n'+article+'\n') if article else ''))
+            if friendly.exists() and not a.replace:
+                fail('人类可读发布文案已存在，不能自动覆盖；请加 --replace')
+            if friendly.exists() and filehash(friendly)!=digest(content.encode('utf8')):
+                old=project_root(d)/'03-修改与版本'/('旧发布文案-'+p+'-'+datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')+'.md')
+                shutil.copy2(friendly,old)
+            friendly.write_text(content,encoding='utf8')
         print('PREPARED:',dest)
     print('已生成待发布包，没有任何网络投稿行为。')
 
@@ -664,6 +738,23 @@ def cmd_quick(a):
     run_quick(a, sys.modules[__name__])
 
 
+def cmd_rebuild(a):
+    from rebuild_video import rebuild
+    rebuild(a, sys.modules[__name__])
+
+
+def cmd_storyboard(a):
+    root, _ = workspace(a.root)
+    d = paths(root,a.id)
+    if a.from_engine:
+        result = export_storyboard(d)
+        if result is None: fail('旧项目保持原有结构，无法自动生成新式分镜')
+        print('STORYBOARD_READY:', result)
+    else:
+        result = apply_storyboard(d)
+        print('STORYBOARD_SYNCED:', json.dumps(result,ensure_ascii=False))
+
+
 def parse():
     parser=argparse.ArgumentParser(description='AI Media Studio - 一次任务授权与 AI 自主质量闭环')
     parser.add_argument('--root',required=True,help='安装根目录（与 config/workspace.json 一致）')
@@ -686,6 +777,14 @@ def parse():
     q.add_argument('--shotcraft-dir',help='可选：明确复用已安装 video-shotcraft 的依赖模板；默认使用内置模板')
     q.add_argument('--dry-run',action='store_true',help='只检查输入、依赖和目标路径，不创建项目')
     q.set_defaults(func=cmd_quick)
+    story=sub.add_parser('storyboard',help='同步中文分镜和专业工程，旧项目保持原格式')
+    story.add_argument('--id',required=True)
+    g=story.add_mutually_exclusive_group(required=True)
+    g.add_argument('--from-engine',action='store_true',help='仅当中文分镜无未同步修改时从现有工程生成分镜')
+    g.add_argument('--apply',action='store_true',help='读取用户修改的中文分镜，备份原工程并更新时长、口播和素材')
+    story.set_defaults(func=cmd_storyboard)
+    remake=sub.add_parser('rebuild',help='从可编辑中文分镜重渲 MP4，验证成功后归档旧版本')
+    remake.add_argument('--id',required=True);remake.add_argument('--dry-run',action='store_true');remake.set_defaults(func=cmd_rebuild)
     ls=sub.add_parser('list');ls.add_argument('--topic');ls.set_defaults(func=cmd_list)
     speech=sub.add_parser('speech-plan');speech.add_argument('--id',required=True);speech.add_argument('--tts-engine',required=True);speech.add_argument('--voice',required=True);speech.add_argument('--replace',action='store_true');speech.set_defaults(func=cmd_speech_plan)
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)

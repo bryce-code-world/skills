@@ -5,7 +5,7 @@
 | 需求 | 使用方式 |
 | --- | --- |
 | 产品宣传、知识讲解、操作演示 | [快速制作](docs/QUICK_VIDEO.md)：内置 Remotion 模板，复用图片与配音 |
-| 修改指定时间段 | 复用现有工程，修改对应镜头并检查相邻转场 |
+| 修改指定时间段 | 直接修改中文分镜，Agent 执行 `studio rebuild` 更新成片并保存旧版本 |
 | 企业内容、批量选题、平台包 | [完整生产](.agents/skills/ai-media-studio/SKILL.md)：知识库、审核与素材流程按需启用 |
 | 公开发布 | 仅按用户明确授权的平台和账号执行；生成发布包不等于发布成功 |
 
@@ -26,7 +26,7 @@ Agent 读取 [SKILL.md](SKILL.md) 后按任务执行。需要首次安装或升�
 & "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic demo --agent codex
 ```
 
-分镜由 Agent 根据任务准备，具体格式见 [快速制作](docs/QUICK_VIDEO.md)。成果位于 `workspace.json.output_root/<内容ID>/`，包括 `video/master.mp4`、`src/`、`public/` 和时间轴；可继续用 Remotion Studio 或让 Agent 定点编辑。
+分镜由 Agent 根据任务准备，普通用户不需要填写 JSON。成果位于 `workspace.json.output_root/<内容ID>/`，直接打开 **`成品视频.mp4`**、**`视频封面.png`**，旁边是 `01-文案与分镜/`、`02-媒体素材/`、`03-修改与版本/`；依赖和 Remotion 源码统一放在 `99-专业工程/`。目录和编辑方式见 [中文作品规范](docs/PROJECT_LAYOUT.md)。
 
 ## 质量与能力
 

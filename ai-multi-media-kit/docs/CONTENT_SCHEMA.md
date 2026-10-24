@@ -15,7 +15,7 @@ list --topic product-intro
 
 新任务应使用 `--topic` 和 `--agent`；能核实当前模型时再传 `--model`，不得猜测。`--run-id` 不传时自动生成 UTC 分钟+随机后缀（例如 `202610172025-abcde`）。**目录/内容 ID 为 `<topic>-<agent>-<model_slug>-<run_id>`**，例如 `product-intro-workbuddy-glm-5-3-flash-demo`；没有可靠模型名时目录含 `model-unknown`，而 `model_id` 保持 null。模型原名不修改，路径使用小写、数字、连字符及必要时带哈希的截断标签。整个内容 ID 最长 64 字符；过长时先缩短模型标签（保留哈希以区分不同模型），仍放不下则要求缩短 topic 或 run-id；原项目不重命名。
 
-`content.json` schema 4 包含 `content_id/topic_id/agent_id/model_id/model_slug/run_id/skill_version`、创建时间、初始发布范围和可选 parent。身份是当前宿主声明，不是身份认证。后续脚本、音轨检查、渲染记录和平台包可通过该身份追溯；平台包额外提供 `<content_id>.mp4` 建议导出文件名。内部 `video/master.mp4` 路径保持兼容。
+`content.json` schema 4 包含 `content_id/topic_id/agent_id/model_id/model_slug/run_id/skill_version`、创建时间、初始发布范围和可选 parent。身份是当前宿主声明，不是身份认证。后续脚本、音轨检查、渲染记录和平台包可通过该身份追溯；平台包额外提供 `<content_id>.mp4` 建议导出文件名。**新作品根目录直接交付 `成品视频.mp4`**，内部身份、脚本与审核记录放在 `99-专业工程`。旧 `video/master.mp4` 路径只对历史工程兼容。统一约定见 [中文作品目录](PROJECT_LAYOUT.md)。
 
 同一主题的独立 A/B 作品使用相同 topic、不同 Agent/轮次；接力创作加 `--parent-id <来源ID>`，会记录源 content/script/video 已存在文件的哈希，**不会复制、修改源文件或扩大原发布授权**。源主题不符、ID 已占用、非法路径会在创建前拒绝。一个内容 ID 同时只允许一个写者；本版本不是并发协作锁系统。
 
@@ -23,7 +23,7 @@ list --topic product-intro
 
 ## 脚本与产品主次
 
-`brief.md` 说明观众、核心价值、次级优势、证据，以及仅用于测试报告的工程事项。新项目 `script.json` 需要以下策划结构，其他既有字段不变：
+新式项目的 `99-专业工程/brief.md` 说明观众、核心价值、次级优势、证据；机器脚本是 `99-专业工程/script.json`，普通用户可通过 `01-文案与分镜/分镜脚本.md` 修改镜头及口播。同步使用 `studio storyboard --apply` 或 Remotion 的 `studio rebuild`，用户未同步的更改会阻止旧脚本继续被审核/打包。机器脚本需要以下策划结构：
 
 ```json
 {
@@ -65,7 +65,7 @@ list --topic product-intro
 speech-plan --id <内容ID> --tts-engine <实际服务> --voice <实际音色>
 hash --id <内容ID>
 voiceover --id <内容ID> --takes <镜头1.wav> <镜头2.wav> ...
-render --id <内容ID> --materials <合法剪辑...> --rights-confirmed --audio <项目>/work/narration.wav
+render --id <内容ID> --materials <合法剪辑...> --rights-confirmed --audio <新项目>/02-媒体素材/配音/完整旁白.wav
 ```
 
 `speech-plan` 本身不调用语音服务，也不保证发音正确。它会：
@@ -111,4 +111,4 @@ Agent 使用导出的完整语义段生成 WAV，再经 `studio voiceover` 交�
 
 `studio package --platform <目标平台>` 对审核通过的当前版本生成指定平台包，只检查该平台的文案；省略参数或指定 `all` 时保留全平台打包。`publish --execute` 再核对初始范围和实际工具/登录态。退出码0仍是 `submitted_unknown`，需核对官方作品链接再 `confirm-published`；未知状态不盲重试。公众号/知乎没有经验证通用投稿适配时仅输出图文包。
 
-所有正式产物保存在 `workspace.json.output_root/<内容ID>/`；批量选题文件名带 Agent/轮次。共享目录并不意味着允许改写他人结果，也不自动提供同步锁。升级不覆盖企业自有词典、原始资料或历史成片。
+所有正式产物保存在 `workspace.json.output_root/<内容ID>/`；新项目使用中文目录，机器脚本与审核记录集中在 `99-专业工程/`，相关路径说明见 [作品目录](PROJECT_LAYOUT.md)。批量选题文件名带 Agent/轮次。共享目录并不意味着允许改写他人结果，也不自动提供同步锁。升级不覆盖企业自有词典、原始资料或历史成片。
