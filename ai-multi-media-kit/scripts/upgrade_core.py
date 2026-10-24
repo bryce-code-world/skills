@@ -14,13 +14,15 @@ SOURCE=Path(__file__).resolve().parent.parent
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
-def owned_files():
+def owned_files(source: Path = SOURCE):
     names=['SKILL.md','AGENTS.md','README.md','SETUP-WINDOWS.cmd','SETUP-WINDOWS.ps1','SETUP-UNIX.sh','RUN-STUDIO-WINDOWS.ps1','run-studio.sh','start-codex.cmd','start-codex.sh','.gitignore']
-    names += [p.relative_to(SOURCE).as_posix() for f in ('scripts','docs','knowledge-templates','assets/quick-remotion')
-              for p in (SOURCE/f).rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix!='.pyc']
+    excluded = {'__pycache__', 'node_modules', '.git', '.venv'}
+    names += [p.relative_to(source).as_posix() for f in ('scripts','docs','knowledge-templates','assets/quick-remotion','tests')
+              for p in (source/f).rglob('*') if p.is_file() and not excluded.intersection(p.relative_to(source).parts) and p.suffix!='.pyc']
     # Include nested own skill resources too.
-    names += [p.relative_to(SOURCE).as_posix() for p in (SOURCE/'.agents/skills').rglob('*')
-              if p.is_file() and p.relative_to(SOURCE/'.agents/skills').parts[0].startswith('ai-media-')]
+    names += [p.relative_to(source).as_posix() for p in (source/'.agents/skills').rglob('*')
+              if p.is_file() and not excluded.intersection(p.relative_to(source).parts)
+              and p.relative_to(source/'.agents/skills').parts[0].startswith('ai-media-')]
     names += ['config/dependencies.yaml','config/platforms.yaml','config/bootstrap-assets.json', 'config/pronunciation.json', 'references/release.json']
     return sorted(set(names))
 

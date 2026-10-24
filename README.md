@@ -16,7 +16,7 @@
 
 | Skill | 作用 |
 |---|---|
-| [AI 多媒体生产套件（ai-multi-media-kit）](./ai-multi-media-kit/SKILL.md) | 既可借助 video-shotcraft / Remotion 快速生成可编辑视频，也可使用完整的选题、脚本、配音、审核、素材、发布和跨 Agent 工作流。 |
+| [AI 多媒体生产套件（ai-multi-media-kit）](./ai-multi-media-kit/SKILL.md) | 用内置 Remotion 模板制作和定点修改可编辑视频；知识库、批量生产、审核与授权发布按需启用。 |
 | [你好（hello）](./hello/SKILL.md) | 通过持续访谈和跨会话候选发现，建立并维护用户掌控的分层个人资料包；目标架构中《个人全景档案》是聚合索引，当前兼容空间仍保留单文件正文。 |
 | [鹰眼（eagle-eye）](./eagle-eye/SKILL.md) | 面向目标读者发现、核验并交付值得写且具有独特角度的 AI 选题。 |
 | [闪电（lightning）](./lightning/SKILL.md) | 在不丢失关键信息的前提下，把内部文档整理成自己易读、AI 易于行动的形式。 |
@@ -61,12 +61,12 @@ https://github.com/bryce-code-world/skills/tree/main/lightning
 
 安装分发时，将链接或目录名替换为 `distribution`。
 
-**AI 多媒体生产套件**直接把以下地址发送给 Codex，请 AI 使用原生 Skill 安装能力下载完整目录，并按引导在独立位置初始化工具和企业知识库（无需提前下载 ZIP 或安装 Python）：
+**AI 多媒体生产套件**可把以下地址交给有本地执行能力的 Agent，安装完整 Skill 并先检查已有共享工作区：
 
 ```text
 帮我安装并初始化这个 Skill：
 https://github.com/bryce-code-world/skills/tree/main/ai-multi-media-kit
-安装 Skill 后，请先检查环境并询问工具安装目录与企业知识库目录，授权后再配置缺失依赖。
+安装后先复用已有工作区；确无环境时再确认所需目录。单条视频默认使用内置 Remotion 模板，不预先配置平台账号或额外文本模型 API。
 ```
 
 完整说明见 [ai-multi-media-kit README](./ai-multi-media-kit/README.md)。

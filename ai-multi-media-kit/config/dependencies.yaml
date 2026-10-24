@@ -8,14 +8,14 @@ version_policy: pin-reviewed-commit-or-version
 third_party_code_bundled: false
 candidates:
   - id: marketingskills
-    tier: required
+    tier: optional-for-content-methods
     type: skill_source
     repo: https://github.com/coreyhaines31/marketingskills
     select_skills: [product-marketing, content-strategy, social, copywriting, copy-editing, video]
     license: MIT
     notes: Marketing methods are not specifically Chinese platforms; adapt to local company guidance.
   - id: baoyu-skills
-    tier: required-for-wechat
+    tier: optional-for-wechat-publishing
     type: skill_source
     repo: https://github.com/JimLiu/baoyu-skills
     select_skills: [baoyu-post-to-wechat, baoyu-cover-image, baoyu-xhs-images]
@@ -23,7 +23,7 @@ candidates:
     license: MIT
     notes: WeChat publishing uses Official Account API or Chrome login; image skills may need image provider setup.
   - id: social-auto-upload
-    tier: required-for-video-platforms
+    tier: optional-for-video-publishing
     type: cli_and_skill
     repo: https://github.com/dreammis/social-auto-upload
     cli: sau
@@ -32,14 +32,14 @@ candidates:
     license: MIT
     notes: Active rework; Patchright Chromium installed after CLI unless --skip-browser; browser UI automation, pin and test before use. Avoid exposing upstream unauthenticated web dashboard. Tencent uses CLI, no first-party skill here.
   - id: MoneyPrinterTurbo
-    tier: required-for-video-render
+    tier: optional-renderer
     type: cli
     repo: https://github.com/harry0703/MoneyPrinterTurbo
     entry: cli.py
     license: MIT
-    notes: Prefer local video materials + Codex-generated script. Online material providers may require keys; keep its own uv lock.
+    notes: Use only when choosing MPT; built-in Remotion and FFmpeg routes do not require it. Online material providers may require keys; keep its own uv lock.
   - id: ffmpeg
-    tier: required-for-media
+    tier: required-for-ffmpeg-workflow
     type: executable
     homepage: https://ffmpeg.org/
     commands: [ffmpeg, ffprobe]
@@ -51,7 +51,7 @@ candidates:
     repo: https://github.com/xpzouying/xiaohongshu-mcp
     url: http://127.0.0.1:18060/mcp
     license: Apache-2.0
-    notes: Search and comment; optional at V1. May store login cookies, requires authorization.
+    notes: Search and comment only when requested. May store login cookies, requires authorization.
   - id: ZhihuPublisher
     tier: experimental-for-zhihu
     type: skill
@@ -60,12 +60,12 @@ candidates:
     license: MIT (as declared upstream; recheck at pinned commit)
     notes: Very new upstream with unclear redistribution license; requires Zhihu OpenAPI credentials. Manual import/export fallback always available.
   - id: PySceneDetect
-    tier: optional-after-v1
+    tier: optional-for-shot-segmentation
     type: cli
     repo: https://github.com/Breakthrough/PySceneDetect
     notes: Real video shot segmentation; does not solve semantic matching.
   - id: FunASR
-    tier: optional-after-v1
+    tier: optional-for-speech-recognition
     type: library_or_service
     repo: https://github.com/modelscope/FunASR
     notes: Chinese speech recognition; extra resources required.

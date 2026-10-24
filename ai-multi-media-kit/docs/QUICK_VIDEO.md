@@ -1,73 +1,94 @@
-# 快速创作：video-shotcraft + Remotion
+# 单条视频与定点修改
 
-用途：已经明确主题和主线，希望尽快得到可编辑的竖屏/横屏 MP4。与完整自媒体生产流程不同，**快速模式只制作技术预览，不发布，也不伪造内容审核结果**。
+默认用内置 Remotion 模板制作可编辑 MP4。只读取当前任务需要的资料；批量选题、企业审核或平台包转到 [完整生产](../.agents/skills/ai-media-studio/SKILL.md)。
 
-## Agent 负责，程序执行
+## 准备到制作
 
-1. 理解真实观众、问题、核心价值和证据，前 3–5 秒先给一个有意义的开场。安装测试不是产品宣传主线。
-2. 优先使用用户授权的真实截图/合法素材。素材不足时用明确的概念图或字卡，不假冒产品界面。
-3. Agent 按需准备中文神经网络配音文件，先听音和检查字幕，不能因为自带 Windows TTS 可运行就当成成片级自然配音。
-4. Agent 为每段写简短的 JSON 分镜，程序调用本机 video-shotcraft 的 Remotion 模板、FlashCut 转场和有来源记录的 BGM 生成 MP4，保留全部可编辑源码和素材。复杂镜头由 Agent 继续参考 video-shotcraft Gallery 中的对应 demo/配方修改代码，而不是堆叠新的 CLI 配置。
-5. 渲染前 `--dry-run`；渲染后逐帧、音轨和字幕安全区复核，交付时说明事实核验与语音试听结果。技术成功不代表内容已经通过审查。
+1. 固定受众、核心问题、要展示的改变和证据。产品宣传用痛点与结果组织镜头；用户要求教程时再展示操作步骤。
+2. 先完成一个代表镜头和短配音样本。真实软件界面用获准的截图；桌面截图用于竖屏时局部裁切、放大重点，避免整屏缩成无法阅读的小图。
+3. 由 Agent 写分镜 JSON、准备逐镜头音频。用实际声音决定镜头时长，留出句尾；没有自然配音服务时交付明确标注的无旁白预览，不擅自启用收费服务。
+4. 预检、渲染、检查实际结果。模板是起点，复杂镜头直接修改 React 工程；不为已有任务重新初始化工具、配置额外文本模型或连接平台账号。
 
-## 最小 JSON
+## 输入
 
-`image` 和 `audio` 均可不填；缺少 `audio` 且有旁白稿时将明确输出 `voice_missing`，**不声称视频包含配音**。图片/音频路径按 JSON 所在目录解析，或写绝对路径。
+路径相对于 JSON 文件，或使用绝对路径。以下示例演示格式，不预设其他产品的卖点；`image`、`audio` 可省略。
 
-~~~json
+```json
 {
-  "title": "云端 AI 为什么碰不到本地文件",
-  "audience": "需要 AI 操作本地项目的开发者",
-  "primary_value": "让支持 MCP 的 AI 通过受控连接访问本地工具",
+  "title": "把重复整理交给工具",
+  "audience": "需要处理大量文件的人",
+  "primary_value": "减少在文件之间反复复制的操作",
   "aspect": "9:16",
   "shots": [
     {
-      "title": "AI 会写代码，却碰不到电脑",
-      "caption": "普通网页对话与本地电脑隔离",
+      "title": "每天都在重复整理？",
+      "caption": "文件散落，重复操作",
       "seconds": 5,
       "image": "screen.png",
-      "voiceover": "为什么网页 AI 往往不能直接操作本地文件？",
+      "voiceover": "文件散在各处，整理一次又一次。",
       "audio": "voice.wav"
     }
   ]
 }
-~~~
+```
 
-示例只演示格式，不能无证据套用具体产品卖点。用户不需要手工编写 JSON，Agent 应根据任务自动生成。每段 2～20 秒，最多 12 段，总时长最多 180 秒。
+- `aspect` 默认 `9:16`（1080×1920），也支持 `16:9`（1920×1080）；固定 30fps。
+- 每镜头 2～20 秒，1～12 段，总时长不超过 180 秒。短宣传片可先按约 45～55 秒规划，用户指定的时长和画幅优先。
+- 每镜头 `title` 是画面主句，`caption` 是简短提示，各不超过 60 字符；模板还会按实际字体检查可读布局，超限时应缩短文案。`caption` **不是自动生成的逐字字幕**。`voiceover` 保存旁白稿，`audio` 才是实际播放的配音。逐字字幕需在工程中按真实音频切句和配时。
+- 图片支持 PNG/JPEG/WebP/SVG，音频支持 PCM WAV/MP3/M4A；单文件不超过 80MB。MP3/M4A 在预检时就需要已有 ffprobe，PCM WAV 由 Python 直接检查。实际配音须比镜头至少短 0.15 秒，不能靠截断获得短时长。
+- JSON 由 Agent 编写。用户提供的录音、素材来源及授权应保留；有声音不代表读音或自然度已通过。
 
-## 调用
+## 运行
 
-复用已安装共享工作区，不新建第二套环境、不重复安装 Python/FFmpeg，也不改 PATH。
+使用共享工作区启动器的绝对路径：
 
-Windows：
+```powershell
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic demo --agent codex --dry-run
+& "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic demo --agent codex
+```
 
-~~~powershell
-& "<已有工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic localbridge --agent codex --dry-run
-& "<已有工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<分镜.json>" --topic localbridge --agent codex
-~~~
+Linux/macOS 使用 `bash "<工具目录>/run-studio.sh" studio quick ...`。初次安装、已安装版本不符或依赖缺失时见 [START_HERE](START_HERE.md)。
 
-Linux/macOS：
+`--dry-run` 不创建项目，也不安装依赖。实际渲染需要 Node/npm；首次项目会按锁文件安装本地 npm 依赖，浏览器资源可能需要下载。当前环境的许可和网络可用性须单独核对，不能把预检通过说成已成片。
 
-~~~bash
-bash "<已有工具目录>/run-studio.sh" studio quick --spec "<分镜.json>" --topic localbridge --agent codex
-~~~
+默认使用本包模板。`--shotcraft-dir <实际目录>` 仅复用已安装 video-shotcraft 的模板依赖、配置和许可证，画面仍由本包组件生成；不会自动导入其镜头库或音频。需要这些资源时另行移植并保留相应许可。
 
-默认从用户级 Codex Skills 查找 video-shotcraft；非标准位置可加 `--shotcraft-dir <目录>`。未安装时清楚报错，不默默下载第三方 Skill 或收费工具。需要本地 Node/npm；Remotion 依赖来自 video-shotcraft 的固定版本模板，安装到本项目中。
+成果位于 `workspace.json.output_root/<内容ID>/`：
 
-所有持久化成果统一放在 `config/workspace.json.output_root/<content_id>/`，不写入 Skill 目录、临时目录或其他 Agent 的项目。输出 `video/master.mp4`、`src/`、`shotlist.json`、`public/` 和素材来源说明。`cd <项目目录>; npx remotion studio src/index.tsx` 可精确编辑镜头、字幕与动画。
+| 文件 | 用途 |
+| --- | --- |
+| `video/master.mp4` | 导出的 MP4 |
+| `shotlist.json` | 渲染使用的镜头内容、帧数及素材清单 |
+| `src/`、`public/` | 可编辑动画源码和项目素材 |
+| `package.json`、`package-lock.json` | 项目命令与锁定依赖 |
+| `script.json`、`content.json`、`video/render.json` | 内容、归属和本次技术渲染记录 |
 
-## 模式分工
+## 定点修改
 
-- **快速视频**：`studio quick` → 已提供的截图和配音 → Remotion MP4 + 编辑工程；默认 9:16 / 1080×1920 / 30fps，支持 16:9。
-- **普通素材拼接**：继续使用原 `studio render --engine ffmpeg`。
-- **完整自媒体生产**：沿用 `studio new → speech-plan → AI review → voiceover → render → video review → package`，包含知识库、发音核验、多 Agent 协作和平台包。
+先找到用户指向的工程和当前成片，确认时间段、要改的内容及需保留部分。普通修订在原工程进行并保留可恢复版本；另做方案或跨 Agent 接力时使用独立项目。
 
-快速模式复用原 `studio new` 的身份、项目隔离与发布范围限制；只创建技术预览，不产生假的 `review.json` / `video/review.json`。项目的 `video/render.json` 明确标记 `render_status=technical_only`；因此 `studio package` 和 `publish` 依然受原审核与发布授权约束。若要正式发布，需要补齐真实的脚本/语音和视频审查。
+1. 读取 `shotlist.json` 的累计帧数与 `src/`，定位镜头。30fps 下第 23 秒从第 690 帧开始；时间不是镜头序号。
+2. 简单文案和素材改时间轴数据，动效改组件，配音改对应音频。时长由 `shotlist.json` 的 `frames` 驱动：修改时同时更新 `frames = round(seconds × fps)` 和 `seconds`，再核对后续镜头、字幕和音频起止。其他工程保留其数据源，不强制转换为本模板。
+3. 复用项目已有依赖；仅依赖缺失或锁文件变化才运行 `npm ci`。先渲染受影响区间及相邻转场，检查后再导出完整成片；不对旧项目重新执行 `studio quick`。
 
-## 验证
+在工程目录运行：
 
-`python -X utf8 -m unittest discover -s tests -p test_quick_video.py -v`
+```bash
+npm run dev
+npx --no-install remotion still src/index.tsx QuickVideo video/check.png --frame=690
+npx --no-install remotion render src/index.tsx QuickVideo video/preview.mp4 --frames=660-809
+npx --no-install remotion render src/index.tsx QuickVideo video/master-v2.mp4
+```
 
-默认执行离线测试。设置 `AI_MEDIA_QUICK_REAL_RENDER=1` 会在临时隔离工作区进行真实 Remotion/MP4 冒烟渲染，不修改旧项目或公开投稿。
+这些命令适用于本模板；其他工程使用其实际入口和 composition ID。本模板默认拒绝覆盖已有文件，重渲染使用新文件名；确需替换且已保留可恢复版本时才加 `--overwrite`。区间预览只用于检查，不能替代完整交付。参数说明见 Remotion 官方 [render](https://www.remotion.dev/docs/cli/render) / [still](https://www.remotion.dev/docs/cli/still)。
 
-音频和 BGM 来源见新项目的 `docs/audio-attribution.md`；复用的 video-shotcraft 源码还会同时保留 `docs/video-shotcraft-LICENSE.txt`（Apache-2.0）。素材是否可商用由实际来源和最新许可证决定。
+直接从 Remotion 重渲会使旧 `render.json` 的哈希过期，不能据此宣称旧审核仍有效。需要正式打包时，先按最终时间轴同步 `script.json`，完成 [脚本及发音检查](CONTENT_SCHEMA.md)，再用 `studio import-video --id <ID> --file <成片路径> --replace` 更新技术记录并重新审片。
+
+## 完成标准
+
+- 技术：实际 MP4 的画幅、时长、音轨与需求一致，旁白完整且无异常静音。
+- 画面：抽查每个镜头、转场和结尾，检查手机可读性、字幕时序、内容遮挡；不能用源代码或 SRT 正确代替画面检查。
+- 声音：正常速度核对语气、发音、停顿和音乐平衡。记录实际检查的时间段；不能试听时明确未验证项。
+- 交付：给出 MP4 和工程位置，说明缺失旁白或未验证项。`render_status=technical_only`、`NOT_REVIEWED` 是程序记录，不代表已通过完整生产审核。需要平台包或公开发布时按 [内容契约](CONTENT_SCHEMA.md) 补齐真实证据，不能改状态值绕过检查。
+
+维护验证入口与实测范围见 [验收](ACCEPTANCE_V3.md)。

@@ -1,16 +1,16 @@
 ---
 name: ai-media-studio
-description: 在已初始化工作区组织从目标理解、策划编稿、读音预检、审核返工、素材和视频合成到质量验收与交付的可追溯流程。
+description: 在已初始化工作区执行需要企业知识库、脚本审核、平台包或授权发布的完整视频生产流程；单条快速制作与定点修改使用主 Skill 的快速路线。
 ---
 # 内容生产主编排
 
-先读取本工作区 AGENTS.md、config/workspace.json 与 docs/CONTENT_SCHEMA.md。AI Agent 是策划者、编导、工具调度者和质量审核者；Skill 是业务流程与约束；TTS/FFmpeg/CLI/MCP 才执行具体操作。环境复用是基础设施能力，不是所有产品视频的默认主线。
+先核对工作区 `config/workspace.json`；环境和协作约束见根 `AGENTS.md`，状态与质量字段以根 `docs/CONTENT_SCHEMA.md` 为准。单条制作与定点修改转到根 `docs/QUICK_VIDEO.md`，不要求先经过本流程。
 
 1. 从用户任务固定核心价值、次级卖点、展示证据和发布边界，生成 brief；仅制作不获得发布权限。
-2. 用 `studio new --topic <共用主题> --agent <实际宿主> --title "主题"` 新建独立运行目录，已知模型必须传 `--model` 让输出目录包含模型标识，未知则用 `model-unknown` 占位、不编造。接力用 --parent-id 记录来源哈希，不修改其他 Agent 的目录。studio list --topic 用于对比。
-3. 按 ai-media-topics/scripts 编稿，填 editorial_intent。按 ai-media-review 审查主次对齐并记录 focus_alignment；这是语义判断，不是填字段就算通过。
-4. 选择实际可用的 TTS 服务与音色，执行 speech-plan。遇到已知多音词风险自动按语境改稿、同步字幕并重跑。READY 后使用导出的逐镜头文本生成 WAV，再 voiceover 交给 FFmpeg 装配。此流程不声称词典能解决所有中文读音。
-5. ai-media-materials 核对合法素材，ai-media-video 制作真实 MP4，工程检查之外实际试听和查看画面。pronunciation_check 需有真实时间点证据，ASR 不能取代试听；能力不足保留 BLOCK/部分完成，不虚构验收。
-6. 审核通过再 package，发布仅限初始明确指定的平台和账号。无需用户逐阶段审批，最多三轮返工。身份操作、越权与收费边界遵守 AGENTS.md。
+2. 用 `studio new --topic <共用主题> --agent <实际宿主> --title "主题"` 新建独立运行目录，已知模型传 `--model`，未知则省略、不猜测。接力用 `--parent-id` 记录来源哈希，不修改其他 Agent 的目录；`studio list --topic` 用于对比。
+3. 按任务读取 ai-media-topics/ai-media-scripts 编稿，填 editorial_intent。选择实际可用的 TTS 服务与音色，执行 speech-plan；按上下文处理已知读音风险，同步口播、字幕后重跑至 READY。
+4. 按 ai-media-review 审核稳定脚本及主次对齐，记录与当前脚本绑定的 focus_alignment。此后如再改稿，重新生成计划并审核，不能沿用旧记录。使用 READY 导出的文本生成逐镜头 WAV，再由 voiceover 交给 FFmpeg 装配。
+5. 按需读取 ai-media-materials 核对合法素材，由 ai-media-video 制作真实 MP4。工程检查、画面检查和实际试听分别完成；pronunciation_check 需有真实时间点证据，ASR 不能取代试听，能力不足保留未验收状态。
+6. 当前版本全部审核通过再 package；公开发布按初始指定平台与账号范围执行。无需逐阶段人工审批，最多三轮返工。具体质量与发布约束不在此重复，按根 docs/CONTENT_SCHEMA.md 执行。
 
-所有正式成果存放 output_root 下当前含 Agent 标识的内容 ID；执行命令用既有工作区绝对路径。先复用环境，不重复初始化。产品自身介绍任务可按需读 docs/examples/ai-multi-media-kit-introduction.md，其他主题不要加载该专用定位。
+所有正式成果存放 output_root 下当前含 Agent 标识的内容 ID；执行命令用既有工作区绝对路径。先复用环境，不重复初始化。仅本套件介绍任务按需读根 docs/examples/ai-multi-media-kit-introduction.md，其他主题不加载该定位。

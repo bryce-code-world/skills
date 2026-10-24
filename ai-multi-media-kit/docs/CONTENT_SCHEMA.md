@@ -1,5 +1,9 @@
 # 内容归属、发音准备与质量契约
 
+本文件定义**完整生产**分支的状态和审核字段。单条快速制作、定点修改先用 [QUICK_VIDEO](QUICK_VIDEO.md)，不把下列全部审核对象变成快速预览的前置条件，也不生成虚假 PASS。共享环境与目录规则见 [AGENTS](../AGENTS.md)。
+
+按需查看：[项目身份](#新项目主题agent轮次) · [脚本](#脚本与产品主次) · [字幕](#字幕排版预留画面空间并检查碰撞) · [发音](#发音预检--tts--装配) · [成片](#成片验收技术检查与实际试听分开) · [发布](#发布范围历史与导出)。
+
 ## 新项目：主题、Agent、轮次
 
 从工作区启动器调用以下 studio 子命令；Windows 使用 `RUN-STUDIO-WINDOWS.ps1 -Task studio ...`，Unix 使用 `bash run-studio.sh studio ...`。
@@ -43,7 +47,7 @@ list --topic product-intro
 - **字幕专用区**：高度 76%～92%（约 y=1459～1766），两侧至少 7%（约 76 像素），字幕最多两行；不在此区放页脚注释、手机框或其他重要信息。
 - **平台 UI 预留**：92% 以下不应放必须阅读的信息，考虑各平台控件的实际遮挡。
 
-自绘渲染器应使用实际字体 `textbbox` 连同背景条、描边计算 bounding boxes，并按镜头输出布局 JSON，例如：
+按实际渲染方式检查文字占位：Pillow 可用实际字体的 `textbbox`，网页渲染器测量最终 DOM；连同背景条、描边计算 bounding boxes。可按镜头输出布局 JSON，例如：
 
 ```json
 {"width":1080,"height":1920,"shots":[{"content_boxes":[[90,200,990,1320]],"subtitle_boxes":[[90,1490,990,1680]]}]}
@@ -69,7 +73,7 @@ render --id <内容ID> --materials <合法剪辑...> --rights-confirmed --audio 
 
 Agent 使用导出的文本生成逐镜头 WAV，再经 `studio voiceover` 交给 FFmpeg 装配，不手写重采样，不加速硬塞时长。报告记录原始 WAV 哈希、当前脚本、speech-plan、服务音色和创作归属。schema 4 的 FFmpeg 渲染必须引用匹配的音轨与装配报告。改稿、换音色或更新词典后旧计划/音轨不再可用；旧渲染与新计划不匹配时不能通过验收。
 
-本版默认处理方式为**上下文改写规避风险**，不内置某家服务的 phoneme/SSML 适配。不能假设 edge-tts 接受任意自定义 SSML；见其[上游说明](https://github.com/rany2/edge-tts#custom-ssml)。如必须保留原词并指定读音，需要另行验证实际语音引擎的能力，不能仅靠追加标签或拼音声称已解决。
+默认用**上下文改写规避风险**，不内置某家服务的 phoneme/SSML 适配。不能假设 edge-tts 接受任意自定义 SSML；见其[上游说明](https://github.com/rany2/edge-tts#custom-ssml)。如必须保留原词并指定读音，需要验证实际语音引擎的能力。改稿后对最终脚本重新审核，不能沿用改稿前的 `review.json`。
 
 ## 成片验收：技术检查与实际试听分开
 

@@ -1,4 +1,4 @@
-"""End-to-end, isolated tests for the opt-in video-shotcraft quick route."""
+"""Isolated quick-route preflight checks and an opt-in real render."""
 from __future__ import annotations
 
 import json
@@ -10,11 +10,17 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
+from argparse import Namespace
+from contextlib import redirect_stdout, redirect_stderr
+from io import StringIO
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDIO = ROOT / "scripts" / "studio.py"
-UPSTREAM = Path.home() / ".codex" / "skills" / "video-shotcraft"
+sys.path.insert(0, str(ROOT / "scripts"))
+import quick_video
+import studio
 
 
 def dump(path: Path, data: dict):
@@ -64,32 +70,29 @@ class QuickVideoTests(unittest.TestCase):
         })
         self.fake_skill = base / "skill"
         (self.fake_skill / "template").mkdir(parents=True)
-        (self.fake_skill / "assets" / "lib").mkdir(parents=True)
-        (self.fake_skill / "assets" / "audio" / "bgm").mkdir(parents=True)
-        (self.fake_skill / "assets" / "audio").mkdir(exist_ok=True)
         (self.fake_skill / "SKILL.md").write_text("---\nname: video-shotcraft\ndescription: test provider\n---\n", encoding="utf8")
         (self.fake_skill / "LICENSE").write_text("Apache-2.0 test fixture", encoding="utf8")
-        (self.fake_skill / "template" / "package.json").write_text("{}\n", encoding="utf8")
-        (self.fake_skill / "template" / "package-lock.json").write_text("{}\n", encoding="utf8")
-        (self.fake_skill / "template" / "tsconfig.json").write_text("{}\n", encoding="utf8")
-        (self.fake_skill / "template" / "remotion.config.ts").write_text("export {};\n", encoding="utf8")
-        (self.fake_skill / "assets" / "lib" / "FlashCut.tsx").write_text("export const FlashCut=()=>null;\n", encoding="utf8")
-        (self.fake_skill / "assets" / "audio" / "bgm" / "house-vibez.mp3").write_bytes(b"fake-bgm")
-        (self.fake_skill / "assets" / "audio" / "ATTRIBUTION.md").write_text("Synthetic test provider.", encoding="utf8")
+        for filename in ("package.json", "package-lock.json", "tsconfig.json", "remotion.config.ts"):
+            shutil.copyfile(ROOT / "assets" / "quick-remotion" / filename, self.fake_skill / "template" / filename)
 
     def call(self, *extra, skill=None, timeout=180):
-        return subprocess.run([sys.executable, "-X", "utf8", str(STUDIO),
-                               "--root", str(self.root), "quick", "--spec", str(self.spec),
-                               "--topic", "local-tools", "--agent", "codex",
-                               "--shotcraft-dir", str(skill or self.fake_skill),
-                               *list(map(str, extra))],
+        command = [str(STUDIO), "--root", str(self.root), "quick", "--spec", str(self.spec),
+                   "--topic", "local-tools", "--agent", "codex",
+                   *(["--shotcraft-dir", str(skill)] if skill else []), *list(map(str, extra))]
+        if "--dry-run" in extra:
+            stdout, stderr = StringIO(), StringIO()
+            with patch.object(sys, "argv", command), redirect_stdout(stdout), redirect_stderr(stderr), \
+                    patch.object(quick_video, "ensure_tools", return_value=("npm", "npx")):
+                code = studio.main()
+            return subprocess.CompletedProcess(command, code, stdout.getvalue(), stderr.getvalue())
+        return subprocess.run([sys.executable, "-X", "utf8", *command],
                               capture_output=True, text=True,
                               encoding="utf8", errors="replace", timeout=timeout)
 
     def test_dry_run_never_creates_project(self):
         reply = self.call("--dry-run")
         self.assertEqual(reply.returncode, 0, reply.stderr)
-        self.assertIn("video-shotcraft", reply.stdout)
+        self.assertIn("built-in", reply.stdout)
         self.assertIn("remotion", reply.stdout.lower())
         self.assertFalse(list(self.output.iterdir()))
 
@@ -104,9 +107,22 @@ class QuickVideoTests(unittest.TestCase):
 
     def test_missing_provider_license_is_rejected_before_output(self):
         (self.fake_skill / "LICENSE").unlink()
-        reply = self.call("--dry-run")
+        reply = self.call("--dry-run", skill=self.fake_skill)
         self.assertNotEqual(reply.returncode, 0)
         self.assertIn("video-shotcraft", reply.stderr)
+        self.assertFalse(list(self.output.iterdir()))
+
+    def test_explicit_provider_does_not_require_effect_or_music_assets(self):
+        reply = self.call("--dry-run", skill=self.fake_skill)
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertIn("video-shotcraft", reply.stdout)
+        self.assertFalse(list(self.output.iterdir()))
+
+    def test_broken_workspace_is_rejected_before_project_creation(self):
+        (self.knowledge / "review-rules.md").unlink()
+        reply = self.call("--dry-run")
+        self.assertNotEqual(reply.returncode, 0)
+        self.assertIn("review-rules.md", reply.stderr)
         self.assertFalse(list(self.output.iterdir()))
 
     def test_audio_longer_than_shot_is_rejected(self):
@@ -127,21 +143,65 @@ class QuickVideoTests(unittest.TestCase):
         self.assertIn("voice_missing", reply.stdout)
         self.assertFalse(list(self.output.iterdir()))
 
-    def test_missing_narration_and_audio_is_still_flagged(self):
+    def test_intentionally_silent_shot_is_not_missing_narration(self):
         brief = json.loads(self.spec.read_text("utf8"))
         brief["shots"][0].pop("audio")
         brief["shots"][0].pop("voiceover")
         dump(self.spec, brief)
         reply = self.call("--dry-run")
         self.assertEqual(reply.returncode, 0, reply.stderr)
-        self.assertIn('"voice_missing": [1]', reply.stdout)
+        self.assertIn('"voice_missing": []', reply.stdout)
+        self.assertIn('"silent_shots": [1]', reply.stdout)
         self.assertFalse(list(self.output.iterdir()))
+
+    def test_dry_run_validates_identity_and_collision(self):
+        reply = self.call("--dry-run", "--agent", "bad/agent")
+        self.assertNotEqual(reply.returncode, 0)
+        self.assertIn("agent", reply.stderr)
+        self.assertFalse(list(self.output.iterdir()))
+        existing = self.output / "local-tools-codex-model-unknown-existing"
+        existing.mkdir()
+        reply = self.call("--dry-run", "--run-id", "existing")
+        self.assertNotEqual(reply.returncode, 0)
+        self.assertIn("禁止覆盖", reply.stderr)
+        self.assertEqual(list(self.output.iterdir()), [existing])
+
+    def test_dry_run_reports_missing_runtime_before_project_creation(self):
+        args = Namespace(root=str(self.root), spec=str(self.spec), topic="local-tools", agent="codex",
+                         model=None, run_id=None, shotcraft_dir=None, dry_run=True)
+        with patch.object(quick_video.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(ValueError, "Node.js/npm"):
+                quick_video.run_quick(args, studio)
+        self.assertFalse(list(self.output.iterdir()))
+
+    def test_compressed_audio_requires_duration_probe(self):
+        brief = json.loads(self.spec.read_text("utf8"))
+        audio = self.audio.with_suffix(".mp3")
+        audio.write_bytes(b"not-an-audio-file")
+        brief["shots"][0]["audio"] = str(audio)
+        with self.assertRaisesRegex(ValueError, "ffprobe"):
+            quick_video.checked_spec(brief, self.spec)
+        self.assertFalse(list(self.output.iterdir()))
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "Requires local FFmpeg for compressed-audio fixture")
+    def test_compressed_audio_cannot_be_silently_truncated(self):
+        for extension in (".mp3", ".m4a"):
+            with self.subTest(extension=extension):
+                audio = self.audio.with_suffix(extension)
+                conversion = subprocess.run([shutil.which("ffmpeg"), "-v", "error", "-i", str(self.audio), str(audio)],
+                                            capture_output=True, timeout=30)
+                self.assertEqual(conversion.returncode, 0, conversion.stderr)
+                brief = json.loads(self.spec.read_text("utf8"))
+                brief["shots"][0].update(audio=str(audio), seconds=2)
+                dump(self.spec, brief)
+                reply = self.call("--dry-run")
+                self.assertNotEqual(reply.returncode, 0)
+                self.assertIn("配音过长", reply.stderr)
+                self.assertFalse(list(self.output.iterdir()))
 
     @unittest.skipUnless(os.environ.get("AI_MEDIA_QUICK_REAL_RENDER") == "1", "Run explicitly for real Remotion smoke")
     def test_real_mp4_keeps_full_review_and_publish_guardrails(self):
-        if not (UPSTREAM / "template" / "package-lock.json").is_file():
-            self.skipTest("video-shotcraft is not installed")
-        response = self.call(skill=UPSTREAM, timeout=260)
+        response = self.call(timeout=800)
         self.assertEqual(response.returncode, 0, response.stderr)
         self.assertIn("QUICK_VIDEO_READY", response.stdout)
         outputs = list(self.output.iterdir())
@@ -165,8 +225,8 @@ class QuickVideoTests(unittest.TestCase):
             self.assertEqual(image.read(8), b"\x89PNG\r\n\x1a\n")
             image.read(8)
             self.assertEqual(struct.unpack(">II", image.read(8)), (1080, 1920))
-        self.assertTrue((project / "src" / "FlashCut.tsx").is_file())
-        self.assertTrue((project / "docs" / "video-shotcraft-LICENSE.txt").is_file())
+        self.assertFalse((project / "src" / "FlashCut.tsx").exists())
+        self.assertFalse((project / "public" / "audio" / "bgm.mp3").exists())
         scripts = json.loads((project / "package.json").read_text("utf8"))["scripts"]
         self.assertIn("QuickVideo", scripts["render"])
         self.assertIn("src/index.tsx", scripts["dev"])

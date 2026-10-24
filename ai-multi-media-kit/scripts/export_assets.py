@@ -15,6 +15,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_paths import output_directory
+from upgrade_core import owned_files
 
 EXCLUDED = re.compile(r'(?:^|[._-])(cookie|session|secret|token|password|private|credential|auth|\.env)(?:[._-]|$)', re.I)
 EXCLUDED_DIRS = {'auth', 'runtime', '.git', '.venv', 'cache', 'logs', 'node_modules', '__pycache__', 'secrets'}
@@ -54,26 +55,19 @@ def main():
         if folder.exists():
             for file,rel in safe_files(folder):
                 items.append((file, f'{label}/{rel.as_posix()}'))
-    for file, label in ((root/'AGENTS.md','skill/AGENTS.md'),
-                        (root/'.agents/skills/ai-media-studio/SKILL.md','skill/SKILL.md'),
-                        (root/'config/dependencies.yaml','skill/dependencies.yaml'),
-                        (root/'config/platforms.yaml','skill/platforms.yaml'),
-                        (root/'config/material-sources.json','materials/sources.json'),
+    for file, label in ((root/'config/material-sources.json','materials/sources.json'),
                         (root/'runtime/materials-index.json','materials/index.json')):
         if file.is_file() and not file.is_symlink():
             items.append((file,label))
-    # Owned wrapper scripts and bundled business skills are portable; external Git clones are not.
-    for folder,label in ((root/'scripts','skill/scripts'),(root/'.agents/skills','skill/skills'),(root/'docs','skill/docs')):
-        if folder.is_dir():
-            for file,rel in safe_files(folder):
-                # Only ship our own six ai-media-* skills, not installed third-party source.
-                if label=='skill/skills' and not rel.parts[0].startswith('ai-media-'):
-                    continue
-                items.append((file, f'{label}/{rel.as_posix()}'))
+    # Preserve the same relative paths used by SKILL.md and the runtime scripts.
+    for rel in owned_files(root):
+        file = root / rel
+        if (file.is_file() and not any(p.is_symlink() for p in (file, *file.parents))
+                and not EXCLUDED.search(file.name)):
+            items.append((file, f'skill/{rel}'))
     # External/NAS source clips are not copied; only their index and provenance are exported.
-    # Backward-compatible main skill at skill/SKILL.md remains included above.
     out.parent.mkdir(parents=True, exist_ok=True)
-    manifest = {'format': 'ai-media-studio-owner-export-v1', 'contains_credentials': 'not_verified_by_content_scan',
+    manifest = {'format': 'ai-media-studio-owner-export-v2', 'contains_credentials': 'not_verified_by_content_scan',
                 'files': []}
     with ZipFile(out, 'w', compression=ZIP_DEFLATED, compresslevel=6) as zipout:
         for file, label in sorted(items, key=lambda t:t[1]):

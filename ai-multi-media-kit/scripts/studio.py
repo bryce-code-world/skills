@@ -168,7 +168,7 @@ def publish_targets(values):
     return targets
 
 
-def cmd_new(a):
+def cmd_new(a, *, quiet=False):
     root, knowledge = workspace(a.root)
     identity = new_identity(a)
     a.id = identity['content_id']
@@ -208,7 +208,8 @@ def cmd_new(a):
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
          'facts_to_verify': ['待 AI 核查的事实'], 'issues': ['请先由 AI 根据真实证据完成审核']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
-    print(f'CREATED {d}\nCONTENT_ID={a.id}\n下一步：完成核心价值简报和脚本，speech-plan 预检，再按实际内容审核。')
+    if not quiet:
+        print(f'CREATED {d}\nCONTENT_ID={a.id}\n下一步：完成核心价值简报和脚本，speech-plan 预检，再按实际内容审核。')
 
 
 def cmd_list(a):
@@ -666,13 +667,13 @@ def parse():
     n.add_argument('--publish-target',action='append',help='仅在初始用户任务明确要求公开发布时填写 platform:account；可重复')
     n.add_argument('--task-ref',help='原始用户任务消息引用（有则记录，不包含凭据）')
     n.set_defaults(func=cmd_new)
-    q=sub.add_parser('quick',help='用简短分镜和现有 video-shotcraft 生成可编辑 MP4，不启用发布流程')
+    q=sub.add_parser('quick',help='用简短分镜和内置 Remotion 模板生成可编辑 MP4，不启用发布流程')
     q.add_argument('--spec',required=True,help='AI 编写的 JSON 分镜（可含本地图片和配音路径）')
     q.add_argument('--topic',required=True,help='项目主题标识，供多 Agent 成果分组')
     q.add_argument('--agent',required=True,help='当前 Agent/宿主标识')
     q.add_argument('--model',help='仅传已经核实的实际模型名称')
     q.add_argument('--run-id',help='可选轮次 ID；省略时自动生成')
-    q.add_argument('--shotcraft-dir',help='video-shotcraft Skill 根目录，默认 ~/.codex/skills/video-shotcraft')
+    q.add_argument('--shotcraft-dir',help='可选：明确复用已安装 video-shotcraft 的依赖模板；默认使用内置模板')
     q.add_argument('--dry-run',action='store_true',help='只检查输入、依赖和目标路径，不创建项目')
     q.set_defaults(func=cmd_quick)
     ls=sub.add_parser('list');ls.add_argument('--topic');ls.set_defaults(func=cmd_list)
