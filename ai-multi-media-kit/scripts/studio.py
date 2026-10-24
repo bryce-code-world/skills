@@ -341,7 +341,12 @@ def render_ffmpeg(root, d, clips, audio, subtitles, width, height):
             sub=tmp/'captions.srt'
             shutil.copy2(subtitles,sub)
             # Use temp cwd and relative filename to avoid colon/backslash escaping on Windows.
-            cmd.extend(['-vf',"subtitles=captions.srt:force_style='FontSize=18,Outline=2,MarginV=60'"])
+            # Pin ASS coordinates to video pixels; implicit 384x288 scaling moved two-line captions into the content area.
+            font_size=max(1,round(min(width,height)*0.06))
+            style=(f'PlayResX={width},PlayResY={height},FontSize={font_size},'
+                   f'Outline={max(1,round(font_size*0.05))},Alignment=2,'
+                   f'MarginV={round(height*0.10)},MarginL={round(width*0.07)},MarginR={round(width*0.07)}')
+            cmd.extend(['-vf',f"subtitles=captions.srt:force_style='{style}'"])
         cmd.extend(['-map','0:v:0','-map','1:a:0','-t',f'{duration:.3f}', '-c:v','libx264',
                     '-preset','veryfast','-crf','23','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k',
                     '-movflags','+faststart',out])

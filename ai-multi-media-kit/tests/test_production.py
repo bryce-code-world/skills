@@ -145,6 +145,48 @@ class StudioProductionTests(unittest.TestCase):
 
     @unittest.skipUnless((os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')) and
                          (os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')), "FFmpeg unavailable")
+    def test_actual_one_and_two_line_captions_stay_in_safe_area(self):
+        ffmpeg=os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
+        filters=subprocess.run([ffmpeg,'-hide_banner','-filters'],capture_output=True,
+                               text=True,encoding='utf-8',errors='replace',timeout=25)
+        self.assertEqual(filters.returncode,0,filters.stderr)
+        if not any(' subtitles ' in line for line in filters.stdout.splitlines()):
+            self.skipTest('FFmpeg subtitles filter unavailable')
+        clip,voice,captions=self.root/'black.mp4',self.root/'voice.wav',self.root/'captions.srt'
+        for args in [
+            ['-f','lavfi','-i','color=c=black:s=160x280:r=24:d=3','-c:v','libx264','-pix_fmt','yuv420p',clip],
+            ['-f','lavfi','-i','sine=frequency=320:duration=2.9:sample_rate=48000','-c:a','pcm_s16le',voice],
+        ]:
+            result=subprocess.run([ffmpeg,'-hide_banner','-loglevel','error','-y',*map(str,args)],
+                                  capture_output=True,timeout=40)
+            self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
+        captions.write_text('1\n00:00:00,000 --> 00:00:01,400\nCaption test.\n\n'
+                            '2\n00:00:01,500 --> 00:00:02,900\nFirst line.\nSecond line.\n',encoding='utf-8')
+        sys.path.insert(0,str(ROOT/'scripts'))
+        from subtitle_layout import inspect_layout
+        for width,height in [(1080,1920),(1920,1080)]:
+            with self.subTest(width=width,height=height):
+                rendered=self.call('render','--id',self.id,'--engine','ffmpeg','--materials',clip,
+                                   '--rights-confirmed','--audio',voice,'--subtitles',captions,
+                                   '--width',width,'--height',height,'--replace',timeout=180)
+                self.assertEqual(rendered.returncode,0,rendered.stderr)
+                for timestamp in ['0.7','2.0']:
+                    frame=subprocess.run([ffmpeg,'-hide_banner','-loglevel','error','-ss',timestamp,
+                                          '-i',str(self.d/'video/master.mp4'),'-frames:v','1',
+                                          '-pix_fmt','gray','-f','rawvideo','pipe:1'],capture_output=True,timeout=30)
+                    self.assertEqual(frame.returncode,0,frame.stderr.decode(errors='replace'))
+                    self.assertEqual(len(frame.stdout),width*height)
+                    lit=[i for i,value in enumerate(frame.stdout) if value>180]
+                    self.assertTrue(lit,'Caption was not rendered')
+                    xs=[i%width for i in lit]
+                    outline=max(1,round(round(min(width,height)*0.06)*0.05))
+                    box=[min(xs)-outline,min(lit)//width-outline,
+                         max(xs)+1+outline,max(lit)//width+1+outline]
+                    report=inspect_layout(width,height,content_boxes=[],subtitle_boxes=[box])
+                    self.assertEqual(report['result'],'PASS',(timestamp,box,report))
+
+    @unittest.skipUnless((os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')) and
+                         (os.environ.get('AI_MEDIA_TEST_FFPROBE') or shutil.which('ffprobe')), "FFmpeg unavailable")
     def test_voiceover_cli_assembles_shot_audio_without_speedup(self):
         ffmpeg=os.environ.get('AI_MEDIA_TEST_FFMPEG') or shutil.which('ffmpeg')
         raw=self.root/'shot.wav'
