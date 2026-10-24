@@ -14,8 +14,8 @@ MEDIA_DIR="02-媒体素材"
 HISTORY_DIR="03-修改与版本"
 CATEGORIES={"image":"图片","audio":"配音","video":"视频片段","bgm":"背景音乐","sound":"音效"}
 SEGMENT=re.compile(r"^### 镜头 (\d{2})\s*$",re.M)
-FIELD=re.compile(r"^- (时长|画面标题|画面提示|画面描述|口播|图片|配音)：(.*)$",re.M)
-SCENE_FIELDS={"时长","画面标题","画面提示","画面描述","口播","图片","配音"}
+FIELD=re.compile(r"^- (时长|画面标题|画面提示|画面描述|口播|图片|视频|配音)：(.*)$",re.M)
+SCENE_FIELDS={"时长","画面标题","画面提示","画面描述","口播","图片","视频","配音"}
 
 
 def project_root(d:Path)->Path:
@@ -152,7 +152,8 @@ def export_storyboard(d:Path)->Path|None:
     script=json.loads((d/"script.json").read_text(encoding="utf8"))
     rendered=json.loads((d/"shotlist.json").read_text(encoding="utf8")) if (d/"shotlist.json").is_file() else {}
     items=rendered.get("shots",[])
-    lines=["# 分镜脚本","","修改镜头后执行 studio rebuild --id <内容ID>，由 Agent 同步分镜、重渲并归档原视频。",""]
+    lines=["# 分镜脚本","","修改镜头后执行 studio rebuild --id <内容ID>，由 Agent 同步分镜、重渲并归档原视频。","",
+           "- 连续旁白："+_display_asset(rendered.get("narration_audio")),""]
     timeline=0.0
     fps=rendered.get("fps",30)
     for i,shot in enumerate(script.get("shots",[]),1):
@@ -168,6 +169,7 @@ def export_storyboard(d:Path)->Path|None:
             f"- 画面描述：{_clean(shot.get('visual'))}",
             f"- 口播：{_clean(shot.get('voiceover'))}",
             f"- 图片：{_display_asset(scene.get('image'))}",
+            f"- 视频：{_display_asset(scene.get('video'))}",
             f"- 配音：{_display_asset(scene.get('audio'))}",""]
         timeline+=seconds
     file=story_file(d)
@@ -195,15 +197,21 @@ def parse_storyboard(d:Path)->list[dict]:
         for k,value in FIELD.findall(data[m.end():end]):
             if k in values:raise ValueError("分镜字段重复："+k)
             values[k]=value.strip()
-        if set(values)!=SCENE_FIELDS:
-            raise ValueError(f"镜头 {i:02d} 缺少字段：{sorted(SCENE_FIELDS-set(values))}")
+        # v0.13 Chinese storyboards had no separate video-footage field.
+        # Treat it as optional for old projects; new exports always include it.
+        required=SCENE_FIELDS-{"视频"}
+        if not required.issubset(values) or not set(values).issubset(SCENE_FIELDS):
+            raise ValueError(f"镜头 {i:02d} 分镜字段缺少或未知：{sorted(required-set(values))}")
         match=re.fullmatch(r"(\d+(?:\.\d+)?)\s*秒",values["时长"])
         if not match:raise ValueError("时长必须采用 n 秒格式")
         seconds=float(match.group(1))
         if not 0.5<=seconds<=120:raise ValueError("镜头时长不合理")
+        image=_resolve_asset(d,values["图片"],"image")
+        footage=_resolve_asset(d,values.get("视频","无"),"video")
+        if image and footage:raise ValueError(f"镜头 {i:02d} 图片和视频不能同时使用")
         scenes.append(dict(seconds=seconds,title=values["画面标题"],
                            caption=values["画面提示"],visual=values["画面描述"],
-                           voiceover=values["口播"],image=_resolve_asset(d,values["图片"],"image"),
+                           voiceover=values["口播"],image=image,video=footage,
                            audio=_resolve_asset(d,values["配音"],"audio")))
     return scenes
 
@@ -222,6 +230,9 @@ def apply_storyboard(d:Path)->dict:
     baseline=json.loads(_manifest(d).read_text(encoding="utf8")) if _manifest(d).is_file() else {}
     _check_overview(d,baseline)
     scenes=parse_storyboard(d)
+    raw=story_file(d).read_text(encoding="utf8")
+    master_match=re.search(r"^- 连续旁白：(.*)$",raw,re.M)
+    new_master=_resolve_asset(d,master_match.group(1),"audio") if master_match else None
     current_script=d/"script.json"
     current_shots=d/"shotlist.json"
     marker=_manifest(d)
@@ -237,6 +248,7 @@ def apply_storyboard(d:Path)->dict:
     render=json.loads(renderfile.read_text(encoding="utf8")) if renderfile.is_file() else None
     if render and len(render.get("shots",[]))!=len(scenes):
         raise ValueError("分镜数量与 Remotion 时间轴不同")
+    if render and master_match:render["narration_audio"]=new_master
     for i,(s,old) in enumerate(zip(scenes,script["shots"])):
         old.update(seconds=s["seconds"],title=s["title"],caption=s["caption"],
                    visual=s["visual"],voiceover=s["voiceover"])
@@ -244,7 +256,7 @@ def apply_storyboard(d:Path)->dict:
             render["shots"][i].update(seconds=s["seconds"],
                 frames=round(s["seconds"]*render.get("fps",30)),
                 title=s["title"],caption=s["caption"],voiceover=s["voiceover"],
-                image=s["image"],audio=s["audio"])
+                image=s["image"],video=s["video"],audio=s["audio"])
     script["duration_seconds"]=sum(s["seconds"] for s in scenes)
     script["narration"]="".join(s["voiceover"] for s in scenes) or script["title"]
     same=json.loads((d/"script.json").read_text(encoding="utf8"))==script

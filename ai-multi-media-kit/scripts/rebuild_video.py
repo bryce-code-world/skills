@@ -3,13 +3,38 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import tempfile
 
 from project_layout import (modern,project_root,MEDIA_DIR,parse_storyboard,
-                            apply_storyboard,archive_video)
-from quick_video import audio_duration,ensure_tools,run_cmd,local_probe
+                            apply_storyboard,archive_video,story_file,_resolve_asset)
+from quick_video import audio_duration,ensure_tools,run_cmd,local_probe,parse_srt
+
+
+def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_duration_seconds:float|None=None)->dict:
+    """Read actual user SRT, not a stale copy of the engine's cue list."""
+    timeline_file=d/"subtitles.json"
+    if not timeline_file.is_file():
+        return {"modified":False,"plan":None}
+    plan=json.loads(timeline_file.read_text(encoding="utf8"))
+    source=project_root(d)/"01-文案与分镜"/"字幕文件.srt"
+    if not source.is_file() and plan.get("cues"):
+        raise ValueError("中文 SRT 字幕已丢失，禁止悄悄沿用旧时间轴")
+    cues=parse_srt(source) if source.is_file() else []
+    if plan.get("required") and not cues:
+        raise ValueError("本视频要求同步字幕，缺少实际 SRT 时间轴")
+    if cues:
+        from speech_plan import text_key
+        narration="".join(s.get("voiceover","") for s in scenes)
+        if text_key("".join(c["text"] for c in cues))!=text_key(narration):
+            raise ValueError("字幕文字与正式口播不一致，需同步改稿与配音")
+        if cues[-1]["end"]>duration+.04 or (audio_duration_seconds is not None and cues[-1]["end"]>audio_duration_seconds+.04):
+            raise ValueError("字幕越过视频或连续配音时长，请调整镜头和字幕时间")
+    changed=cues!=plan.get("cues",[])
+    return {"modified":changed,"plan":{**plan,"cues":cues,
+        "timing_source":"manually_adjusted_needs_listening" if changed else plan.get("timing_source","none")}}
 
 
 def rebuild(args,studio):
@@ -19,12 +44,33 @@ def rebuild(args,studio):
         raise ValueError("仅支持新版可编辑 Remotion 项目，旧项目不迁移或改写")
     scenes=parse_storyboard(d)
     timeline=studio.load(d/"shotlist.json")
+    old_master=timeline.get("narration_audio")
+    master_tag=re.search(r"^- 连续旁白：(.*)$",story_file(d).read_text(encoding="utf8"),re.M)
+    new_master=_resolve_asset(d,master_tag.group(1),"audio") if master_tag else old_master
+    old_words="".join(x.get("voiceover","") for x in timeline["shots"])
+    new_words="".join(x.get("voiceover","") for x in scenes)
+    if old_master and old_words!=new_words and new_master==old_master:
+        raise ValueError("完整口播文字已改变但仍引用旧连续配音；请只重新生成受影响的语音段并更新连续旁白文件")
+    if old_master and new_master is None and new_words.strip():
+        raise ValueError("完整口播仍有文字，但连续旁白文件被清空")
     if len(scenes)!=len(timeline["shots"]):
         raise ValueError("更改镜头数量须同步 React 动画工程")
     for i,(old,scene) in enumerate(zip(timeline["shots"],scenes),1):
         if (old.get("voiceover","")!=scene["voiceover"] and old.get("audio")==scene["audio"] and scene["audio"]):
             raise ValueError(f"镜头 {i} 的口播已改，但仍引用旧配音；请重新生成该段音频并修改中文分镜的配音路径")
+    ffprobe=studio.load_ffmpeg_bin(root,"ffprobe")
+    master_length=audio_duration(project_root(d)/MEDIA_DIR/new_master,ffprobe) if new_master else None
+    total=sum(s["seconds"] for s in scenes)
+    if master_length and master_length>total+.02:
+        raise ValueError("连续旁白超过新镜头总时长，不能截掉语音尾部")
+    if new_master and any(s["audio"] for s in scenes):
+        raise ValueError("连续主音轨与逐镜头音频不能同时启用")
+    cues=review_subtitle_edits(d,scenes,total,master_length)
     for i,shot in enumerate(scenes,1):
+        if shot.get("video"):
+            source=project_root(d)/MEDIA_DIR/shot["video"]
+            if audio_duration(source,ffprobe,kind="video")<shot["seconds"]-.05:
+                raise ValueError(f"镜头 {i} 视频素材太短，请调整镜头时长或替换素材")
         if shot["audio"]:
             source=project_root(d)/MEDIA_DIR/shot["audio"]
             seconds=audio_duration(source,studio.load_ffmpeg_bin(root,"ffprobe"))
@@ -43,6 +89,13 @@ def rebuild(args,studio):
     os.close(fd)
     try:
         change=apply_storyboard(d)
+        if cues["plan"] and cues["modified"]:
+            history=d/"history"/"人工调整字幕"
+            history.mkdir(parents=True,exist_ok=True)
+            original=d/"subtitles.json"
+            backup=history/(str(__import__("time").time_ns())+"-subtitles.json")
+            shutil.copy2(original,backup)
+            studio.save(original,cues["plan"])
         if not (d/"node_modules").is_dir():
             run_cmd([npm,"ci","--ignore-scripts","--no-audit","--no-fund"],d,240)
         with tempfile.TemporaryDirectory(prefix=".重新渲染-",dir=project_root(d)) as folder:
@@ -57,7 +110,7 @@ def rebuild(args,studio):
             audio=next((s for s in info["streams"] if s.get("codec_type")=="audio"),None)
             if not video or (video["width"],video["height"])!=(timeline["width"],timeline["height"]):
                 raise RuntimeError("重渲染后视频画幅错误")
-            if any(s["audio"] for s in scenes) and audio is None:
+            if (new_master or any(s["audio"] for s in scenes)) and audio is None:
                 raise RuntimeError("重渲染缺少预期配音")
             expected=sum(round(s["seconds"]*timeline["fps"]) for s in scenes)/timeline["fps"]
             if abs(float(info["format"]["duration"])-expected)>.15:
@@ -74,8 +127,22 @@ def rebuild(args,studio):
                 shutil.copy2(cover,previous)
             os.replace(candidate,studio.video_path(d))
             os.replace(candidate_cover,cover)
+        subtitlefile=d/"subtitles.json"
+        srt=project_root(d)/"01-文案与分镜"/"字幕文件.srt"
+        ffmpeg=studio.load_ffmpeg_bin(root,"ffmpeg")
+        ffprobe=studio.load_ffmpeg_bin(root,"ffprobe")
+        audio_check={"result":"NOT_RUN","note":"尚未进行真实音频检测，不代表试听通过"}
+        if ffmpeg and ffprobe and (new_master or any(s["audio"] for s in scenes)):
+            try:audio_check=studio.inspect_video(ffmpeg,ffprobe,studio.video_path(d),studio.load(d/"script.json")["shots"])
+            except (RuntimeError,ValueError) as error:audio_check={"result":"BLOCK","issues":[str(error)]}
         studio.save(d/"video"/"render.json",{
+            "technical_audio_check":audio_check,
             "engine":"remotion","render_status":"technical_only",
+            "subtitles_sha256":studio.filehash(subtitlefile) if subtitlefile.is_file() else None,
+            "subtitle_file_sha256":studio.filehash(srt) if srt.is_file() else None,
+            "subtitles_status":"timed" if cues["plan"] and cues["plan"].get("cues") else "not_provided",
+            "subtitle_timing_source":cues["plan"].get("timing_source") if cues["plan"] else "none",
+            "narration_audio_sha256":studio.filehash(project_root(d)/MEDIA_DIR/new_master) if new_master else None,
             "video_sha256":studio.filehash(studio.video_path(d)),
             "script_sha256":studio.filehash(d/"script.json"),
             "created_at_utc":studio.now(),"duration_seconds":float(info["format"]["duration"]),

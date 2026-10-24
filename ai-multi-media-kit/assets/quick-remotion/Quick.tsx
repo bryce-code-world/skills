@@ -1,9 +1,14 @@
 import React from 'react';
-import {AbsoluteFill, Audio, Easing, Img, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
+import {AbsoluteFill, Audio, Easing, Img, OffthreadVideo, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import raw from '../shotlist.json';
+import timing from '../subtitles.json';
 
-type Shot = {title:string; caption:string; voiceover:string; frames:number; image:string|null; audio:string|null};
+type Shot = {title:string; caption:string; voiceover:string; frames:number; image:string|null; video?:string|null; audio:string|null};
+type Cue = {start:number;end:number;text:string};
 const shots:Shot[] = raw.shots;
+const cues:Cue[] = timing.cues;
+const hasTimedSubtitles = cues.length > 0;
+const masterAudio:string|null = raw.narration_audio || null;
 const cutoffs = shots.reduce<number[]>((all, shot) => {
   all.push((all.at(-1) || 0) + shot.frames);
   return all;
@@ -55,6 +60,29 @@ const fitText = (text:string, width:number, maxHeight:number, maxLines:number, m
   throw new Error('QuickVideo text is too long at a readable size; shorten the title or caption');
 };
 
+const Subtitle:React.FC = () => {
+  const frame=useCurrentFrame();
+  const {fps,width,height}=useVideoConfig();
+  const time=frame/fps;
+  const cue=cues.find(item=>time>=item.start && time<item.end);
+  const portrait=height>width;
+  const padding=portrait?77:110;
+  const layout=React.useMemo(
+    ()=>cue ? fitText(cue.text,width-padding*2-48,height*.13-48,2,portrait?42:35,28,700,1.3):null,
+    [cue?.text,width,height,padding,portrait]
+  );
+  if(!cue || !layout)return null;
+  return <div style={{position:'absolute',zIndex:20,left:padding,right:padding,top:height*.78,
+    height:height*.13,display:'flex',alignItems:'center',justifyContent:'center',
+    boxSizing:'border-box',padding:24,borderRadius:22,
+    background:'rgba(7,32,43,.93)',border:'1px solid rgba(105,208,224,.4)',fontFamily:font}}>
+      <div style={{textAlign:'center',fontSize:layout.size,fontWeight:700,lineHeight:1.3,
+        color:'#fff',textShadow:'0 2px 10px rgba(0,0,0,.55)'}}>
+        {layout.lines.map((line,i)=><div key={i}>{line}</div>)}
+      </div>
+    </div>;
+};
+
 const Scene:React.FC<{shot:Shot; number:number}> = ({shot, number}) => {
   const frame = useCurrentFrame();
   const {width, height} = useVideoConfig();
@@ -62,13 +90,14 @@ const Scene:React.FC<{shot:Shot; number:number}> = ({shot, number}) => {
   const enter = interpolate(frame, [0, 16], [0, 1], {...limit, easing:ease});
   const fadeOut = interpolate(frame, [shot.frames - 8, shot.frames], [1, 0], limit);
   const padding = portrait ? 77 : 110;
-  const headingWidth = !shot.image || portrait ? width - padding * 2 : 820;
+  const hasVisual = Boolean(shot.image || shot.video);
+  const headingWidth = !hasVisual || portrait ? width - padding * 2 : 820;
   const heading = React.useMemo(
-    () => fitText(shot.title, headingWidth, portrait && shot.image ? 290 : 440, 4, portrait ? 78 : 79, 48, 800, 1.22),
-    [shot.title, shot.image, headingWidth, portrait],
+    () => fitText(shot.title, headingWidth, portrait && hasVisual ? 290 : 440, 4, portrait ? 78 : 79, 48, 800, 1.22),
+    [shot.title, hasVisual, headingWidth, portrait],
   );
   const caption = React.useMemo(
-    () => shot.caption ? fitText(shot.caption, width - padding * 2 - 48, height * .13 - 48, 2, portrait ? 35 : 34, 30, 600, 1.35) : null,
+    () => !hasTimedSubtitles && shot.caption ? fitText(shot.caption, width - padding * 2 - 48, height * .13 - 48, 2, portrait ? 35 : 34, 30, 600, 1.35) : null,
     [shot.caption, width, padding, height, portrait],
   );
   return <AbsoluteFill style={{background:'#082733', overflow:'hidden', opacity:fadeOut, fontFamily:font}}>
@@ -78,21 +107,22 @@ const Scene:React.FC<{shot:Shot; number:number}> = ({shot, number}) => {
       fontSize:25, fontWeight:700, color:'#8bdae5', letterSpacing:3}}>
       {String(number).padStart(2,'0')} / {String(shots.length).padStart(2,'0')}
     </div>
-    <div style={{position:'absolute', left:padding, top:shot.image ? (portrait ? 230 : 220) : height * .27,
-      width:headingWidth, opacity:enter, textAlign:shot.image ? 'left' : 'center',
+    <div style={{position:'absolute', left:padding, top:hasVisual ? (portrait ? 230 : 220) : height * .27,
+      width:headingWidth, opacity:enter, textAlign:hasVisual ? 'left' : 'center',
       transform:`translateY(${(1 - enter) * 30}px)`}}>
       <div style={{color:'#fff', fontWeight:800, fontSize:heading.size, lineHeight:1.22}}>
         {heading.lines.map((line, index) => <div key={index}>{line}</div>)}
       </div>
-      <div style={{height:6, width:290 * enter, margin:shot.image ? '30px 0 0' : '30px auto 0',
+      <div style={{height:6, width:290 * enter, margin:hasVisual ? '30px 0 0' : '30px auto 0',
         borderRadius:8, background:'linear-gradient(90deg,#67cddd,#167b94)'}}/>
     </div>
-    {shot.image ? <div style={{position:'absolute', left:portrait ? 68 : 1040, top:portrait ? 570 : 165,
+    {hasVisual ? <div style={{position:'absolute', left:portrait ? 68 : 1040, top:portrait ? 570 : 165,
       width:portrait ? width - 136 : width - 1140, height:portrait ? 790 : 590,
       borderRadius:portrait ? 35 : 27, overflow:'hidden', background:'#164251',
       border:'1px solid rgba(218,248,251,.27)', boxShadow:'0 26px 75px rgba(0,15,22,.27)', opacity:enter,
       transform:`translateY(${(1 - enter) * 30}px)`}}>
-      <Img src={staticFile(shot.image)} style={{height:'100%', width:'100%', objectFit:'contain'}}/>
+      {shot.video ? <OffthreadVideo src={staticFile(shot.video)} muted style={{height:'100%',width:'100%',objectFit:'contain'}}/> :
+        shot.image ? <Img src={staticFile(shot.image)} style={{height:'100%', width:'100%', objectFit:'contain'}}/> : null}
     </div> : null}
     {caption ? <div style={{position:'absolute', left:padding, right:padding, top:height * .78, height:height * .13,
       display:'flex', alignItems:'center', justifyContent:'center', boxSizing:'border-box', padding:24,
@@ -109,8 +139,10 @@ const Scene:React.FC<{shot:Shot; number:number}> = ({shot, number}) => {
 };
 
 export const Quick:React.FC = () => <AbsoluteFill style={{background:'#082733'}}>
+  {masterAudio ? <Audio src={staticFile(masterAudio)} volume={.95}/> : null}
   {shots.map((shot, index) => <Sequence key={index} from={index === 0 ? 0 : cutoffs[index - 1]} durationInFrames={shot.frames}>
     <Scene shot={shot} number={index + 1}/>
-    {shot.audio ? <Audio src={staticFile(shot.audio)} volume={.95}/> : null}
+    {!masterAudio && shot.audio ? <Audio src={staticFile(shot.audio)} volume={.95}/> : null}
   </Sequence>)}
+  {hasTimedSubtitles ? <Subtitle/> : null}
 </AbsoluteFill>;

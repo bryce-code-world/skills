@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from workspace_paths import output_directory
 from project_layout import (engine_dir, project_root, project_id, modern, create_project, video_file,
     narration_file, check_storyboard, export_storyboard, apply_storyboard, store_asset, archive_video)
-from media_audio import inspect_video, mix_takes
+from media_audio import inspect_video, mix_takes, mix_continuous
 from content_identity import new_identity, provenance
 from speech_plan import load_rules, build_plan, validate_plan, validate_audio_review
 
@@ -132,6 +132,16 @@ def ensure_video_ready(d: Path, knowledge: Path, root: Path, *, platforms=None):
     s_sha = filehash(d / 'script.json')
     if meta.get('video_sha256') != v_sha or meta.get('script_sha256') != s_sha:
         fail('成片或脚本发生变化，需要重新渲染或导入')
+    if isinstance(meta.get('technical_audio_check'),dict) and meta['technical_audio_check'].get('result')=='BLOCK':
+        fail('当前 MP4 的实际音轨检查阻塞，请修复声音后重新生成及验收')
+    if meta.get('subtitles_sha256'):
+        subtitles=d/'subtitles.json'
+        if not subtitles.is_file() or filehash(subtitles)!=meta['subtitles_sha256']:
+            fail('字幕时间轴已变化或不存在，需要重新渲染及重新验片')
+    if meta.get('subtitle_file_sha256'):
+        srt=project_root(d)/'01-文案与分镜'/'字幕文件.srt'
+        if not srt.is_file() or filehash(srt)!=meta['subtitle_file_sha256']:
+            fail('用户中文字幕已改变，不能使用旧视频审核或旧字幕')
     if review.get('result') != 'PASS' or not review.get('checks') or any(
             not isinstance(c, dict) or c.get('result') != 'PASS' for c in review['checks']):
         fail('成片 AI 审核未全部 PASS，请自动修复后重新审核')
@@ -405,6 +415,14 @@ def cmd_speech_plan(a):
             fail('已有发音计划；请加 --replace 更新。口播文本及实际引擎/音色未变的原始 take 可复用，'
                  '随后重新执行 voiceover 装配和检查；仅重新生成改稿涉及的片段')
     if report['result'] == 'READY':
+        # Full-length TTS is preferred for natural delivery across visual cuts.
+        # This is an alternate input representation, not a second review plan.
+        full=d/'work'/'tts-inputs'/report['script_sha256']/'完整连续口播.txt'
+        full.parent.mkdir(parents=True,exist_ok=True)
+        utterance=' '.join(script['narration'].split())  # Layout breaks must not become TTS pauses.
+        if full.is_file() and full.read_text('utf8')!=utterance:
+            fail('完整连续口播输入稿已由其他 Agent 修改，禁止覆盖')
+        if not full.exists():full.write_text(utterance,encoding='utf8',newline='\n')
         for take in report['takes']:
             dest = d/take['text_file']
             if not dest.resolve().is_relative_to(d.resolve()) or dest.is_symlink(): fail('TTS 输入稿路径越界')
@@ -426,13 +444,17 @@ def cmd_voiceover(a):
     if not ffmpeg or not ffprobe:
         fail('合成配音需要 FFmpeg/ffprobe，不要手写采样率转换')
     output = narration_file(d)
+    if a.continuous and len(a.takes)!=1:
+        fail('连续旁白需要一份完整的 WAV，而非每个镜头一份 TTS')
     take_paths = [store_asset(d,Path(x),'audio',i) for i,x in enumerate(a.takes,1)]
-    report = mix_takes(ffmpeg, ffprobe, script['shots'], take_paths, output, replace=a.replace)
+    report = (mix_continuous(ffmpeg,ffprobe,script['shots'],take_paths[0],output,replace=a.replace)
+              if a.continuous else mix_takes(ffmpeg, ffprobe, script['shots'], take_paths, output, replace=a.replace))
     save(d/'work'/'voiceover-check.json', {
         **report, 'audio_sha256': filehash(output), 'script_sha256': filehash(d/'script.json'),
         'provenance':provenance(load(d/'content.json')),
         'speech_plan_sha256':filehash(d/'work/speech-plan.json') if speech else None,
         'tts_engine':speech['tts_engine'] if speech else None, 'voice':speech['voice'] if speech else None,
+        'mode': 'continuous' if a.continuous else 'per_shot',
         'take_sha256':[filehash(p) for p in take_paths],
         'takes': [str(p) for p in take_paths], 'output': str(output), 'checked_at_utc': now()})
     print('VOICEOVER_READY:', output, '\\n', json.dumps(report, ensure_ascii=False))
@@ -730,6 +752,36 @@ def cmd_status(a):
             else: fn(d,k)
             result[key]=True
         except ValueError as e:result[key]=False;result[key+'_reason']=str(e)
+    vr=load(d/'video/review.json') if (d/'video/review.json').is_file() else {}
+    speech=vr.get('pronunciation_check') if isinstance(vr,dict) else {}
+    speech=speech if isinstance(speech,dict) else {}
+    content_ok=bool(result.get('script_ready'))
+    speech_ok=bool(speech.get('result')=='PASS' and speech.get('method')=='actual_audio_review'
+                   and isinstance(speech.get('evidence'),list) and speech['evidence'])
+    vpath=video_path(d)
+    m=d/'video/render.json'
+    media_record=load(m) if m.is_file() else {}
+    hashes_ok=(vpath.is_file() and (d/'script.json').is_file() and
+               media_record.get('video_sha256')==filehash(vpath) and
+               media_record.get('script_sha256')==filehash(d/'script.json'))
+    if media_record.get('subtitles_sha256'):
+        cues=d/'subtitles.json'
+        hashes_ok=hashes_ok and cues.is_file() and filehash(cues)==media_record['subtitles_sha256']
+    if media_record.get('subtitle_file_sha256'):
+        sub=project_root(d)/'01-文案与分镜'/'字幕文件.srt'
+        hashes_ok=hashes_ok and sub.is_file() and filehash(sub)==media_record['subtitle_file_sha256']
+    sound_blocked=isinstance(media_record.get('technical_audio_check'),dict) and media_record['technical_audio_check'].get('result')=='BLOCK'
+    if load(d/'content.json').get('schema',3)<4:
+        overall='LEGACY_COMPATIBLE' if result.get('video_ready') else 'BLOCK'
+    else:
+        overall='PASS' if result.get('video_ready') else ('PARTIAL' if hashes_ok and not sound_blocked else 'BLOCK')
+    inconsistent=bool(vr.get('result')=='PASS' and not result.get('video_ready'))
+    result['delivery_verdict']={
+        'engineering':'PASS' if result.get('video_ready') else ('CHECKSUM_BOUND_NOT_FULLY_REVIEWED' if hashes_ok and not sound_blocked else 'BLOCK'),
+        'content':'PASS' if content_ok else 'NOT_REVIEWED',
+        'speech':'PASS' if speech_ok and result.get('video_ready') else 'BLOCK',
+        'overall':overall,'inconsistent_review':inconsistent,
+        'note':'只有完整内容、实际试听、真实视频及版本门禁均通过才能显示 PASS'}
     print(json.dumps(result,indent=2,ensure_ascii=False))
 
 
@@ -790,7 +842,7 @@ def parse():
     h=sub.add_parser('hash');h.add_argument('--id',required=True);h.set_defaults(func=cmd_hash)
     c=sub.add_parser('check');c.add_argument('--id',required=True);c.set_defaults(func=cmd_check)
     c=sub.add_parser('status');c.add_argument('--id',required=True);c.set_defaults(func=cmd_status)
-    voice=sub.add_parser('voiceover');voice.add_argument('--id',required=True);voice.add_argument('--takes',nargs='+',required=True);voice.add_argument('--replace',action='store_true');voice.set_defaults(func=cmd_voiceover)
+    voice=sub.add_parser('voiceover');voice.add_argument('--id',required=True);voice.add_argument('--takes',nargs='+',required=True);voice.add_argument('--continuous',action='store_true',help='一份自然连续口播跨越多个画面镜头，无逐镜头重新起播');voice.add_argument('--replace',action='store_true');voice.set_defaults(func=cmd_voiceover)
     ren=sub.add_parser('render');ren.add_argument('--id',required=True);ren.add_argument('--engine',choices=['ffmpeg','mpt'],default='ffmpeg');
     ren.add_argument('--materials',nargs='+',help='手动指定本地视频，兼容原流程')
     ren.add_argument('--material-ids',nargs='+',help='从 materials search 返回的素材 ID 按指定顺序剪辑')

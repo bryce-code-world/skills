@@ -37,6 +37,7 @@ def assess_pcm(pcm: bytes, rate: int, shots: list[dict]) -> dict:
     frame = max(1, rate // 5)  # 200 ms windows, robust to ordinary punctuation pauses
     total_seconds = sum(float(x["seconds"]) for x in shots)
     errors = []
+    pacing_warnings=[]
     if abs(len(audio) / rate - total_seconds) > 0.55:
         errors.append(f"音频时长与分镜总时长不一致：{len(audio)/rate:.2f}s vs {total_seconds:.2f}s")
     offset = 0
@@ -64,12 +65,16 @@ def assess_pcm(pcm: bytes, rate: int, shots: list[dict]) -> dict:
         item = {"shot": n, "seconds": seconds, "active_fraction": round(active_fraction, 3),
                 "longest_silence_seconds": longest_silence, "threshold_rms": round(threshold, 4)}
         details.append(item)
+        if str(shot.get("voiceover", "")).strip() and longest_silence >= 0.8:
+            pacing_warnings.append({"shot":n,"silence_seconds":longest_silence,
+                "severity":"review_or_fix" if longest_silence>=1.2 else "check_pacing",
+                "note":"能量空档只是风险提示；应检查原音轨的句尾与切镜，不能自动判定不自然"})
         if str(shot.get("voiceover", "")).strip() and (
                 active_fraction < 0.45 or longest_silence > max(2.0, min(3.0, seconds * 0.5))):
             errors.append(f"分镜 {n} 有效声音不足或长时间静音：active={active_fraction:.0%}，"
                           f"longest_silence={longest_silence:.1f}s；请复核配音/重采样/字幕")
     return {"result": "PASS" if not errors else "BLOCK", "method": "energy_check_not_speech_recognition",
-            "shots": details, "issues": errors}
+            "shots": details, "issues": errors,"pacing_warnings":pacing_warnings}
 
 
 def inspect_wav(path: Path, shots: list[dict]) -> dict:
@@ -143,3 +148,41 @@ def mix_takes(ffmpeg: str, ffprobe: str, shots: list[dict], takes: list[Path],
     finally:
         if target.exists():
             target.unlink()
+
+def mix_continuous(ffmpeg: str, ffprobe: str, shots: list[dict], source: Path,
+                   output: Path, *, replace=False) -> dict:
+    """Convert one whole spoken performance without splitting it at scene boundaries.
+
+    All sample-rate and channel transformations use FFmpeg, never hand-written PCM.
+    No voice is accelerated or cut to fit an individual visual shot.
+    """
+    src=Path(source).expanduser().resolve()
+    if not src.is_file() or src.suffix.lower()!=".wav":
+        raise ValueError("连续旁白必须使用真实的单段 PCM WAV；不接受逐镜头拼接的替身")
+    if not shots or any(float(s.get("seconds",0))<=0 for s in shots):
+        raise ValueError("连续配音要求有效镜头时长")
+    if output.exists() and not replace:
+        raise ValueError("连续旁白文件已经存在；需要 --replace 才能重新装配")
+    duration=float(json.loads(_run([ffprobe,"-v","error","-show_format","-of","json",src]))["format"]["duration"])
+    total=sum(float(s["seconds"]) for s in shots)
+    if not math.isfinite(duration) or duration<=0 or duration>total+.05:
+        raise ValueError(f"连续旁白 {duration:.2f}s 超过视频总时长 {total:.2f}s，禁止加速和裁尾音")
+    if total-duration>1.2:
+        raise ValueError(f"连续旁白比视频短 {total-duration:.2f}s；禁止用长静音补时长")
+    output.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=output.parent,prefix=".continuous-",
+                                     suffix=".wav",delete=False) as tmp:
+        staging=Path(tmp.name)
+    try:
+        _run([ffmpeg,"-hide_banner","-loglevel","error","-y","-i",src,
+              "-vn","-af",f"aresample=48000,aformat=sample_fmts=s16:channel_layouts=mono,"
+              f"apad,atrim=duration={total:.3f}",
+              "-c:a","pcm_s16le","-ar","48000","-ac","1",staging])
+        verdict=inspect_wav(staging,shots)
+        if verdict["result"]!="PASS":
+            raise ValueError("连续语音异常："+ "; ".join(verdict["issues"]))
+        os.replace(staging,output)
+        return {**verdict,"mode":"continuous","source_duration_seconds":round(duration,3),
+                "video_duration_seconds":round(total,3)}
+    finally:
+        staging.unlink(missing_ok=True)

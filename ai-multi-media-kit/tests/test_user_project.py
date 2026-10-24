@@ -115,6 +115,30 @@ class UserProjectTests(unittest.TestCase):
         self.assertIn("中文分镜",result.stderr)
         self.assertIn("用户先写了",doc.read_text("utf8"))
 
+    def test_changing_master_voice_is_reflected_in_engine_timeline(self):
+        project=self.new()
+        d=project/"99-专业工程"
+        audio=project/"02-媒体素材"/"配音"
+        (audio/"old.wav").write_bytes(b"old voice fixture")
+        (audio/"new.wav").write_bytes(b"new voice fixture")
+        script={"content_id":project.name,"title":"测试影片","duration_seconds":6,
+                "narration":"一句开始。一句收尾。","shots":[
+                   {"seconds":3,"visual":"镜头甲","voiceover":"一句开始。"},
+                   {"seconds":3,"visual":"镜头乙","voiceover":"一句收尾。"}],"platforms":{}}
+        (d/"script.json").write_text(json.dumps(script,ensure_ascii=False),encoding="utf8")
+        shots={"width":1080,"height":1920,"fps":30,"narration_audio":"配音/old.wav",
+               "shots":[{"seconds":3,"frames":90,"title":"甲","caption":"","audio":None,"image":None},
+                        {"seconds":3,"frames":90,"title":"乙","caption":"","audio":None,"image":None}]}
+        (d/"shotlist.json").write_text(json.dumps(shots,ensure_ascii=False),encoding="utf8")
+        out=self.call("storyboard","--id",project.name,"--from-engine")
+        self.assertEqual(out.returncode,0,out.stderr)
+        doc=project/"01-文案与分镜"/"分镜脚本.md"
+        self.assertIn("配音/old.wav",doc.read_text("utf8"))
+        doc.write_text(doc.read_text("utf8").replace("配音/old.wav","配音/new.wav"),encoding="utf8")
+        result=self.call("storyboard","--id",project.name,"--apply")
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(json.loads((d/"shotlist.json").read_text("utf8"))["narration_audio"],"配音/new.wav")
+
     def test_edit_to_plain_narration_cannot_be_silently_overwritten(self):
         p=self.new()
         eng=p/"99-专业工程"
@@ -186,6 +210,53 @@ class UserProjectTests(unittest.TestCase):
         self.assertEqual(first,second)
         self.assertEqual(len(list((project/"02-媒体素材"/"图片").iterdir())),1)
         self.assertTrue(relative_media(engine,first).startswith("图片/"))
+
+    def test_reported_pass_cannot_override_unverified_spoken_audio(self):
+        p=self.new()
+        d=p/"99-专业工程"
+        script={"content_id":p.name,"title":"测试片","duration_seconds":3,
+                "narration":"测试中的口播。","shots":[{"seconds":3,"visual":"画面","voiceover":"测试中的口播。"}],
+                "platforms":{}}
+        (d/"script.json").write_text(json.dumps(script,ensure_ascii=False),encoding="utf8")
+        (p/"成品视频.mp4").write_bytes(b"test fixture not a real video")
+        import hashlib
+        digest=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
+        (d/"video").mkdir(exist_ok=True)
+        (d/"video/render.json").write_text(json.dumps({
+            "video_sha256":digest(p/"成品视频.mp4"),"script_sha256":digest(d/"script.json"),
+            "render_status":"technical_only"}),encoding="utf8")
+        (d/"video/review.json").write_text(json.dumps({
+            "result":"PASS","pronunciation_check":{"result":"NOT_VERIFIED"},
+            "checks":[{"result":"PASS"}],"issues":[],"facts_to_verify":[]}),encoding="utf8")
+        response=self.call("status","--id",p.name)
+        self.assertEqual(response.returncode,0,response.stderr)
+        report=json.loads(response.stdout)
+        self.assertEqual(report["delivery_verdict"]["speech"],"BLOCK")
+        self.assertNotEqual(report["delivery_verdict"]["overall"],"PASS")
+        self.assertTrue(report["delivery_verdict"]["inconsistent_review"])
+
+    def test_v013_chinese_storyboard_without_video_field_is_still_editable(self):
+        import hashlib
+        p=self.new()
+        d=p/"99-专业工程"
+        script={"content_id":p.name,"title":"旧版中文工程","narration":"旧版文案。",
+                "duration_seconds":3,"shots":[{"seconds":3,"visual":"旧镜头","voiceover":"旧版文案。"}],
+                "platforms":{}}
+        (d/"script.json").write_text(json.dumps(script,ensure_ascii=False),encoding="utf8")
+        self.assertEqual(self.call("storyboard","--id",p.name,"--from-engine").returncode,0)
+        doc=p/"01-文案与分镜"/"分镜脚本.md"
+        old=doc.read_text("utf8").replace("- 视频：无","")
+        doc.write_text(old,encoding="utf8")
+        meta_path=d/"user-storyboard.json"
+        meta=json.loads(meta_path.read_text("utf8"))
+        meta["md_sha256"]=hashlib.sha256(doc.read_bytes()).hexdigest()
+        meta_path.write_text(json.dumps(meta,ensure_ascii=False),encoding="utf8")
+        self.assertNotIn("- 视频",doc.read_text("utf8"))
+        result=self.call("storyboard","--id",p.name,"--apply")
+        self.assertEqual(result.returncode,0,result.stderr)
+        updated=json.loads((d/"script.json").read_text("utf8"))
+        self.assertEqual(updated["shots"][0]["visual"],"旧镜头")
+        self.assertEqual(updated["duration_seconds"],3)
 
     def test_legacy_project_remains_untouched_and_readable(self):
         p=self.out/"oldcase"

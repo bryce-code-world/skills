@@ -71,12 +71,12 @@ render --id <内容ID> --materials <合法剪辑...> --rights-confirmed --audio 
 `speech-plan` 本身不调用语音服务，也不保证发音正确。它会：
 
 - 核对 `narration` 与各镜头 `voiceover`；已有 `subtitle_text/subtitle_lines` 也必须一致（允许标点/空格变化）。
-- 口播内部不得包含排版换行或制表符；字幕折行只保留在显示字段。分段与试听原则见 [口播、镜头与字幕](QUICK_VIDEO.md#口播镜头与字幕)。
+- 口播内部不得包含排版换行或制表符；字幕折行只保留在显示字段。分段与试听原则见 [连续口播和同步字幕](QUICK_VIDEO.md#制作原则)。
 - 读取套件 `config/pronunciation.json` 中的已知易错词；可合并用户知识库的 `pronunciation.json`（同名词条以后者为准）。词典 schema=1，每项有 term、expected_reading、suggestion。默认只覆盖一组已知风险，不是完整汉字注音引擎。
 - 命中“重复”等词时输出 `work/speech-plan.json` 的 REVISE 和改写建议，退出2。Agent 按语境保留原义改写正式脚本及字幕，然后 `speech-plan ... --replace`；不全局替换单个汉字，不把拼音当字幕，不自行改为 READY。
-- READY 时导出 `work/tts-inputs/<脚本哈希>/shot-NNN.txt`。记录脚本/词典/文本哈希、服务、音色及 `pronunciation_verified=false`。这只表示已知文字风险已处理，**不是音频已经试听过**。
+- READY 时导出 `work/tts-inputs/<脚本哈希>/shot-NNN.txt`，同时输出 `完整连续口播.txt` 供自然口播合成；完整口播来自当前已经通过预检的 `narration`，不是另一个独立改稿入口。记录脚本/词典/文本哈希、服务、音色及 `pronunciation_verified=false`。这只表示已知文字风险已处理，**不是音频已经试听过**。
 
-Agent 使用导出的完整语义段生成 WAV，再经 `studio voiceover` 交给 FFmpeg 装配；当前接口每个分镜对应一份 WAV，分镜内可包含多个画面变化。装配在每段起点加 0.15 秒，音频连同该偏移必须装得下；不手写重采样，不加速硬塞。报告记录原始 WAV 哈希、当前脚本、speech-plan、服务音色和创作归属。
+**默认建议一段自然连续语音跨越多个画面。** 使用 READY 的 `完整连续口播.txt` 合成单份 WAV，执行 `studio voiceover --id <ID> --continuous --takes <完整旁白.wav>`，通过 FFmpeg 统一采样率，不按画面边界重新起读，不加速、不裁尾音；连续旁白超过镜头总时长或需要超过 1.2 秒静音填充时拒绝。旧逐镜头 `--takes ...` 保留兼容，但只有语义上确实分段时才采用，每段起点仍有 0.15 秒余量。报告记录 `mode`、原始 WAV 哈希、脚本、发音计划、服务音色和创作归属。
 
 脚本或词典改变后更新计划与审核；这不意味着所有配音都要重新合成。对照新旧计划的 `text_sha256/tts_engine/voice`，文本和实际合成设置未变的 take 可以复用；文本或音色变化才重做受影响段。镜头时长变化后重新装配、同步字幕，并更新当前版本的音轨报告。旧计划或旧报告不能直接冒充新版本验收。
 
@@ -86,7 +86,7 @@ Agent 使用导出的完整语义段生成 WAV，再经 `studio voiceover` 交�
 
 ## 成片验收：技术检查与实际试听分开
 
-工程门禁会重新解码真实 MP4，检查有口播分镜的有效声音、异常静音、时长和版本哈希。它主要拦截严重技术异常，不能把“停顿未超过阈值”判成自然，也不能识别每个词内断句。波形、ASR 和输入文字只作辅助。
+工程门禁会重新解码真实 MP4，检查有口播分镜的有效声音、异常静音、时长和版本哈希；0.8 秒以上低能量空档记录节奏警示，1.2 秒以上需解释或修正，但静音检测不能证明语气不自然。新式 Remotion 成片还要核对 `subtitles.json`、用户的 `字幕文件.srt` 与当前渲染哈希。固定画面 `caption` 不得计为同步字幕。它主要拦截严重技术异常，不能把“停顿未超过阈值”判成自然，也不能识别每个词内断句。波形、ASR 和输入文字只作辅助。
 
 `video/review.json` 保留当前 `video_sha256/script_sha256/review_standard_sha256`、checks、issues、facts_to_verify。新项目还需：
 
@@ -103,7 +103,7 @@ Agent 使用导出的完整语义段生成 WAV，再经 `studio voiceover` 交�
 }
 ```
 
-以上只是结构示例，不能复制成真实验收证据。CLI 校验时间段与绑定关系，不能鉴别调用者是否真的试听；Agent 必须基于实际音频输入填写。还需核对中文/英文词、数字、字幕时序与各镜头首/中/尾画面。没有试听能力则 `BLOCK`、如实交付技术测试 MP4 和未验收项；不得以主观分数、ASR 或伪造 evidence 绕过。无需用户逐阶段审批。
+以上只是结构示例，不能复制成真实验收证据。运行 `studio status --id <ID>` 可以查看派生的 `delivery_verdict`：只有版本、工程、内容与实际试听门禁共同通过才会给出总 PASS；手写 `video/review.json.result=PASS` 但发音仍 `BLOCK/NOT_VERIFIED` 时属于结论冲突，不能拿报告总分掩盖。CLI 校验时间段与绑定关系，不能鉴别调用者是否真的试听；Agent 必须基于实际音频输入填写。还需核对中文/英文词、数字、字幕时序与各镜头首/中/尾画面。没有试听能力则 `BLOCK`、如实交付技术测试 MP4 和未验收项；不得以主观分数、ASR 或伪造 evidence 绕过。无需用户逐阶段审批。
 
 ## 发布范围、历史与导出
 
