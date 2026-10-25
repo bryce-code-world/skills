@@ -211,6 +211,41 @@ def select_visual_mode(shot: dict, line: dict, spec: Path) -> dict:
             "steps":list(steps) if mode=="steps" else []}
 
 
+def check_named_product(raw:dict,shots:list[dict])->dict:
+    """A named product intro cannot silently become a generic AI promo.
+
+    This is a deterministic editorial minimum, not a judgment about watchability.
+    Agent still validates facts, real evidence and voice naturalness.
+    """
+    import unicodedata
+    purpose=raw.get("video_purpose","general")
+    if purpose not in {"general","product_intro"}:
+        raise ValueError("video_purpose 只支持 general 或 product_intro")
+    if purpose=="general":
+        return {"video_purpose":"general","subject_name":None,"subject_spoken":None}
+    brand=valid_text(raw.get("subject_name"),"介绍对象的产品名称 subject_name",100)
+    spoken=valid_text(raw.get("subject_spoken",brand),"口播中的产品名称 subject_spoken",100)
+    def normalize(value):
+        return unicodedata.normalize("NFKC",value).casefold().replace(" ","")
+    exact=normalize(brand)
+    oral=normalize(spoken)
+    first=[s for s in shots[:2] if s["seconds"] and s]
+    if not any(exact in normalize(s["title"]) for s in first):
+        raise ValueError("开头两镜头必须让产品名称出现在画面标题，不可只介绍泛泛的 AI 流程")
+    title_start=0.0
+    for s in first:
+        if exact in normalize(s["title"]):break
+        title_start+=s["frames"]/30
+    if title_start>12:
+        raise ValueError("开头 12 秒内须介绍产品名称，请提前展示产品主体，避免大段泛泛痛点")
+    if not any(oral in normalize(s.get("voiceover","")) for s in first):
+        raise ValueError("开头两镜头的口播必须点名介绍对象的产品名称，不能只说这个工具")
+    last=shots[-1]
+    if exact not in normalize(last["title"]) or oral not in normalize(last["voiceover"]):
+        raise ValueError("结尾须在画面与口播再次出现产品名称，明确观众记住的是哪个产品")
+    return {"video_purpose":purpose,"subject_name":brand,"subject_spoken":spoken}
+
+
 def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("快速分镜需要 JSON 对象")
@@ -314,11 +349,12 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
         spoken="".join(x["voiceover"] for x in prepared if x["voiceover"])
         if text_key("".join(c["text"] for c in normalized)) != text_key(spoken):
             raise ValueError("字幕与正式口播不一致，禁止以静态提示文字冒充同步字幕")
+    product=check_named_product(raw,prepared)
     evidence=raw.get("evidence_plan",[])
     if not isinstance(evidence,list) or len(evidence)>8 or any(not isinstance(item,str) or not item.strip() or len(item)>300 for item in evidence):
         raise ValueError("evidence_plan 应是最多 8 条由 Agent 核对来源的真实画面证据，不要凭空填充")
     return {"title":title,"audience":audience,"primary_value":value,
-            "aspect":aspect,"shots":prepared,"visual_style":style,"narration_audio":master,
+            **product,"aspect":aspect,"shots":prepared,"visual_style":style,"narration_audio":master,
             "subtitles":normalized,"subtitles_required":required,
             "subtitle_timing_source":source if normalized else "none",
             "voice_source":voice_source(raw),"claim_warnings":audience_risk_notes(prepared),
@@ -412,6 +448,7 @@ def run_quick(args, studio):
         "aspect": spec["aspect"],
         "shot_count": len(spec["shots"]),
         "visual_style":spec["visual_style"],
+        "subject_name":spec["subject_name"],
         "visual_modes":[s["visual_mode"] for s in spec["shots"]],
         "duration_seconds": sum(s["frames"] for s in spec["shots"]) / 30,
         "voice_missing": [] if spec["narration_audio"] else [i + 1 for i, s in enumerate(spec["shots"]) if s.get("voice_missing")],
@@ -471,7 +508,7 @@ def run_quick(args, studio):
             item["audio"]=relative_media(project,dest)
     width, height = (1080, 1920) if spec["aspect"] == "9:16" else (1920, 1080)
     studio.save(project / "shotlist.json", {"width":width, "height":height, "fps":30,
-        "visual_style":spec["visual_style"],
+        "visual_style":spec["visual_style"],"subject_name":spec["subject_name"],
         "narration_audio":master_path,"shots":data})
     studio.save(project / "subtitles.json",{
         "cues":spec["subtitles"],"required":spec["subtitles_required"],
@@ -493,6 +530,9 @@ def run_quick(args, studio):
         "editorial_intent": {
             "audience": spec["audience"] or spec["title"],
             "primary_value": spec["primary_value"],
+            "video_purpose":spec["video_purpose"],
+            "subject_name":spec["subject_name"],
+            "spoken_name":spec["subject_spoken"],
             "secondary_values": [],
             "evidence_plan": spec["evidence_plan"] or ["尚未记录独立、可核实的制作成果证据；实际素材须由 Agent 核查来源"],
         },
@@ -504,7 +544,9 @@ def run_quick(args, studio):
     studio.export_storyboard(project)
     (project / "brief.md").write_text(
         f"# {spec['title']}\n\n目标用户：{spec['audience']}\n\n核心用户价值："
-        f"{spec['primary_value']}\n\n实际画面证据（来源仍需人工/Agent 核对）：\n"
+        f"{spec['primary_value']}\n\n介绍对象：{spec['subject_name'] or '非命名产品视频'}\n"
+        f"口播称呼：{spec['subject_spoken'] or '无'}\n"
+        f"本片任务：{spec['video_purpose']}\n\n实际画面证据（来源仍需人工/Agent 核对）：\n"
         + ("\n".join("- "+item for item in spec["evidence_plan"]) if spec["evidence_plan"] else "- 尚未登记")
         + "\n\n配音服务："+spec["voice_source"]["service"]+" / "+spec["voice_source"]["voice"]
         + "\n配音使用说明："+spec["voice_source"]["usage_note"]
@@ -550,6 +592,8 @@ def run_quick(args, studio):
         "duration_seconds": float(checked["format"]["duration"]),
         "render_status": "technical_only",
         "visual_style":spec["visual_style"],
+        "subject_name":spec["subject_name"],
+        "video_purpose":spec["video_purpose"],
         "visual_modes":[s["visual_mode"] for s in data],
         "voice_source": spec["voice_source"],
         "claim_warnings": spec["claim_warnings"],
