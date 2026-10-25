@@ -72,7 +72,11 @@ class UserProjectTests(unittest.TestCase):
         source=p/"01-文案与分镜"/"分镜脚本.md"
         raw=source.read_text(encoding="utf8")
         self.assertIn("初始画面",raw)
-        self.assertIn("这是一段正常长度的口播文案。",(p/"01-文案与分镜"/"视频文案.md").read_text("utf8"))
+        overview=(p/"01-文案与分镜"/"视频文案.md").read_text("utf8")
+        self.assertIn("这是一段正常长度的口播文案。",overview)
+        self.assertTrue(overview.startswith("# 视频文案\n\n"),repr(overview[:80]))
+        self.assertIn("\n## 完整口播\n",overview)
+        self.assertNotIn("\\n",overview,"Markdown should not contain literal escaped newline strings")
         source.write_text(raw.replace("初始画面","用户修改后的画面").replace("3 秒","4 秒"),encoding="utf8")
         synced=self.call("storyboard","--id",p.name,"--apply")
         self.assertEqual(synced.returncode,0,synced.stderr)

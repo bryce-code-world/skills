@@ -96,6 +96,42 @@ class QuickVideoTests(unittest.TestCase):
         self.assertIn("remotion", reply.stdout.lower())
         self.assertFalse(list(self.output.iterdir()))
 
+    def test_too_long_text_only_scene_is_rejected_before_project_creation(self):
+        brief=json.loads(self.spec.read_text("utf8"))
+        scene=brief["shots"][0]
+        scene.pop("image")
+        scene["seconds"]=9
+        dump(self.spec,brief)
+        reply=self.call("--dry-run")
+        self.assertNotEqual(reply.returncode,0)
+        self.assertIn("纯文字",reply.stderr)
+        self.assertFalse(list(self.output.iterdir()))
+
+    def test_static_opening_across_short_scenes_is_rejected(self):
+        brief=json.loads(self.spec.read_text("utf8"))
+        first=dict(brief["shots"][0],seconds=5.5)
+        first.pop("image")
+        second=dict(first,title="Another long title",seconds=5.5)
+        second.pop("audio")
+        brief["shots"]=[first,second]
+        dump(self.spec,brief)
+        reply=self.call("--dry-run")
+        self.assertNotEqual(reply.returncode,0)
+        self.assertIn("开场",reply.stderr)
+        self.assertFalse(list(self.output.iterdir()))
+
+    def test_claims_need_verification_and_voice_source_is_traceable(self):
+        brief=json.loads(self.spec.read_text("utf8"))
+        brief["shots"][0]["voiceover"]="这条视频做完了能直接发布。"
+        brief["tts_service"]="edge-tts"
+        brief["tts_voice"]="zh-CN-XiaoxiaoNeural"
+        brief["evidence_plan"]=["本次任务授权的真实制作结果画面"]
+        result=quick_video.checked_spec(brief,self.spec)
+        self.assertIn("直接发布",",".join(result["claim_warnings"]))
+        self.assertEqual(result["voice_source"]["service"],"edge-tts")
+        self.assertEqual(result["voice_source"]["voice"],"zh-CN-XiaoxiaoNeural")
+        self.assertEqual(result["evidence_plan"],["本次任务授权的真实制作结果画面"])
+
     def test_missing_image_rejected_without_creating_project(self):
         brief = json.loads(self.spec.read_text("utf8"))
         brief["shots"][0]["image"] = "missing.png"
@@ -249,6 +285,9 @@ class QuickVideoTests(unittest.TestCase):
         self.assertEqual(meta["video_sha256"], __import__("hashlib").sha256(
             (project / "成品视频.mp4").read_bytes()).hexdigest())
         self.assertEqual(meta["render_status"], "technical_only")
+        self.assertEqual(meta["voice_source"]["verification"],"not_verified")
+        script=json.loads((engine/"script.json").read_text("utf8"))
+        self.assertEqual(script["platforms"],{})
         self.assertFalse((engine / "platforms").exists())
         original=(project/"成品视频.mp4").read_bytes()
         board=project/"01-文案与分镜"/"分镜脚本.md"

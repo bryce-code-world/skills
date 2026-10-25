@@ -123,10 +123,10 @@ def _overview(d:Path)->Path:
 
 def _overview_text(script:dict)->str:
     full=script.get("narration") or "".join(x.get("voiceover","") for x in script.get("shots",[]))
-    return ("# 视频文案\\n\\n"
+    return ("# 视频文案\n\n"
             "本页方便直接阅读完整口播，内容从分镜自动汇总。**修改请进入 [分镜脚本.md](分镜脚本.md) 的各镜头“口播”字段**；"
-            "仅修改此页不会更改配音或成片。\\n\\n"
-            "## 完整口播\\n\\n"+full.strip()+"\\n")
+            "仅修改此页不会更改配音或成片。\n\n"
+            "## 完整口播\n\n"+full.strip()+"\n")
 
 
 def _check_overview(d:Path,meta:dict)->None:

@@ -10,7 +10,7 @@ import tempfile
 
 from project_layout import (modern,project_root,MEDIA_DIR,parse_storyboard,
                             apply_storyboard,archive_video,story_file,_resolve_asset)
-from quick_video import audio_duration,ensure_tools,run_cmd,local_probe,parse_srt
+from quick_video import audio_duration,ensure_tools,run_cmd,local_probe,parse_srt,check_subtitle_readability,audience_risk_notes
 
 
 def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_duration_seconds:float|None=None)->dict:
@@ -23,6 +23,7 @@ def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_durat
     if not source.is_file() and plan.get("cues"):
         raise ValueError("中文 SRT 字幕已丢失，禁止悄悄沿用旧时间轴")
     cues=parse_srt(source) if source.is_file() else []
+    check_subtitle_readability(cues)
     if plan.get("required") and not cues:
         raise ValueError("本视频要求同步字幕，缺少实际 SRT 时间轴")
     if cues:
@@ -135,14 +136,25 @@ def rebuild(args,studio):
         if ffmpeg and ffprobe and (new_master or any(s["audio"] for s in scenes)):
             try:audio_check=studio.inspect_video(ffmpeg,ffprobe,studio.video_path(d),studio.load(d/"script.json")["shots"])
             except (RuntimeError,ValueError) as error:audio_check={"result":"BLOCK","issues":[str(error)]}
+        old_record=studio.load(d/"video"/"render.json") if (d/"video"/"render.json").is_file() else {}
+        current_audio_sha=studio.filehash(project_root(d)/MEDIA_DIR/new_master) if new_master else None
+        same_voice=(current_audio_sha == old_record.get("narration_audio_sha256"))
+        voice_source=old_record.get("voice_source") if same_voice else None
+        if not isinstance(voice_source,dict):
+            voice_source={"service":"unknown","voice":"unknown",
+                          "usage_note":"配音来源未记录或音频已替换，需重新核对",
+                          "verification":"not_verified"}
         studio.save(d/"video"/"render.json",{
             "technical_audio_check":audio_check,
+            "voice_source":{**voice_source,"verification":"not_verified"},
+            "claim_warnings":audience_risk_notes(scenes),
+            "evidence_status":"agent_review_required",
             "engine":"remotion","render_status":"technical_only",
             "subtitles_sha256":studio.filehash(subtitlefile) if subtitlefile.is_file() else None,
             "subtitle_file_sha256":studio.filehash(srt) if srt.is_file() else None,
             "subtitles_status":"timed" if cues["plan"] and cues["plan"].get("cues") else "not_provided",
             "subtitle_timing_source":cues["plan"].get("timing_source") if cues["plan"] else "none",
-            "narration_audio_sha256":studio.filehash(project_root(d)/MEDIA_DIR/new_master) if new_master else None,
+            "narration_audio_sha256":current_audio_sha,
             "video_sha256":studio.filehash(studio.video_path(d)),
             "script_sha256":studio.filehash(d/"script.json"),
             "created_at_utc":studio.now(),"duration_seconds":float(info["format"]["duration"]),

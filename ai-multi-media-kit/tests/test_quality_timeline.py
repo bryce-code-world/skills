@@ -70,6 +70,23 @@ class TimelineQualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"字幕.*口播"):
             review_subtitle_edits(engine,voice,6)
 
+    def test_existing_unreadable_srt_cannot_pass_rebuild_even_if_words_match(self):
+        from rebuild_video import review_subtitle_edits
+        engine=self.base/"99-专业工程"
+        engine.mkdir()
+        scriptdir=self.base/"01-文案与分镜"
+        scriptdir.mkdir()
+        long_text="这是一条已经超过了普通手机视频的字幕宽度和阅读时长的冗长字幕它在同一个镜头中持续显示让观众看不清楚。"
+        rows=[{"start":0.1,"end":5.5,"text":long_text}]
+        (engine/"subtitles.json").write_text(json.dumps({
+            "cues":rows,"required":True,"timing_source":"verified_sentence_timing"
+        },ensure_ascii=False),encoding="utf8")
+        (scriptdir/"字幕文件.srt").write_text(
+            "1\n00:00:00,100 --> 00:00:05,500\n"+long_text+"\n",
+            encoding="utf8")
+        with self.assertRaisesRegex(ValueError,"字幕.*(过长|停留|可读|拆分)"):
+            review_subtitle_edits(engine,[{"voiceover":long_text}],6)
+
     def test_editable_srt_parses_real_timestamps_and_rejects_overlap(self):
         from quick_video import parse_srt
         file=self.base/"字幕.srt"
@@ -83,6 +100,30 @@ class TimelineQualityTests(unittest.TestCase):
         file.write_text(file.read_text("utf8").replace("00:00:03,000","00:00:02,400"),encoding="utf8")
         with self.assertRaisesRegex(ValueError,"字幕"):
             parse_srt(file)
+
+    def test_oversized_mobile_subtitle_is_rejected_even_with_valid_audio_times(self):
+        from copy import deepcopy
+        case=deepcopy(self.spec)
+        first="做短视频的你是不是经常发现文案虽然有了但还需要整理素材配音字幕和剪辑步骤非常多很麻烦。"
+        case["shots"][0]["voiceover"]=first
+        case["subtitles"][0]["text"]=first
+        with self.assertRaisesRegex(ValueError,"字幕.*(过长|可读|拆分)"):
+            self.check(case)
+
+    def test_overlong_cue_must_be_split_at_real_audio_boundaries(self):
+        from copy import deepcopy
+        case=deepcopy(self.spec)
+        case["subtitles"][0]["end"]=5.25
+        case["subtitles"][1]["start"]=5.3
+        with self.assertRaisesRegex(ValueError,"字幕.*(停留|过长|拆分)"):
+            self.check(case)
+
+    def test_subtitle_cannot_start_with_punctuation(self):
+        from copy import deepcopy
+        case=deepcopy(self.spec)
+        case["subtitles"][0]["text"]="，"+case["subtitles"][0]["text"]
+        with self.assertRaisesRegex(ValueError,"字幕.*(标点|行首)"):
+            self.check(case)
 
     def test_one_full_track_can_span_multiple_visual_shots(self):
         result=self.check()
@@ -229,7 +270,8 @@ class TimelineQualityTests(unittest.TestCase):
         ]:
             r=__import__("subprocess").run(cmd,capture_output=True,timeout=35)
             self.assertEqual(r.returncode,0,r.stderr)
-        task={**self.spec,"narration_audio":str(raw)}
+        task={**self.spec,"narration_audio":str(raw),
+              "tts_service":"local-ffmpeg-fixture","tts_voice":"synthetic-sine-no-human-voice"}
         task["shots"]=[dict(item) for item in self.spec["shots"]]
         task["shots"][0]["video"]=str(video)
         self.specfile.write_text(json.dumps(task,ensure_ascii=False),encoding="utf8")
@@ -253,6 +295,7 @@ class TimelineQualityTests(unittest.TestCase):
         render=json.loads((engine/"video/render.json").read_text("utf8"))
         self.assertEqual(render["subtitles_status"],"timed")
         self.assertEqual(render["render_status"],"technical_only")
+        self.assertEqual(render["voice_source"]["service"],"local-ffmpeg-fixture")
         self.assertTrue((project/"01-文案与分镜/字幕文件.srt").is_file())
         self.assertEqual(len(list((project/"02-媒体素材/视频片段").glob("*.mp4"))),1)
         self.assertEqual(len(list((project/"02-媒体素材/配音").glob("*.wav"))),1)
@@ -289,6 +332,7 @@ class TimelineQualityTests(unittest.TestCase):
         import hashlib
         self.assertEqual(record["video_sha256"],hashlib.sha256(mp4.read_bytes()).hexdigest())
         self.assertEqual(record["subtitle_file_sha256"],hashlib.sha256(srt.read_bytes()).hexdigest())
+        self.assertEqual(record["voice_source"]["service"],"local-ffmpeg-fixture")
 
     def test_legacy_quick_without_timed_cues_stays_technical_only(self):
         case={**self.spec}

@@ -27,8 +27,16 @@ const fitText = (text:string, width:number, maxHeight:number, maxLines:number, m
     let line = '';
     for (const char of value) {
       if (line && context.measureText(line + char).width > lineWidth) {
-        lines.push(line.trim());
-        line = '';
+        // Closing punctuation belongs to the preceding word/character.
+        // Move that character with the punctuation rather than showing
+        // a dangling comma at the start of a new subtitle line.
+        if (/[，。、；：！？,.!?;:）】》”’]/u.test(char) && line.length > 1) {
+          lines.push(line.slice(0, -1).trim());
+          line = line.slice(-1);
+        } else {
+          lines.push(line.trim());
+          line = '';
+        }
       }
       line += char;
     }
@@ -68,7 +76,7 @@ const Subtitle:React.FC = () => {
   const portrait=height>width;
   const padding=portrait?77:110;
   const layout=React.useMemo(
-    ()=>cue ? fitText(cue.text,width-padding*2-48,height*.13-48,2,portrait?42:35,28,700,1.3):null,
+    ()=>cue ? fitText(cue.text,width-padding*2-48,height*.13-48,2,portrait?44:36,portrait?38:32,700,1.3):null,
     [cue?.text,width,height,padding,portrait]
   );
   if(!cue || !layout)return null;

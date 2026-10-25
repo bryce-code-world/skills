@@ -19,6 +19,8 @@ IMAGE_FORMATS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 AUDIO_FORMATS = {".wav", ".mp3", ".m4a"}
 VIDEO_FORMATS = {".mp4", ".webm"}
 SUBTITLE_SOURCES = {"tts_word_boundary", "verified_sentence_timing", "manually_reviewed"}
+MAX_SUBTITLE_UNITS = 48  # About 24 Chinese characters across two readable mobile lines.
+MAX_SUBTITLE_SECONDS = 4.5
 SHOTS_LIMIT = 12
 MEDIA_LIMIT = 80 * 1024 * 1024
 
@@ -93,6 +95,39 @@ def parse_srt(source: Path) -> list[dict]:
     return items
 
 
+def check_subtitle_readability(cues: list[dict]) -> None:
+    """Reject unreadable timed subtitles; never invent new word boundaries."""
+    import unicodedata
+    for i, cue in enumerate(cues, 1):
+        value=cue["text"].strip()
+        if value.startswith(tuple("，。、；：！？,.!?;:）】》”’")):
+            raise ValueError(f"字幕 {i} 不允许行首标点；按真实语义和音频时间重新断句")
+        visible=sum(2 if unicodedata.east_asian_width(ch) in ("W","F") else 1
+                    for ch in value if not ch.isspace())
+        if visible>MAX_SUBTITLE_UNITS:
+            raise ValueError(f"字幕 {i} 过长（约 {visible//2} 个中文字符），手机两行不可读；请按真实发声边界拆分")
+        if cue["end"]-cue["start"]>MAX_SUBTITLE_SECONDS+.001:
+            raise ValueError(f"字幕 {i} 停留超过 {MAX_SUBTITLE_SECONDS:g} 秒；请按真实语音停顿拆分，不得按字数猜时间")
+
+
+def audience_risk_notes(shots: list[dict]) -> list[str]:
+    import re
+    spoken="".join(s["voiceover"] for s in shots)
+    statements=[]
+    if re.search(r"(直接发布|一键发布|自动发布|保证上热门|百分百成功)",spoken):
+        statements.append("含有“直接发布”等宣传承诺：本次仅生成技术预览，必须核对产品能力、用户授权和实际审核状态")
+    return statements
+
+
+def voice_source(raw:dict) -> dict:
+    # Describes the source as declared by the Agent; does not manufacture licensing or listening evidence.
+    service=valid_text(raw.get("tts_service",""),"tts_service",100,required=False)
+    voice=valid_text(raw.get("tts_voice",""),"tts_voice",100,required=False)
+    note=valid_text(raw.get("tts_usage_note",""),"tts_usage_note",300,required=False)
+    return {"service":service or "unknown","voice":voice or "unknown",
+            "usage_note":note or "not_documented","verification":"not_verified"}
+
+
 def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("快速分镜需要 JSON 对象")
@@ -141,6 +176,19 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
                 raise ValueError(f"第 {i} 段配音过长，需保留 0.15 秒余量：{duration:.2f}s / {seconds}s")
         line["voice_missing"] = bool(line["voiceover"] and not line["audio"])
         prepared.append(line)
+    # The bundled starter has only a simple text fade, not enough to sustain long
+    # vertical title-only scenes. A custom Remotion composition can be used for
+    # genuinely animated typography instead of weakening this preflight.
+    if aspect=="9:16":
+        for index,scene in enumerate(prepared,1):
+            if not (scene["image"] or scene["video"]) and scene["seconds"]>8:
+                raise ValueError(f"第 {index} 镜头是超过 8 秒的纯文字画面：请展示相关素材或改用专业动画")
+        intro=0.
+        for scene in prepared:
+            if scene["image"] or scene["video"]:break
+            intro+=scene["frames"]/30
+        if intro>10:
+            raise ValueError("开场连续纯文字镜头超过 10 秒：优先展示真实问题或可见结果，缩短空白标题")
     total=sum(s["frames"] for s in prepared)/30
     if total > 180:
         raise ValueError("总时长不能超过 180 秒；请使用完整制作模式")
@@ -176,14 +224,20 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
         normalized.append({"start":round(float(start),4),"end":round(float(end),4),"text":text})
         preceding=float(end)
     if normalized:
+        check_subtitle_readability(normalized)
         from speech_plan import text_key
         spoken="".join(x["voiceover"] for x in prepared if x["voiceover"])
         if text_key("".join(c["text"] for c in normalized)) != text_key(spoken):
             raise ValueError("字幕与正式口播不一致，禁止以静态提示文字冒充同步字幕")
+    evidence=raw.get("evidence_plan",[])
+    if not isinstance(evidence,list) or len(evidence)>8 or any(not isinstance(item,str) or not item.strip() or len(item)>300 for item in evidence):
+        raise ValueError("evidence_plan 应是最多 8 条由 Agent 核对来源的真实画面证据，不要凭空填充")
     return {"title":title,"audience":audience,"primary_value":value,
             "aspect":aspect,"shots":prepared,"narration_audio":master,
             "subtitles":normalized,"subtitles_required":required,
-            "subtitle_timing_source":source if normalized else "none"}
+            "subtitle_timing_source":source if normalized else "none",
+            "voice_source":voice_source(raw),"claim_warnings":audience_risk_notes(prepared),
+            "evidence_plan":evidence}
 
 
 def provider_root(raw: str | None) -> Path | None:
@@ -276,6 +330,8 @@ def run_quick(args, studio):
         "voice_missing": [] if spec["narration_audio"] else [i + 1 for i, s in enumerate(spec["shots"]) if s.get("voice_missing")],
         "silent_shots": [] if spec["narration_audio"] else [i + 1 for i, s in enumerate(spec["shots"]) if not s["audio"] and not s["voiceover"]],
         "subtitles": "timed" if spec["subtitles"] else ("missing" if spec["subtitles_required"] else "not_provided"),
+        "claim_warnings": spec["claim_warnings"],
+        "evidence_status": "agent_review_required",
         "output_root": str(output),
         "status": "plan_only" if args.dry_run else "technical_preview",
     }
@@ -341,18 +397,22 @@ def run_quick(args, studio):
             "audience": spec["audience"] or spec["title"],
             "primary_value": spec["primary_value"],
             "secondary_values": [],
-            "evidence_plan": ["使用了本地图片/视频素材；是否属于可证实的实际成果由 Agent 按来源核对" if any(s["image"] or s["video"] for s in data)
-                              else "目前只有文字动效示意，不得冒充真实产品效果"],
+            "evidence_plan": spec["evidence_plan"] or ["尚未记录独立、可核实的制作成果证据；实际素材须由 Agent 核查来源"],
         },
         "shots":[{"seconds":s["seconds"], "visual":s["caption"] or s["title"],
                   "voiceover":s["voiceover"]} for s in data],
-        "platforms":{p:{"title":spec["title"],"description":"","tags":[]} for p in studio.PLATFORMS},
+        "platforms":{},  # A single MP4 request must not manufacture seven platform drafts.
     }
     studio.save(project / "script.json", script)
     studio.export_storyboard(project)
     (project / "brief.md").write_text(
         f"# {spec['title']}\n\n目标用户：{spec['audience']}\n\n核心用户价值："
-        f"{spec['primary_value']}\n\n输出性质：未经过 AI 内容审核的技术预览；不能直接发布。\n",
+        f"{spec['primary_value']}\n\n实际画面证据（来源仍需人工/Agent 核对）：\n"
+        + ("\n".join("- "+item for item in spec["evidence_plan"]) if spec["evidence_plan"] else "- 尚未登记")
+        + "\n\n配音服务："+spec["voice_source"]["service"]+" / "+spec["voice_source"]["voice"]
+        + "\n配音使用说明："+spec["voice_source"]["usage_note"]
+        + "\n宣传承诺检查："+("；".join(spec["claim_warnings"]) if spec["claim_warnings"] else "无命中特征词；仍须核实全部事实")
+        + "\n\n输出性质：未经过 AI 内容审核的技术预览；不能直接发布。\n",
         encoding="utf8"
     )
     # Lockfile keeps dependencies reproducible; all packages remain project-local.
@@ -392,6 +452,9 @@ def run_quick(args, studio):
         "script_sha256": studio.filehash(project / "script.json"),
         "duration_seconds": float(checked["format"]["duration"]),
         "render_status": "technical_only",
+        "voice_source": spec["voice_source"],
+        "claim_warnings": spec["claim_warnings"],
+        "evidence_status":"agent_review_required",
         "subtitles_sha256":studio.filehash(project/"subtitles.json"),
         "subtitle_file_sha256":studio.filehash(project_root(project)/"01-文案与分镜"/"字幕文件.srt") if spec["subtitles"] else None,
         "subtitle_timing_source":spec["subtitle_timing_source"],
