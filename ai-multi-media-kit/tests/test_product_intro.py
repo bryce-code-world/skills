@@ -86,6 +86,26 @@ class NamedProductTests(unittest.TestCase):
         self.assertEqual(validated["subject_name"],"ai-multi-media-kit")
         self.assertEqual(validated["subject_spoken"],"AI Multi Media Kit")
 
+    def test_rebuild_preserves_brand_and_rejects_dropped_subject(self):
+        from rebuild_video import validate_rebuild_subject
+        script={"editorial_intent":{
+            "video_purpose":"product_intro",
+            "subject_name":"ai-multi-media-kit",
+            "spoken_name":"AI Multi Media Kit",
+        }}
+        scenes=[dict(shot) for shot in self.intro["shots"]]
+        accepted=validate_rebuild_subject(script,scenes)
+        self.assertEqual(accepted["subject_name"],"ai-multi-media-kit")
+        self.assertEqual(accepted["video_purpose"],"product_intro")
+        scenes[1]["title"]="让工作流自动进行"
+        with self.assertRaisesRegex(ValueError,"产品名称|开头"):
+            validate_rebuild_subject(script,scenes)
+
+    def test_rebuild_does_not_require_brand_for_ordinary_videos(self):
+        from rebuild_video import validate_rebuild_subject
+        scenes=[dict(shot) for shot in self.intro["shots"]]
+        self.assertEqual(validate_rebuild_subject({"editorial_intent":{}},scenes)["video_purpose"],"general")
+
     def test_non_product_video_does_not_require_branding(self):
         other={**self.intro}
         for key in ("video_purpose","subject_name","subject_spoken"):

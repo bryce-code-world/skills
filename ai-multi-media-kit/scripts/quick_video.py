@@ -235,7 +235,7 @@ def check_named_product(raw:dict,shots:list[dict])->dict:
     title_start=0.0
     for s in first:
         if exact in normalize(s["title"]):break
-        title_start+=s["frames"]/30
+        title_start+=s.get("frames",round(s["seconds"]*30))/30
     if title_start>12:
         raise ValueError("开头 12 秒内须介绍产品名称，请提前展示产品主体，避免大段泛泛痛点")
     if not any(oral in normalize(s.get("voiceover","")) for s in first):

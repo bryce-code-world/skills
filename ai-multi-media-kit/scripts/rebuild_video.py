@@ -10,7 +10,7 @@ import tempfile
 
 from project_layout import (modern,project_root,MEDIA_DIR,parse_storyboard,
                             apply_storyboard,archive_video,story_file,_resolve_asset)
-from quick_video import audio_duration,ensure_tools,run_cmd,local_probe,parse_srt,check_subtitle_readability,audience_risk_notes
+from quick_video import audio_duration,ensure_tools,run_cmd,local_probe,parse_srt,check_subtitle_readability,audience_risk_notes,check_named_product
 
 
 def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_duration_seconds:float|None=None)->dict:
@@ -38,12 +38,23 @@ def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_durat
         "timing_source":"manually_adjusted_needs_listening" if changed else plan.get("timing_source","none")}}
 
 
+def validate_rebuild_subject(script:dict,scenes:list[dict])->dict:
+    editorial=script.get("editorial_intent") or {}
+    return check_named_product({
+        "video_purpose":editorial.get("video_purpose","general"),
+        "subject_name":editorial.get("subject_name"),
+        "subject_spoken":editorial.get("spoken_name"),
+    },scenes)
+
+
 def rebuild(args,studio):
     root,_=studio.workspace(args.root)
     d=studio.paths(root,args.id)
     if not modern(d) or not (d/"src"/"index.tsx").is_file() or not (d/"shotlist.json").is_file():
         raise ValueError("仅支持新版可编辑 Remotion 项目，旧项目不迁移或改写")
     scenes=parse_storyboard(d)
+    source_script=studio.load(d/"script.json")
+    subject=validate_rebuild_subject(source_script,scenes)
     timeline=studio.load(d/"shotlist.json")
     old_master=timeline.get("narration_audio")
     master_tag=re.search(r"^- 连续旁白：(.*)$",story_file(d).read_text(encoding="utf8"),re.M)
@@ -150,6 +161,8 @@ def rebuild(args,studio):
             "claim_warnings":audience_risk_notes(scenes),
             "evidence_status":"agent_review_required",
             "engine":"remotion","render_status":"technical_only",
+            "video_purpose":subject["video_purpose"],
+            "subject_name":subject["subject_name"],
             "visual_style":studio.load(d/"shotlist.json").get("visual_style","product"),
             "visual_modes":[item.get("visual_mode","standard")
                             for item in studio.load(d/"shotlist.json")["shots"]],
