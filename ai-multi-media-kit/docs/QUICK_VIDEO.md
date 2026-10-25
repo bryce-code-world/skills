@@ -7,7 +7,7 @@
 ## 制作原则
 
 1. 从用户真实问题入手，先确认受众、核心价值和具体展示证据。产品宣传突出改变，不要默认拍安装操作或科技流程图。
-2. 优先使用真实且已授权的素材，不够时用明确的原创示意。先验证一个代表镜头和自然中文旁白，确认可读性后展开全片。
+2. 优先使用真实且已授权的素材，不够时用明确的原创示意。先依据 [视觉导演](VISUAL_DIRECTION.md) 判断本段是展示冲突、真实结果、步骤、前后对比还是细节特写，再选择镜头构图；不要再把九个镜头统一做成标题＋素材框。先验证一个代表镜头和自然中文旁白，确认可读性后展开全片。
 3. **先写自然连贯的完整口播，再安排镜头。** 默认制作一份可跨多个镜头播放的 `narration_audio`，镜头切换不切断语音；只有已有旧工程或明确需要时才用逐镜头 TTS。字幕用独立的真实时间戳；`caption` 只是静态画面提示，绝不是字幕。镜间长停顿须检查原始 TTS 首尾静音，不机械叠加、强行加速或截尾音。
 4. **短视频画面与字幕质量**：内置 9:16 快速模板默认拒绝超过 8 秒的纯文字镜头、超过 10 秒的纯文字开场；如果是真正高质量的动态排版，请在专业工程直接设计和验证，不假装模板静态标题是动效。每条字幕最多约 24 个汉字的显示宽度、停留不超过 4.5 秒，禁用行首标点；字幕只能根据真实句词边界拆分，不能按字数平均猜时间。最终需抽帧检查最小字号、两行安全区、发音与转场。没有音频输入能力时不得用 ASR/波形冒充试听。
 
@@ -21,6 +21,7 @@ Agent 根据任务生成一份最小 JSON 分镜，普通用户不用查看。�
   "audience": "需要处理大量素材的人",
   "primary_value": "减少手工搬运",
   "aspect": "9:16",
+  "visual_style": "social",
   "narration_audio": "连续旁白.wav",
   "subtitles_required": true,
   "subtitle_timing_source": "tts_word_boundary",
@@ -33,16 +34,16 @@ Agent 根据任务生成一份最小 JSON 分镜，普通用户不用查看。�
   ],
   "shots": [
     {"title": "每天都在反复整理？", "seconds": 4,
-     "video": "经过授权的真实片段.mp4",
-     "voiceover": "素材一多，整理和剪辑总要来回搬。"},
+     "video": "经过授权的真实片段.mp4", "visual_intent": "problem",
+     "visual_mode": "focus", "voiceover": "素材一多，整理和剪辑总要来回搬。"},
     {"title": "让工具接手", "seconds": 4,
-     "image": "结果示意.png",
+     "image": "结果示意.png", "visual_mode": "reveal",
      "voiceover": "交给工具，把时间留给创作。"}
   ]
 }
 ```
 
-以上时间戳、语音服务、素材和证据都是**格式占位**，不是实际测量或授权结果；Agent 生成真实分镜时须替换，不要复制示例作为事实。Agent 要按真实声源制作字幕，不能复制示例时间或按字数平均分配。用户要求中文字幕时填 `subtitles_required:true`，缺少有效 cue 会在预检被拒绝。`subtitle_timing_source` 支持 `tts_word_boundary`、`verified_sentence_timing`、`manually_reviewed`；后两者须如实保留尚未试听的限制。`caption` 是固定画面提示，不作为逐句字幕。没有配音时只能交付明确标注的技术预览。
+以上时间戳、语音服务、素材和证据都是**格式占位**，不是实际测量或授权结果；Agent 生成真实分镜时须替换，不要复制示例作为事实。Agent 要按真实声源制作字幕，不能复制示例时间或按字数平均分配。用户要求中文字幕时填 `subtitles_required:true`，缺少有效 cue 会在预检被拒绝。`subtitle_timing_source` 支持 `tts_word_boundary`、`verified_sentence_timing`、`manually_reviewed`，以及旧项目精修字幕时的 `manually_adjusted_needs_listening`。最后一种明确表示字幕被人工调整、**尚需听音确认**，不能通过重用旧音频擅自升级为已验收。`caption` 是固定画面提示，不作为逐句字幕。没有配音时只能交付明确标注的技术预览。
 
 每镜头 2～20 秒、1～12 段、最多 180 秒、30fps。支持 PNG/JPG/WebP/SVG 图片或 MP4/WebM 视频片段（视频素材必须覆盖对应镜头时长），以及 PCM WAV/MP3/M4A 配音。单文件不超过 80MB，压缩格式由现有 ffprobe 检查；完整旁白不能超出画面总时长。旧格式的逐镜头 `audio` 仍可使用，但不能与 `narration_audio` 混用。
 
@@ -51,7 +52,7 @@ Agent 根据任务生成一份最小 JSON 分镜，普通用户不用查看。�
 & "<工具目录>\RUN-STUDIO-WINDOWS.ps1" -Task studio quick --spec "<由 Agent 编写的分镜.json>" --topic demo --agent codex
 ```
 
-- 默认 9:16 / 1080×1920，支持 16:9 / 1920×1080。
+- 默认 9:16 / 1080×1920，支持 16:9 / 1920×1080。视觉风格可为 `product`、`warm`、`social`；每镜头 `visual_mode` 不填时由 Agent/程序根据语义和真实素材谨慎选取。可用 `focus`、`showcase`、`kinetic`、`reveal`、`compare`、`steps`、旧版 `standard`，真实前后对比必须提供两份不同素材，三步镜头必须填真实 `steps`。
 - 复用当前工作区的 Node/npm，第一次项目按固定 lockfile 安装本项目依赖；不改变系统 PATH。网络、费用和浏览器资源依当前可用性独立核验。
 - 默认使用套件自己的 Remotion 模板。`--shotcraft-dir` 可显式选用已安装 video-shotcraft 的依赖模板，**不自动迁移外部动画或音乐**。
 - 成品位置：`<项目>/成品视频.mp4`，同时自动生成 `视频封面.png`；素材一次性归到中文 `02-媒体素材`，Remotion 源码、依赖和机器时间轴位于 `99-专业工程`。`render.json` 记录用户/Agent 提供的配音服务、音色和使用说明，未知标为 `unknown/not_verified`，不声称已经验证许可或试听。
@@ -71,7 +72,7 @@ Agent 根据任务生成一份最小 JSON 分镜，普通用户不用查看。�
 
 需要只同步机器数据时用 `studio storyboard --id <ID> --apply`；Agent 首次把已有机器脚本生成为中文分镜则用 `--from-engine`。用户已修改分镜时不得从引擎覆盖其内容。
 
-- 只改画面：复用配音。
+- 只改画面或导演镜头模式：复用配音。中文版 `分镜脚本.md` 中的 `视觉风格`、`表现方式`、`三步内容`、`对比前图/后图` 可以由 Agent 按真实素材编辑；完成后 `studio rebuild` 重渲并归档。
 - 改口播：重新生成受影响的配音并更新分镜顶部的 `连续旁白` 或相应镜头的 `配音` 文件路径；只改口播仍引用同一旧配音会被拒绝。
 - 改时长：脚本的 seconds 和机器 frames 统一同步；不得削掉尾音。
 - 改字幕：直接编辑 `01-文案与分镜/字幕文件.srt`，`studio rebuild` 读取它同步渲染用 cue，并检查字幕文字、重叠、时长。用户改过时间戳会标记为需要重新试听；不会擅自保持旧 `tts_word_boundary` 来源声明。SRT 是显示时间轴，不能拿来拆开原始 TTS。

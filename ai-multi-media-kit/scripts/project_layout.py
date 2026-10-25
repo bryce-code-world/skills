@@ -14,8 +14,11 @@ MEDIA_DIR="02-媒体素材"
 HISTORY_DIR="03-修改与版本"
 CATEGORIES={"image":"图片","audio":"配音","video":"视频片段","bgm":"背景音乐","sound":"音效"}
 SEGMENT=re.compile(r"^### 镜头 (\d{2})\s*$",re.M)
-FIELD=re.compile(r"^- (时长|画面标题|画面提示|画面描述|口播|图片|视频|配音)：(.*)$",re.M)
-SCENE_FIELDS={"时长","画面标题","画面提示","画面描述","口播","图片","视频","配音"}
+FIELD=re.compile(r"^- (时长|画面标题|画面提示|画面描述|口播|图片|视频|配音|表现方式|三步内容|对比前图|对比后图)：(.*)$",re.M)
+SCENE_FIELDS={"时长","画面标题","画面提示","画面描述","口播","图片","视频","配音","表现方式","三步内容","对比前图","对比后图"}
+MODE_LABELS={"standard":"经典排版","focus":"细节特写","showcase":"成果展示","kinetic":"动态文字",
+             "reveal":"结果揭晓","compare":"前后对比","steps":"三步拆解"}
+STYLE_LABELS={"product":"简洁产品风","warm":"温暖知识风","social":"快节奏社媒风"}
 
 
 def project_root(d:Path)->Path:
@@ -153,7 +156,8 @@ def export_storyboard(d:Path)->Path|None:
     rendered=json.loads((d/"shotlist.json").read_text(encoding="utf8")) if (d/"shotlist.json").is_file() else {}
     items=rendered.get("shots",[])
     lines=["# 分镜脚本","","修改镜头后执行 studio rebuild --id <内容ID>，由 Agent 同步分镜、重渲并归档原视频。","",
-           "- 连续旁白："+_display_asset(rendered.get("narration_audio")),""]
+           "- 连续旁白："+_display_asset(rendered.get("narration_audio")),
+           "- 视觉风格："+STYLE_LABELS.get(rendered.get("visual_style",""),"未指定"),""]
     timeline=0.0
     fps=rendered.get("fps",30)
     for i,shot in enumerate(script.get("shots",[]),1):
@@ -170,7 +174,15 @@ def export_storyboard(d:Path)->Path|None:
             f"- 口播：{_clean(shot.get('voiceover'))}",
             f"- 图片：{_display_asset(scene.get('image'))}",
             f"- 视频：{_display_asset(scene.get('video'))}",
-            f"- 配音：{_display_asset(scene.get('audio'))}",""]
+            f"- 配音：{_display_asset(scene.get('audio'))}"]
+        if scene.get("visual_mode"):
+            lines.append("- 表现方式："+MODE_LABELS.get(scene["visual_mode"],"经典排版"))
+        if scene.get("visual_mode")=="steps":
+            lines.append("- 三步内容："+"｜".join(scene.get("steps") or []))
+        if scene.get("visual_mode")=="compare":
+            lines.extend(["- 对比前图："+_display_asset(scene.get("before_image")),
+                          "- 对比后图："+_display_asset(scene.get("after_image"))])
+        lines.append("")
         timeline+=seconds
     file=story_file(d)
     file.write_text("\n".join(lines).rstrip()+"\n",encoding="utf8")
@@ -199,7 +211,7 @@ def parse_storyboard(d:Path)->list[dict]:
             values[k]=value.strip()
         # v0.13 Chinese storyboards had no separate video-footage field.
         # Treat it as optional for old projects; new exports always include it.
-        required=SCENE_FIELDS-{"视频"}
+        required=SCENE_FIELDS-{"视频","表现方式","三步内容","对比前图","对比后图"}
         if not required.issubset(values) or not set(values).issubset(SCENE_FIELDS):
             raise ValueError(f"镜头 {i:02d} 分镜字段缺少或未知：{sorted(required-set(values))}")
         match=re.fullmatch(r"(\d+(?:\.\d+)?)\s*秒",values["时长"])
@@ -209,10 +221,29 @@ def parse_storyboard(d:Path)->list[dict]:
         image=_resolve_asset(d,values["图片"],"image")
         footage=_resolve_asset(d,values.get("视频","无"),"video")
         if image and footage:raise ValueError(f"镜头 {i:02d} 图片和视频不能同时使用")
+        mode_label=values.get("表现方式")
+        mode=None
+        if mode_label:
+            possible={v:k for k,v in MODE_LABELS.items()}
+            if mode_label not in possible:
+                raise ValueError(f"镜头 {i:02d} 表现方式无效："+mode_label)
+            mode=possible[mode_label]
+        steps=values.get("三步内容","")
+        steps=[x.strip() for x in steps.split("｜") if x.strip()] if steps else []
+        before=_resolve_asset(d,values.get("对比前图","无"),"image")
+        after=_resolve_asset(d,values.get("对比后图","无"),"image")
+        if mode in {"focus","showcase","reveal"} and not (image or footage):
+            raise ValueError(f"镜头 {i:02d} 需要图片或视频才能进行镜头特写")
+        if mode=="steps" and (len(steps)!=3 or any(len(x)>20 for x in steps)):
+            raise ValueError(f"镜头 {i:02d} 三步拆解须填写三个真实步骤")
+        if mode=="compare":
+            if not before or not after or digest(project_root(d)/MEDIA_DIR/before)==digest(project_root(d)/MEDIA_DIR/after):
+                raise ValueError(f"镜头 {i:02d} 前后对比需要两张不同的真实图片")
         scenes.append(dict(seconds=seconds,title=values["画面标题"],
                            caption=values["画面提示"],visual=values["画面描述"],
                            voiceover=values["口播"],image=image,video=footage,
-                           audio=_resolve_asset(d,values["配音"],"audio")))
+                           audio=_resolve_asset(d,values["配音"],"audio"),
+                           visual_mode=mode,steps=steps,before_image=before,after_image=after))
     return scenes
 
 
@@ -249,6 +280,12 @@ def apply_storyboard(d:Path)->dict:
     if render and len(render.get("shots",[]))!=len(scenes):
         raise ValueError("分镜数量与 Remotion 时间轴不同")
     if render and master_match:render["narration_audio"]=new_master
+    style_match=re.search(r"^- 视觉风格：(.*)$",raw,re.M)
+    if render and style_match and style_match.group(1).strip()!="未指定":
+        labels={v:k for k,v in STYLE_LABELS.items()}
+        if style_match.group(1).strip() not in labels:
+            raise ValueError("视觉风格无效；可选简洁产品风、温暖知识风、快节奏社媒风")
+        render["visual_style"]=labels[style_match.group(1).strip()]
     for i,(s,old) in enumerate(zip(scenes,script["shots"])):
         old.update(seconds=s["seconds"],title=s["title"],caption=s["caption"],
                    visual=s["visual"],voiceover=s["voiceover"])
@@ -257,6 +294,10 @@ def apply_storyboard(d:Path)->dict:
                 frames=round(s["seconds"]*render.get("fps",30)),
                 title=s["title"],caption=s["caption"],voiceover=s["voiceover"],
                 image=s["image"],video=s["video"],audio=s["audio"])
+            if s["visual_mode"] is not None:
+                render["shots"][i].update(visual_mode=s["visual_mode"],
+                    steps=s["steps"],before_image=s["before_image"],
+                    after_image=s["after_image"])
     script["duration_seconds"]=sum(s["seconds"] for s in scenes)
     script["narration"]="".join(s["voiceover"] for s in scenes) or script["title"]
     same=json.loads((d/"script.json").read_text(encoding="utf8"))==script

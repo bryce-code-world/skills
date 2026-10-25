@@ -2,13 +2,18 @@ import React from 'react';
 import {AbsoluteFill, Audio, Easing, Img, OffthreadVideo, interpolate, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import raw from '../shotlist.json';
 import timing from '../subtitles.json';
+import {Director} from './Director';
 
-type Shot = {title:string; caption:string; voiceover:string; frames:number; image:string|null; video?:string|null; audio:string|null};
+type Shot = {title:string; caption:string; voiceover:string; frames:number; image:string|null;
+  video?:string|null; audio:string|null; visual_mode?:'standard'|'focus'|'showcase'|'kinetic'|'reveal'|'compare'|'steps';
+  visual_intent?:string;steps?:string[];before_image?:string|null;after_image?:string|null;};
 type Cue = {start:number;end:number;text:string};
-const shots:Shot[] = raw.shots;
+// The Python validator guarantees the union, JSON imports infer visual_mode as plain string.
+const shots:Shot[] = raw.shots as unknown as Shot[];
 const cues:Cue[] = timing.cues;
 const hasTimedSubtitles = cues.length > 0;
 const masterAudio:string|null = raw.narration_audio || null;
+const visualStyle = 'visual_style' in raw ? String(raw.visual_style) : 'product';
 const cutoffs = shots.reduce<number[]>((all, shot) => {
   all.push((all.at(-1) || 0) + shot.frames);
   return all;
@@ -149,7 +154,9 @@ const Scene:React.FC<{shot:Shot; number:number}> = ({shot, number}) => {
 export const Quick:React.FC = () => <AbsoluteFill style={{background:'#082733'}}>
   {masterAudio ? <Audio src={staticFile(masterAudio)} volume={.95}/> : null}
   {shots.map((shot, index) => <Sequence key={index} from={index === 0 ? 0 : cutoffs[index - 1]} durationInFrames={shot.frames}>
-    <Scene shot={shot} number={index + 1}/>
+    {shot.visual_mode && shot.visual_mode !== 'standard'
+      ? <Director shot={shot} number={index+1} total={shots.length} styleId={visualStyle}/>
+      : <Scene shot={shot} number={index + 1}/>}
     {!masterAudio && shot.audio ? <Audio src={staticFile(shot.audio)} volume={.95}/> : null}
   </Sequence>)}
   {hasTimedSubtitles ? <Subtitle/> : null}

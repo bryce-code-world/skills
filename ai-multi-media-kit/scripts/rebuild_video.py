@@ -150,6 +150,9 @@ def rebuild(args,studio):
             "claim_warnings":audience_risk_notes(scenes),
             "evidence_status":"agent_review_required",
             "engine":"remotion","render_status":"technical_only",
+            "visual_style":studio.load(d/"shotlist.json").get("visual_style","product"),
+            "visual_modes":[item.get("visual_mode","standard")
+                            for item in studio.load(d/"shotlist.json")["shots"]],
             "subtitles_sha256":studio.filehash(subtitlefile) if subtitlefile.is_file() else None,
             "subtitle_file_sha256":studio.filehash(srt) if srt.is_file() else None,
             "subtitles_status":"timed" if cues["plan"] and cues["plan"].get("cues") else "not_provided",

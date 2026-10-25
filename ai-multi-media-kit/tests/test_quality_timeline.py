@@ -125,6 +125,13 @@ class TimelineQualityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"字幕.*(标点|行首)"):
             self.check(case)
 
+    def test_manually_adjusted_srt_remains_explicitly_unverified_when_reused(self):
+        # Previous rebuilds write this true-but-unverified timing source.
+        # Reusing the same spoken audio must not force a fake listening PASS.
+        case={**self.spec,"subtitle_timing_source":"manually_adjusted_needs_listening"}
+        result=self.check(case)
+        self.assertEqual(result["subtitle_timing_source"],"manually_adjusted_needs_listening")
+
     def test_one_full_track_can_span_multiple_visual_shots(self):
         result=self.check()
         self.assertEqual(result["narration_audio"],self.wav)
@@ -301,6 +308,10 @@ class TimelineQualityTests(unittest.TestCase):
         self.assertEqual(len(list((project/"02-媒体素材/配音").glob("*.wav"))),1)
         manifest=json.loads((engine/"shotlist.json").read_text("utf8"))
         self.assertTrue(manifest["narration_audio"].startswith("配音/"))
+        self.assertTrue((engine/"src/Director.tsx").is_file())
+        types=__import__("subprocess").run([shutil.which("npx"),"--no-install","tsc","--noEmit"],
+             cwd=engine,capture_output=True,text=True,encoding="utf8",errors="replace",timeout=45)
+        self.assertEqual(types.returncode,0,types.stderr or types.stdout)
         self.assertEqual(len(json.loads((engine/"subtitles.json").read_text("utf8"))["cues"]),2)
         # Audio is continuous: the visual cut at exactly 3 s must not introduce silence.
         check=__import__("subprocess").run([ffmpeg,"-hide_banner","-ss","2.85","-t","0.3","-i",str(mp4),

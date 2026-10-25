@@ -262,6 +262,36 @@ class UserProjectTests(unittest.TestCase):
         self.assertEqual(updated["shots"][0]["visual"],"旧镜头")
         self.assertEqual(updated["duration_seconds"],3)
 
+    def test_chinese_storyboard_can_change_director_mode_and_style(self):
+        project=self.new()
+        d=project/"99-专业工程"
+        script={"content_id":project.name,"title":"整理视频","narration":"展示真实结果。",
+                "duration_seconds":3,"shots":[{"seconds":3,"visual":"作品示例",
+                "voiceover":"展示真实结果。"}],"platforms":{}}
+        (d/"script.json").write_text(json.dumps(script,ensure_ascii=False),encoding="utf8")
+        image=project/"02-媒体素材"/"图片"/"真实展示.svg"
+        image.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>',encoding="utf8")
+        render={"fps":30,"width":1080,"height":1920,"visual_style":"social",
+                "shots":[{"title":"真实成片","caption":"","frames":90,"seconds":3,
+                          "image":"图片/真实展示.svg","video":None,"audio":None,
+                          "visual_mode":"focus","visual_intent":"detail"}]}
+        (d/"shotlist.json").write_text(json.dumps(render,ensure_ascii=False),encoding="utf8")
+        ready=self.call("storyboard","--id",project.name,"--from-engine")
+        self.assertEqual(ready.returncode,0,ready.stderr)
+        board=project/"01-文案与分镜"/"分镜脚本.md"
+        original=board.read_text("utf8")
+        self.assertIn("- 视觉风格：快节奏社媒风",original)
+        self.assertIn("- 表现方式：细节特写",original)
+        board.write_text(original.replace("快节奏社媒风","温暖知识风")
+                         .replace("细节特写","成果展示"),encoding="utf8")
+        updated=self.call("storyboard","--id",project.name,"--apply")
+        self.assertEqual(updated.returncode,0,updated.stderr)
+        result=json.loads((d/"shotlist.json").read_text("utf8"))
+        self.assertEqual(result["visual_style"],"warm")
+        self.assertEqual(result["shots"][0]["visual_mode"],"showcase")
+        self.assertEqual(result["shots"][0]["image"],"图片/真实展示.svg")
+        self.assertEqual(len(list((d/"history").glob("*/shotlist.json"))),1)
+
     def test_legacy_project_remains_untouched_and_readable(self):
         p=self.out/"oldcase"
         p.mkdir()

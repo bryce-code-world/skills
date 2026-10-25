@@ -18,7 +18,10 @@ import wave
 IMAGE_FORMATS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 AUDIO_FORMATS = {".wav", ".mp3", ".m4a"}
 VIDEO_FORMATS = {".mp4", ".webm"}
-SUBTITLE_SOURCES = {"tts_word_boundary", "verified_sentence_timing", "manually_reviewed"}
+DIRECTOR_MODES = {"standard", "focus", "showcase", "kinetic", "reveal", "compare", "steps"}
+VISUAL_STYLES = {"product", "warm", "social"}
+SUBTITLE_SOURCES = {"tts_word_boundary", "verified_sentence_timing", "manually_reviewed",
+                    "manually_adjusted_needs_listening"}
 MAX_SUBTITLE_UNITS = 48  # About 24 Chinese characters across two readable mobile lines.
 MAX_SUBTITLE_SECONDS = 4.5
 SHOTS_LIMIT = 12
@@ -128,6 +131,86 @@ def voice_source(raw:dict) -> dict:
             "usage_note":note or "not_documented","verification":"not_verified"}
 
 
+def select_visual_style(raw: dict, audience: str) -> str:
+    style=raw.get("visual_style")
+    if style is None:
+        if any(word in audience for word in ("短视频","抖音","小红书","社媒","手机")):
+            return "social"
+        if any(word in audience for word in ("学习","知识","科普","教学","课堂")):
+            return "warm"
+        return "product"
+    if not isinstance(style,str) or style not in VISUAL_STYLES:
+        raise ValueError("视觉风格 visual_style 仅支持 product / warm / social")
+    return style
+
+
+def select_visual_mode(shot: dict, line: dict, spec: Path) -> dict:
+    """Deterministic defaults, while Agent retains full editorial control."""
+    import hashlib
+    explicit=shot.get("visual_mode")
+    text=(line["title"]+" "+line["voiceover"]+" "+line["caption"])
+    intent=shot.get("visual_intent")
+    allowed={"problem","process","evidence","detail","result","contrast","emphasis"}
+    if intent is not None and (not isinstance(intent,str) or intent not in allowed):
+        raise ValueError("镜头 visual_intent 不是有效的叙事意图")
+    if intent is None:
+        if any(w in text for w in ("为什么","问题","痛点","困扰","麻烦","还要")):
+            intent="problem"
+        elif any(w in text for w in ("对比","改造前","改造后","前后变化")):
+            intent="contrast"
+        elif any(w in text for w in ("步骤","第一步","第二步","三步","流程")):
+            intent="process"
+        elif any(w in text for w in ("细节","局部","放大","聚焦")):
+            intent="detail"
+        elif any(w in text for w in ("成果","完成","成片","最终","结果")):
+            intent="result"
+        elif any(w in text for w in ("演示","展示","看一下")):
+            intent="evidence"
+        else:
+            intent="evidence" if (line["image"] or line["video"]) else "emphasis"
+    visible=bool(line["image"] or line["video"])
+    steps=shot.get("steps",[])
+    before=shot.get("before_image")
+    after=shot.get("after_image")
+    if explicit is not None and (not isinstance(explicit,str) or explicit not in DIRECTOR_MODES):
+        raise ValueError("镜头 visual_mode 不受支持")
+    if explicit is None:
+        if intent=="contrast" and before and after:
+            mode="compare"
+        elif intent=="process" and steps:
+            mode="steps"
+        elif intent in ("detail","problem") and visible:
+            mode="focus"
+        elif intent=="result" and visible:
+            mode="reveal"
+        elif visible:
+            mode="showcase"
+        else:
+            mode="kinetic"
+    else:
+        mode=explicit
+    if mode in {"focus","showcase","reveal"} and not visible:
+        raise ValueError(f"镜头 {mode} 需要真实图片或视频素材")
+    image_before=image_after=None
+    if mode=="compare":
+        if not before or not after:
+            raise ValueError("对比镜头必须同时提供真实的前后图片，不自动伪造证据")
+        image_before=media_path(before,spec,IMAGE_FORMATS,"对比前图片")
+        image_after=media_path(after,spec,IMAGE_FORMATS,"对比后图片")
+        if hashlib.sha256(image_before.read_bytes()).digest()==hashlib.sha256(image_after.read_bytes()).digest():
+            raise ValueError("前后对比素材内容相同；需要不同的真实画面")
+    if mode=="steps":
+        if (not isinstance(steps,list) or len(steps)!=3 or
+            any(not isinstance(item,str) or not item.strip() or len(item.strip())>20 for item in steps)):
+            raise ValueError("步骤镜头需要恰好三个真实的短标签 steps，不会编造操作步骤")
+    elif steps and (not isinstance(steps,list) or len(steps)>3):
+        raise ValueError("steps 须是最多三个短标签")
+    return {"visual_mode":mode,"visual_intent":intent,
+            "direction_source":"explicit" if explicit is not None else "inferred",
+            "before_image":image_before,"after_image":image_after,
+            "steps":list(steps) if mode=="steps" else []}
+
+
 def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(raw, dict):
         raise ValueError("快速分镜需要 JSON 对象")
@@ -141,6 +224,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(shots, list) or not 1 <= len(shots) <= SHOTS_LIMIT:
         raise ValueError("shots 必须有 1～12 段")
     prepared = []
+    style=select_visual_style(raw,audience)
     master = media_path(raw["narration_audio"],file,AUDIO_FORMATS,"完整连续配音") if raw.get("narration_audio") else None
     if master and any(s.get("audio") for s in shots if isinstance(s,dict)):
         raise ValueError("连续主音轨与逐镜头配音不可同时启用")
@@ -169,6 +253,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
             line["video"] = media_path(shot["video"],file,VIDEO_FORMATS,f"第 {i} 段视频")
             if audio_duration(line["video"],ffprobe,kind="video") < line["frames"]/30 - .05:
                 raise ValueError(f"第 {i} 段视频素材短于镜头；请延长素材或缩短镜头")
+        line.update(select_visual_mode(shot,line,file))
         if shot.get("audio"):
             line["audio"] = media_path(shot["audio"], file, AUDIO_FORMATS, f"第 {i} 段配音")
             duration = audio_duration(line["audio"], ffprobe)
@@ -205,7 +290,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
         raise ValueError("用户要求同步字幕，但缺少真实字幕时间轴；固定画面 caption 不能冒充字幕")
     source=raw.get("subtitle_timing_source")
     if cues and source not in SUBTITLE_SOURCES:
-        raise ValueError("字幕需要可追溯的时间来源（tts_word_boundary / verified_sentence_timing / manually_reviewed）")
+        raise ValueError("字幕需要可追溯的时间来源：tts_word_boundary / verified_sentence_timing / manually_reviewed / manually_adjusted_needs_listening")
     if cues and not (master or any(s["audio"] for s in prepared)):
         raise ValueError("没有实际配音文件，不能声称字幕与口播同步")
     normalized=[]
@@ -233,7 +318,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
     if not isinstance(evidence,list) or len(evidence)>8 or any(not isinstance(item,str) or not item.strip() or len(item)>300 for item in evidence):
         raise ValueError("evidence_plan 应是最多 8 条由 Agent 核对来源的真实画面证据，不要凭空填充")
     return {"title":title,"audience":audience,"primary_value":value,
-            "aspect":aspect,"shots":prepared,"narration_audio":master,
+            "aspect":aspect,"shots":prepared,"visual_style":style,"narration_audio":master,
             "subtitles":normalized,"subtitles_required":required,
             "subtitle_timing_source":source if normalized else "none",
             "voice_source":voice_source(raw),"claim_warnings":audience_risk_notes(prepared),
@@ -306,7 +391,7 @@ def run_quick(args, studio):
     upstream = provider_root(args.shotcraft_dir)
     source = Path(__file__).resolve().parents[1] / "assets" / "quick-remotion"
     template = upstream / "template" if upstream else source
-    for path in [source / "index.tsx", source / "Quick.tsx"] + [
+    for path in [source / "index.tsx", source / "Quick.tsx", source / "Director.tsx"] + [
         template / name for name in ("package.json", "package-lock.json", "tsconfig.json", "remotion.config.ts")
     ]:
         if not path.is_file():
@@ -326,6 +411,8 @@ def run_quick(args, studio):
         "engine": "remotion / video-shotcraft" if upstream else "remotion / built-in",
         "aspect": spec["aspect"],
         "shot_count": len(spec["shots"]),
+        "visual_style":spec["visual_style"],
+        "visual_modes":[s["visual_mode"] for s in spec["shots"]],
         "duration_seconds": sum(s["frames"] for s in spec["shots"]) / 30,
         "voice_missing": [] if spec["narration_audio"] else [i + 1 for i, s in enumerate(spec["shots"]) if s.get("voice_missing")],
         "silent_shots": [] if spec["narration_audio"] else [i + 1 for i, s in enumerate(spec["shots"]) if not s["audio"] and not s["voiceover"]],
@@ -340,12 +427,15 @@ def run_quick(args, studio):
         return
     studio.cmd_new(creator, quiet=True)
     project = studio.paths(root, creator.id)
-    data = [{"title": s["title"], "caption": s["caption"], "seconds": s["seconds"],
-             "frames": s["frames"], "voiceover": s["voiceover"], "image": None,
-             "video":None,"audio": None} for s in spec["shots"]]
+    data = [{"title":s["title"],"caption":s["caption"],"seconds":s["seconds"],
+             "frames":s["frames"],"voiceover":s["voiceover"],"image":None,
+             "video":None,"audio":None,"before_image":None,"after_image":None,
+             "visual_mode":s["visual_mode"],"visual_intent":s["visual_intent"],
+             "direction_source":s["direction_source"],"steps":s["steps"]}
+            for s in spec["shots"]]
     for folder in ("src", "docs", "video"):
         (project / folder).mkdir(parents=True, exist_ok=True)
-    for name in ("index.tsx", "Quick.tsx"):
+    for name in ("index.tsx", "Quick.tsx", "Director.tsx"):
         shutil.copy2(source / name, project / "src" / name)
     for name in ("package.json", "package-lock.json", "tsconfig.json"):
         shutil.copy2(template / name, project / name)
@@ -364,6 +454,12 @@ def run_quick(args, studio):
     from project_layout import store_asset, relative_media, project_root
     master_path = relative_media(project,store_asset(project,spec["narration_audio"],"audio")) if spec["narration_audio"] else None
     for i, (shot, item) in enumerate(zip(spec["shots"], data), 1):
+        if shot["before_image"]:
+            dest=store_asset(project,shot["before_image"],"image",i)
+            item["before_image"]=relative_media(project,dest)
+        if shot["after_image"]:
+            dest=store_asset(project,shot["after_image"],"image",i)
+            item["after_image"]=relative_media(project,dest)
         if shot["image"]:
             dest=store_asset(project,shot["image"],"image",i)
             item["image"]=relative_media(project,dest)
@@ -375,6 +471,7 @@ def run_quick(args, studio):
             item["audio"]=relative_media(project,dest)
     width, height = (1080, 1920) if spec["aspect"] == "9:16" else (1920, 1080)
     studio.save(project / "shotlist.json", {"width":width, "height":height, "fps":30,
+        "visual_style":spec["visual_style"],
         "narration_audio":master_path,"shots":data})
     studio.save(project / "subtitles.json",{
         "cues":spec["subtitles"],"required":spec["subtitles_required"],
@@ -452,6 +549,8 @@ def run_quick(args, studio):
         "script_sha256": studio.filehash(project / "script.json"),
         "duration_seconds": float(checked["format"]["duration"]),
         "render_status": "technical_only",
+        "visual_style":spec["visual_style"],
+        "visual_modes":[s["visual_mode"] for s in data],
         "voice_source": spec["voice_source"],
         "claim_warnings": spec["claim_warnings"],
         "evidence_status":"agent_review_required",
