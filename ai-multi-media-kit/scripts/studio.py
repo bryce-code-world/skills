@@ -74,6 +74,30 @@ def workspace(root: str):
     return p, knowledge
 
 
+def sample_project_dir(root: Path, content_id: str) -> Path:
+    """Internal samples never occupy a user-facing top-level output slot."""
+    if not ID_RE.fullmatch(content_id):
+        fail('内部样片 ID 不合法')
+    samples = root / 'runtime' / 'tmp' / 'ai-media-samples'
+    if samples.is_symlink() or (samples.exists() and not samples.resolve().is_relative_to(root.resolve())):
+        fail('内部样片工作区不能是外部链接')
+    project = samples / content_id
+    if project.is_symlink():
+        fail('样片工程不能是符号链接')
+    return project
+
+
+def review_standard_file(knowledge: Path) -> Path:
+    """An empty enterprise knowledge base is valid for ordinary quick videos."""
+    custom = knowledge / 'review-rules.md'
+    if custom.is_file():
+        return custom
+    bundled = Path(__file__).resolve().parents[1] / 'knowledge-templates' / 'review-rules.md'
+    if not bundled.is_file():
+        fail('缺少套件默认审核模板 review-rules.md')
+    return bundled
+
+
 def content_dir(root: Path, content_id: str):
     if not ID_RE.fullmatch(content_id):
         fail('内容 ID 仅允许字母、数字、下划线和连字符（最长64位）')
@@ -105,7 +129,7 @@ def ensure_reviewed_script(d: Path, knowledge: Path, *, platforms=None):
         fail('脚本审核存在待核事实或未解决问题')
     if review.get('script_sha256') != filehash(j):
         fail('脚本内容发生变化，需要重新 AI 审核')
-    if review.get('review_standard_sha256') != filehash(knowledge / 'review-rules.md'):
+    if review.get('review_standard_sha256') != filehash(review_standard_file(knowledge)):
         fail('企业审核标准已经更新，需要重新 AI 审核')
     if load(d/'content.json').get('schema',3) >= 4:
         focus = review.get('focus_alignment', {})
@@ -185,7 +209,8 @@ def cmd_new(a, *, quiet=False):
     root, knowledge = workspace(a.root)
     identity = new_identity(a)
     a.id = identity['content_id']
-    d = content_dir(root, a.id)
+    d = (sample_project_dir(root, a.id) if getattr(a, 'sample_only', False)
+         else content_dir(root, a.id))
     if d.exists():
         fail(f'内容 ID 已存在，不允许覆盖：{a.id}')
     targets = publish_targets(a.publish_target)
@@ -219,12 +244,48 @@ def cmd_new(a, *, quiet=False):
           'shots':[{'seconds':30,'visual':'可取得的实际演示镜头','voiceover':'请填写最终口播'}],
           'platforms':{}})
     save(d/'review.template.json', {'result': 'REVISE', 'score': 0,
-         'script_sha256': '运行 studio hash 获得', 'review_standard_sha256': filehash(knowledge/'review-rules.md'),
+         'script_sha256': '运行 studio hash 获得', 'review_standard_sha256': filehash(review_standard_file(knowledge)),
          'checks': [{'rule': '企业审核标准第1条', 'result': 'REVISE', 'reason': '未审核'}],
          'facts_to_verify': ['待 AI 核查的事实'], 'issues': ['请先由 AI 根据真实证据完成审核']})
     save(d/'publish-ledger.json', {'platforms': {p: {'state': 'not_submitted'} for p in PLATFORMS}})
     if not quiet:
         print(f'CREATED {project_root(d)}\nCONTENT_ID={a.id}\n新建作品：成片放根目录、素材与分镜放中文目录，技术文件在 99-专业工程。')
+
+
+def cmd_nest_sample(a):
+    """Relocate an independently rendered sample into an existing final work project."""
+    root, _ = workspace(a.root)
+    main = paths(root, a.id)
+    if not modern(main):
+        fail('只能归档到新版中文作品目录')
+    if a.id == a.sample_id:
+        fail('不能将正式作品归档到自己内部')
+    original = content_dir(root, a.sample_id)
+    scratch = sample_project_dir(root, a.sample_id)
+    sources = [p for p in (original, scratch) if p.is_dir() and not p.is_symlink()]
+    if len(sources) != 1:
+        fail('内部样片不存在或存在多个同名来源，拒绝猜测归属')
+    source = sources[0]
+    item = engine_dir(source)
+    record = item / 'content.json'
+    if not record.is_file():
+        fail('样片缺少合法的内容身份')
+    identity = load(record)
+    if identity.get('content_id') != a.sample_id or identity.get('schema', 0) < 4:
+        fail('样片身份无效或为历史兼容项目，不能移动')
+    if identity.get('publish_targets'):
+        fail('存在发布授权的项目不能当内部样片迁移')
+    destination = main / 'work' / 'samples' / a.sample_id
+    if destination.exists() or destination.is_symlink():
+        fail('目标样片目录已存在，不覆盖既有工程')
+    if (not destination.parent.resolve().is_relative_to(main.resolve()) or
+            not source.resolve().is_relative_to(root.resolve()) and
+            not source.resolve().is_relative_to(output_directory(root, load(root/'config/workspace.json')).resolve())):
+        fail('样片归档路径越界，拒绝跟随外部链接')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(destination))
+    print('SAMPLE_NESTED ' + json.dumps({'sample_id': a.sample_id,
+        'project_id': a.id, 'path': str(destination)}, ensure_ascii=False))
 
 
 def cmd_list(a):
@@ -828,7 +889,12 @@ def parse():
     q.add_argument('--run-id',help='可选轮次 ID；省略时自动生成')
     q.add_argument('--shotcraft-dir',help='可选：明确复用已安装 video-shotcraft 的依赖模板；默认使用内置模板')
     q.add_argument('--dry-run',action='store_true',help='只检查输入、依赖和目标路径，不创建项目')
+    q.add_argument('--sample-only',action='store_true',help='内部样片：仅写入工具临时区，不在成果根目录建立并列作品')
     q.set_defaults(func=cmd_quick)
+    nest=sub.add_parser('nest-sample',help='将现有内部样片归入正式作品的专业工程，保留全部数据')
+    nest.add_argument('--id',required=True,help='正式作品内容 ID')
+    nest.add_argument('--sample-id',required=True,help='内部样片的内容 ID')
+    nest.set_defaults(func=cmd_nest_sample)
     story=sub.add_parser('storyboard',help='同步中文分镜和专业工程，旧项目保持原格式')
     story.add_argument('--id',required=True)
     g=story.add_mutually_exclusive_group(required=True)

@@ -154,12 +154,61 @@ class QuickVideoTests(unittest.TestCase):
         self.assertIn("video-shotcraft", reply.stdout)
         self.assertFalse(list(self.output.iterdir()))
 
-    def test_broken_workspace_is_rejected_before_project_creation(self):
+    def test_empty_enterprise_knowledge_is_allowed_for_quick_video(self):
         (self.knowledge / "review-rules.md").unlink()
         reply = self.call("--dry-run")
-        self.assertNotEqual(reply.returncode, 0)
-        self.assertIn("review-rules.md", reply.stderr)
+        self.assertEqual(reply.returncode, 0, reply.stderr)
         self.assertFalse(list(self.output.iterdir()))
+
+    def test_internal_sample_dry_run_does_not_create_a_second_project(self):
+        reply = self.call("--sample-only", "--run-id", "internal", "--dry-run")
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertIn('"sample_only": true', reply.stdout)
+        self.assertFalse(list(self.output.iterdir()))
+        self.assertFalse((self.root / 'runtime' / 'tmp' / 'ai-media-samples').exists())
+
+    def _make_studio_project(self, topic: str, run_id: str, sample_only: bool = False):
+        name = Namespace(id=None, topic=topic, agent='codex', model=None,
+                         run_id=run_id, parent_id=None, publish_target=None,
+                         title=topic, task_ref=None, root=str(self.root),
+                         sample_only=sample_only)
+        studio.cmd_new(name, quiet=True)
+        return name.id
+
+    def test_internal_sample_and_final_project_do_not_share_top_level(self):
+        sample_id = self._make_studio_project('memory-demo', 'sample', sample_only=True)
+        self.assertTrue((studio.sample_project_dir(self.root, sample_id) /
+                         '99-专业工程' / 'content.json').is_file())
+        self.assertFalse(list(self.output.iterdir()))
+        final_id = self._make_studio_project('amk-promo', 'final')
+        self.assertEqual([p.name for p in self.output.iterdir()], [final_id])
+        sample = studio.sample_project_dir(self.root, sample_id)
+        (sample / 'sample-note.txt').write_text('retain demo evidence', encoding='utf8')
+        cmd = [str(STUDIO), '--root', str(self.root), 'nest-sample',
+               '--id', final_id, '--sample-id', sample_id]
+        with patch.object(sys, 'argv', cmd), redirect_stdout(StringIO()):
+            self.assertEqual(studio.main(), 0)
+        archived = self.output / final_id / '99-专业工程' / 'work' / 'samples' / sample_id
+        self.assertEqual((archived / 'sample-note.txt').read_text('utf8'),
+                         'retain demo evidence')
+        self.assertFalse(sample.exists())
+        self.assertEqual([p.name for p in self.output.iterdir()], [final_id])
+        with patch.object(sys, 'argv', cmd), redirect_stderr(StringIO()):
+            self.assertNotEqual(studio.main(), 0)
+
+    def test_legacy_sample_can_be_nested_without_overwriting_history(self):
+        final_id = self._make_studio_project('amk-promo', 'final')
+        sample_id = self._make_studio_project('memory-demo', 'sample')
+        original = self.output / sample_id
+        (original / 'sample-note.txt').write_text('old independent sample', encoding='utf8')
+        cmd = [str(STUDIO), '--root', str(self.root), 'nest-sample',
+               '--id', final_id, '--sample-id', sample_id]
+        with patch.object(sys, 'argv', cmd), redirect_stdout(StringIO()):
+            self.assertEqual(studio.main(), 0)
+        self.assertEqual(len(list(self.output.iterdir())), 1)
+        self.assertEqual((self.output / final_id / '99-专业工程' / 'work' /
+                          'samples' / sample_id / 'sample-note.txt').read_text('utf8'),
+                         'old independent sample')
 
     def test_audio_longer_than_shot_is_rejected(self):
         brief = json.loads(self.spec.read_text("utf8"))
@@ -169,6 +218,20 @@ class QuickVideoTests(unittest.TestCase):
         self.assertNotEqual(reply.returncode, 0)
         self.assertIn("配音", reply.stderr)
         self.assertFalse(list(self.output.iterdir()))
+
+    def test_repeated_cards_generate_editorial_warning_without_fake_quality_pass(self):
+        brief = json.loads(self.spec.read_text('utf8'))
+        brief['shots'] = [dict(brief['shots'][0], visual_mode='showcase') for _ in range(3)]
+        result = quick_video.checked_spec(brief, self.spec)
+        self.assertTrue(any('连续三镜头' in text for text in result['visual_quality_warnings']))
+
+    def test_real_tts_sentence_boundaries_have_a_distinct_traceable_source(self):
+        brief = json.loads(self.spec.read_text('utf8'))
+        brief['subtitles_required'] = True
+        brief['subtitle_timing_source'] = 'tts_sentence_boundary'
+        brief['subtitles'] = [{'start': 0.1, 'end': 1.9, 'text': brief['shots'][0]['voiceover']}]
+        result = quick_video.checked_spec(brief, self.spec)
+        self.assertEqual(result['subtitle_timing_source'], 'tts_sentence_boundary')
 
     def test_no_narration_is_explicitly_flagged_in_plan(self):
         brief = json.loads(self.spec.read_text("utf8"))

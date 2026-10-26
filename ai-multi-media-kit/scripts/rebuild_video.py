@@ -33,8 +33,14 @@ def review_subtitle_edits(d:Path, scenes:list[dict], duration:float, audio_durat
             raise ValueError("字幕文字与正式口播不一致，需同步改稿与配音")
         if cues[-1]["end"]>duration+.04 or (audio_duration_seconds is not None and cues[-1]["end"]>audio_duration_seconds+.04):
             raise ValueError("字幕越过视频或连续配音时长，请调整镜头和字幕时间")
-    changed=cues!=plan.get("cues",[])
-    return {"modified":changed,"plan":{**plan,"cues":cues,
+    original=plan.get("cues",[])
+    # SRT stores integer milliseconds; sub-millisecond rounding is not a human edit.
+    same=(len(cues)==len(original) and all(
+        new["text"]==old.get("text") and
+        all(round(new[key]*1000)==round(old[key]*1000) for key in ("start","end"))
+        for new,old in zip(cues,original)))
+    changed=not same
+    return {"modified":changed,"plan":{**plan,"cues":cues if changed else original,
         "timing_source":"manually_adjusted_needs_listening" if changed else plan.get("timing_source","none")}}
 
 

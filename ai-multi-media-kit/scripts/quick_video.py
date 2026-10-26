@@ -20,7 +20,7 @@ AUDIO_FORMATS = {".wav", ".mp3", ".m4a"}
 VIDEO_FORMATS = {".mp4", ".webm"}
 DIRECTOR_MODES = {"standard", "focus", "showcase", "kinetic", "reveal", "compare", "steps"}
 VISUAL_STYLES = {"product", "warm", "social"}
-SUBTITLE_SOURCES = {"tts_word_boundary", "verified_sentence_timing", "manually_reviewed",
+SUBTITLE_SOURCES = {"tts_word_boundary", "tts_sentence_boundary", "verified_sentence_timing", "manually_reviewed",
                     "manually_adjusted_needs_listening"}
 MAX_SUBTITLE_UNITS = 48  # About 24 Chinese characters across two readable mobile lines.
 MAX_SUBTITLE_SECONDS = 4.5
@@ -120,6 +120,22 @@ def audience_risk_notes(shots: list[dict]) -> list[str]:
     if re.search(r"(直接发布|一键发布|自动发布|保证上热门|百分百成功)",spoken):
         statements.append("含有“直接发布”等宣传承诺：本次仅生成技术预览，必须核对产品能力、用户授权和实际审核状态")
     return statements
+
+
+def visual_quality_warnings(shots: list[dict]) -> list[str]:
+    """Editorial hints; actual visual judgment still requires checking encoded frames."""
+    issues = []
+    run = 0
+    previous = None
+    for shot in shots:
+        mode = shot['visual_mode']
+        run = run + 1 if mode == previous and mode in ('showcase', 'standard') else 1
+        if run == 3:
+            issues.append('连续三镜头采用同一展示构图，应检查是否成为标题卡片轮播')
+        previous = mode
+    if len(shots) >= 6 and not any(s.get('video') for s in shots):
+        issues.append('全片没有实际视频素材，应检查画面动态和内容证据，不把静态设计图当真实演示')
+    return issues
 
 
 def voice_source(raw:dict) -> dict:
@@ -325,7 +341,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
         raise ValueError("用户要求同步字幕，但缺少真实字幕时间轴；固定画面 caption 不能冒充字幕")
     source=raw.get("subtitle_timing_source")
     if cues and source not in SUBTITLE_SOURCES:
-        raise ValueError("字幕需要可追溯的时间来源：tts_word_boundary / verified_sentence_timing / manually_reviewed / manually_adjusted_needs_listening")
+        raise ValueError("字幕需要可追溯的时间来源：tts_word_boundary / tts_sentence_boundary / verified_sentence_timing / manually_reviewed / manually_adjusted_needs_listening")
     if cues and not (master or any(s["audio"] for s in prepared)):
         raise ValueError("没有实际配音文件，不能声称字幕与口播同步")
     normalized=[]
@@ -358,7 +374,7 @@ def checked_spec(raw: dict, file: Path, ffprobe: str | None = None) -> dict:
             "subtitles":normalized,"subtitles_required":required,
             "subtitle_timing_source":source if normalized else "none",
             "voice_source":voice_source(raw),"claim_warnings":audience_risk_notes(prepared),
-            "evidence_plan":evidence}
+            "visual_quality_warnings":visual_quality_warnings(prepared),"evidence_plan":evidence}
 
 
 def provider_root(raw: str | None) -> Path | None:
@@ -418,8 +434,8 @@ def run_quick(args, studio):
     # Protect the persisted output directory, including its separation from tools/knowledge.
     from workspace_paths import output_directory
     output = output_directory(root, studio.load(root / "config" / "workspace.json"))
-    if not (knowledge / "review-rules.md").is_file():
-        raise ValueError("工作区缺少 review-rules.md，请修复已有知识库配置后重试")
+    # Single-video preview does not require an enterprise knowledge base.
+    # studio.cmd_new uses the bundled review template when no custom rule exists.
     spec_file = Path(args.spec).expanduser().resolve()
     if not spec_file.is_file():
         raise ValueError(f"缺少快速分镜 JSON：{spec_file}")
@@ -439,9 +455,12 @@ def run_quick(args, studio):
     from content_identity import new_identity
     identity = new_identity(creator)
     creator.run_id = identity["run_id"]
-    project = studio.content_dir(root, identity["content_id"])
+    sample_only = bool(getattr(args, 'sample_only', False))
+    project = (studio.sample_project_dir(root, identity['content_id']) if sample_only
+               else studio.content_dir(root, identity['content_id']))
     if project.exists():
         raise ValueError(f"快速视频项目已存在，禁止覆盖：{project}")
+    creator.sample_only = sample_only
     npm, npx = ensure_tools()
     summary = {
         "engine": "remotion / video-shotcraft" if upstream else "remotion / built-in",
@@ -456,14 +475,17 @@ def run_quick(args, studio):
         "subtitles": "timed" if spec["subtitles"] else ("missing" if spec["subtitles_required"] else "not_provided"),
         "claim_warnings": spec["claim_warnings"],
         "evidence_status": "agent_review_required",
-        "output_root": str(output),
-        "status": "plan_only" if args.dry_run else "technical_preview",
+        "visual_quality_warnings": spec['visual_quality_warnings'],
+        "output_root": str(project.parent if sample_only else output),
+        "sample_only": sample_only,
+        "status": "plan_only" if args.dry_run else ("internal_sample" if sample_only else "technical_preview"),
     }
     if args.dry_run:
         print("QUICK_PLAN " + json.dumps(summary, ensure_ascii=False))
         return
     studio.cmd_new(creator, quiet=True)
-    project = studio.paths(root, creator.id)
+    project = (studio.engine_dir(studio.sample_project_dir(root, creator.id)) if sample_only
+               else studio.paths(root, creator.id))
     data = [{"title":s["title"],"caption":s["caption"],"seconds":s["seconds"],
              "frames":s["frames"],"voiceover":s["voiceover"],"image":None,
              "video":None,"audio":None,"before_image":None,"after_image":None,
@@ -597,6 +619,7 @@ def run_quick(args, studio):
         "visual_modes":[s["visual_mode"] for s in data],
         "voice_source": spec["voice_source"],
         "claim_warnings": spec["claim_warnings"],
+        "visual_quality_warnings":spec["visual_quality_warnings"],
         "evidence_status":"agent_review_required",
         "subtitles_sha256":studio.filehash(project/"subtitles.json"),
         "subtitle_file_sha256":studio.filehash(project_root(project)/"01-文案与分镜"/"字幕文件.srt") if spec["subtitles"] else None,
@@ -608,7 +631,7 @@ def run_quick(args, studio):
         "created_at_utc": studio.now(),
         "provenance": studio.provenance(studio.load(project / "content.json")),
     })
-    print("QUICK_VIDEO_READY " + json.dumps({
+    print(("QUICK_SAMPLE_READY " if sample_only else "QUICK_VIDEO_READY ") + json.dumps({
         **summary, "content_id":creator.id,"project_dir":str(project_root(project)),"video_path":str(mp4),
         "studio_command":"npx remotion studio src/index.tsx",
         "review_status":"NOT_REVIEWED",

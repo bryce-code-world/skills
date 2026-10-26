@@ -15,8 +15,6 @@ const themes={
 };
 const clamp={extrapolateLeft:'clamp',extrapolateRight:'clamp'} as const;
 const font='"Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif';
-const modeTitles={focus:'聚焦细节',showcase:'完整呈现',kinetic:'观点强调',
-  reveal:'成果揭晓',compare:'真实前后变化',steps:'具体操作步骤',standard:'画面说明'};
 const Media:React.FC<{image?:string|null;video?:string|null;fit?:'contain'|'cover';zoom?:number}>=({
   image,video,fit='contain',zoom=1,
 })=>{
@@ -33,7 +31,7 @@ const Heading:React.FC<{title:string;portrait:boolean;color?:string;size?:number
 </div>;
 
 export const Director:React.FC<{shot:DirectedShot;number:number;total:number;styleId:string}>=({
-  shot,number,total,styleId,
+  shot,styleId,
 })=>{
   const frame=useCurrentFrame(),{width:w,height:h,fps}=useVideoConfig();
   const portrait=h>w;
@@ -43,8 +41,6 @@ export const Director:React.FC<{shot:DirectedShot;number:number;total:number;sty
   const full=w-2*pad;
   const progress=interpolate(frame,[0,Math.max(1,shot.frames-1)],[0,1],clamp);
   const entry=spring({frame,fps,config:{damping:22,stiffness:110}});
-  const exit=interpolate(frame,[0,13,Math.max(14,shot.frames-9),shot.frames],
-    [0,1,1,0],clamp);
   const rise=34*(1-entry);
   const mediaTop=portrait?h*.29:h*.22;
   const region=portrait?h*.42:h*.53;
@@ -59,14 +55,33 @@ export const Director:React.FC<{shot:DirectedShot;number:number;total:number;sty
     background:theme.paper,boxShadow:cardShadow,border:'1px solid rgba(255,255,255,.18)'};
   let center:React.ReactNode;
   if(mode==='showcase'){
-    center=<>
-      {topTitle(h*.14,portrait?72:64)}
-      <div style={{...card,transform:'translateY('+rise+'px)'}}>
-        {asset(1+.045*progress)}
-        <div style={{position:'absolute',left:0,bottom:0,height:6,
-          width:'100%',background:theme.accent}}/>
-      </div>
-    </>;
+    // Portrait recordings should be large enough to read on a phone, not tiny
+    // 9:16 videos pillarboxed inside a wide 16:9 content card.
+    if (portrait && shot.video) {
+      const tallHeight=h*.56;
+      const tallWidth=tallHeight*9/16;
+      center=<>
+        {topTitle(h*.112,60)}
+        <div style={{position:'absolute',left:pad,top:h*.205,width:full,
+          height:tallHeight,borderRadius:32,overflow:'hidden',
+          background:'radial-gradient(ellipse at center,'+theme.panel+','+theme.bg+')',
+          boxShadow:cardShadow}}>
+          <div style={{position:'absolute',top:0,left:(full-tallWidth)/2,
+            width:tallWidth,height:'100%',overflow:'hidden',borderRadius:16,
+            border:'2px solid '+theme.accent,boxSizing:'border-box',
+            transform:'translateY('+rise+'px)'}}>
+            {asset(1)}
+          </div>
+        </div>
+      </>;
+    } else {
+      center=<>
+        {topTitle(h*.14,portrait?72:64)}
+        <div style={{...card,transform:'translateY('+rise+'px)'}}>
+          {asset(1+.045*progress)}
+        </div>
+      </>;
+    }
   }else if(mode==='focus'){
     center=<>
       {topTitle(h*.14,portrait?73:60)}
@@ -75,9 +90,6 @@ export const Director:React.FC<{shot:DirectedShot;number:number;total:number;sty
         {asset(1+.12*progress)}
         <div style={{position:'absolute',inset:18,borderRadius:24,
           border:'2px solid '+theme.accent,opacity:.32}}/>
-        <div style={{position:'absolute',right:25,bottom:24,color:theme.paper,
-          background:theme.bg,padding:'14px 23px',borderRadius:17,
-          fontWeight:780,fontSize:23}}>画面特写</div>
       </div>
     </>;
   }else if(mode==='compare'){
@@ -132,20 +144,11 @@ export const Director:React.FC<{shot:DirectedShot;number:number;total:number;sty
         transform:'translateY('+rise+'px) scale('+(.84+.16*pop)+')'}}>
         {asset(1+.02*progress)}
       </div>
-      <div style={{position:'absolute',left:pad+36,
-        top:mediaTop+region*.79,background:theme.accent,
-        color:theme.ink,borderRadius:18,padding:'18px 28px',
-        fontWeight:840,fontSize:portrait?33:28,
-        transform:'translateY('+(70*(1-entry))+'px)'}}>
-        看见制作成果
-      </div>
     </>;
   }else{ // kinetic: the words move as editorial beats instead of sitting on a title card.
     const phrases=shot.title.split(/[，、：:\s]+/).filter(Boolean);
     const pieces=phrases.length>1?phrases:[shot.title];
     center=<>
-      <div style={{position:'absolute',left:pad,top:h*.17,color:theme.secondary,
-        fontWeight:760,fontSize:portrait?30:25}}>一句话，说清重点</div>
       {(shot.image||shot.video)?<div style={{...card,filter:'blur(28px)',
         opacity:.09,top:h*.26,height:h*.38}}>{asset(1+.1*progress)}</div>:null}
       <div style={{position:'absolute',left:pad,right:pad,top:h*.30,
@@ -166,29 +169,12 @@ export const Director:React.FC<{shot:DirectedShot;number:number;total:number;sty
         transform:'translateY('+(23*(1-entry))+'px)'}}>
         {asset(1+.045*progress)}
       </div>:null}
-      <div style={{position:'absolute',left:pad,right:pad,top:h*.70,
-        height:9,borderRadius:9,background:theme.panel}}>
-        <div style={{height:'100%',width:(100*progress)+'%',background:theme.accent,
-          borderRadius:9}}/>
-      </div>
     </>;
   }
-  return <AbsoluteFill style={{background:theme.bg,fontFamily:font,overflow:'hidden',opacity:exit}}>
+  return <AbsoluteFill style={{background:theme.bg,fontFamily:font,overflow:'hidden'}}>
     <div style={{position:'absolute',right:-w*.30,top:-h*.13,
       width:w*1.1,height:w*1.1,borderRadius:'50%',
       background:'radial-gradient(circle,'+theme.panel+',transparent 70%)'}}/>
-    <div style={{position:'absolute',left:pad,top:portrait?85:48,right:pad,
-      display:'flex',justifyContent:'space-between',alignItems:'center',
-      color:theme.secondary,fontWeight:730,letterSpacing:1.3,
-      fontSize:portrait?24:21}}>
-      <span>{modeTitles[mode]}</span>
-      <span>{String(number).padStart(2,'0')} / {String(total).padStart(2,'0')}</span>
-    </div>
     {center}
-    <div style={{position:'absolute',left:pad,right:pad,top:h*.755,height:5,
-      background:theme.panel,borderRadius:5}}>
-      <div style={{height:'100%',width:(100*progress)+'%',
-        background:theme.accent,borderRadius:5}}/>
-    </div>
   </AbsoluteFill>;
 };
