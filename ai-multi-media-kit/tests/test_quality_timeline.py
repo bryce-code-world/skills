@@ -46,6 +46,26 @@ class TimelineQualityTests(unittest.TestCase):
     def check(self, data=None):
         return checked_spec(self.spec if data is None else data,self.specfile)
 
+    def test_subtitle_millisecond_serialization_does_not_erase_tts_provenance(self):
+        from rebuild_video import review_subtitle_edits
+        engine=self.base/"99-专业工程"
+        engine.mkdir()
+        (self.base/"01-文案与分镜").mkdir()
+        original={"cues":[
+            {"start":.0296,"end":2.5034,"text":"一个选题也能做视频，"},
+            {"start":2.5855,"end":5.2266,"text":"视频制作不必反复搬运。"}],
+            "required":True,"timing_source":"tts_word_boundary"}
+        (engine/"subtitles.json").write_text(json.dumps(original,ensure_ascii=False),encoding="utf8")
+        (self.base/"01-文案与分镜/字幕文件.srt").write_text(
+            "1\n00:00:00,030 --> 00:00:02,503\n一个选题也能做视频，\n\n"
+            "2\n00:00:02,586 --> 00:00:05,227\n视频制作不必反复搬运。\n",
+            encoding="utf8")
+        voice=[{"voiceover":"一个选题也能做视频，"},{"voiceover":"视频制作不必反复搬运。"}]
+        result=review_subtitle_edits(engine,voice,6)
+        self.assertFalse(result["modified"],"Milliseconds rounding is not an author edit")
+        self.assertEqual(result["plan"]["timing_source"],"tts_word_boundary")
+        self.assertEqual(result["plan"]["cues"],original["cues"])
+
     def test_subtitle_edit_rejects_word_mismatch_and_updates_timing(self):
         from rebuild_video import review_subtitle_edits
         engine=self.base/"99-专业工程"
